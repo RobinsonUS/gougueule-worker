@@ -15,8 +15,7 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #lobby input:focus{border-color:#8cc152;box-shadow:0 0 0 2px rgba(140,193,82,0.2)}
 #lobby button{background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:18px;font-weight:700;padding:14px 50px;cursor:pointer;margin-top:14px}
 
-#kf{position:fixed;top:12px;right:12px;color:#fff;z-index:10;text-align:right;font-size:13px;text-shadow:1px 1px 2px rgba(0,0,0,0.9);pointer-events:none}
-#kf div{margin:3px 0;background:rgba(0,0,0,0.4);padding:3px 8px;border-radius:4px}
+
 #mort{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.80);z-index:40;flex-direction:column;align-items:center;justify-content:center;color:#fff;border-radius:16px;padding:24px 40px;pointer-events:auto}
 #mort h2{font-size:36px;color:#ff4444;margin-bottom:14px}
 #mort button{background:#4285F4;border:none;border-radius:10px;color:#fff;font-size:16px;font-weight:700;padding:12px 40px;cursor:pointer}
@@ -38,7 +37,6 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
   <button onclick="startGame()">Jouer</button>
 </div>
 <!-- hud supprimé -->
-<div id="kf"></div>
 <div id="mort"><h2>ELIMINE</h2><button onclick="rejouer()">Rejouer</button></div>
 <div id="fin"><h2 id="fin-txt">Victoire !</h2><button onclick="rejouer()">Rejouer</button></div>
 <canvas id="jeu" tabindex="0"></canvas>
@@ -697,8 +695,8 @@ function dessineMinimap() {
   ctx.save();
 
   // Fond vert foncé à 50%
-  ctx.globalAlpha = 0.5;
-  ctx.fillStyle = '#1a5218';
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = '#47594a';
   ctx.fillRect(mX, mY, mW, mH);
 
   // Lignes de grille (4×4)
@@ -721,10 +719,8 @@ function dessineMinimap() {
   // Layout calqué sur la capture : 3 groupes [icone+texte] espacés uniformément
   // icône 28px, texte bold 16px, rangée haute de 36px, centrée verticalement
   var bY = mY + mH + 6;
-  var rowH = 36;
   var icSize = 28;
-  var ty = bY + rowH / 2;          // centre vertical de la rangée
-  var colW = mW / 3;               // chaque tiers = 73px
+  var ty = bY + icSize / 2 + 4;
 
   ctx.font = 'bold 16px system-ui, -apple-system, sans-serif';
   ctx.textBaseline = 'middle';
@@ -738,21 +734,25 @@ function dessineMinimap() {
   var stats = [String(myKills), String(nbVivants), timeStr];
   var icos  = [ICO_KILLS, ICO_TEAM, ICO_TIME];
 
+  // Calculer la largeur totale du bloc pour centrer avec marges égales
+  var gap = 16;  // espace entre groupes (légèrement rapprochés)
+  var grpW = [];
+  for (var i = 0; i < 3; i++)
+    grpW[i] = icSize + 4 + ctx.measureText(stats[i]).width;
+  var totalW = grpW[0] + grpW[1] + grpW[2] + gap * 2;
+  // startX tel que marge gauche (skull) = marge droite (dernier chiffre timer)
+  var startX = mX + (mW - totalW) / 2;
+
   for (var i = 0; i < 3; i++) {
-    // Centre du groupe = milieu du tiers
-    var groupCx = mX + colW * i + colW / 2;
-    var textW = ctx.measureText(stats[i]).width;
-    var totalW = icSize + 4 + textW;
-    var ix = groupCx - totalW / 2;
+    var ix = startX;
+    for (var j = 0; j < i; j++) ix += grpW[j] + gap;
     var tx2 = ix + icSize + 4;
 
     if (icos[i].complete && icos[i].naturalWidth > 0)
       ctx.drawImage(icos[i], ix, ty - icSize/2, icSize, icSize);
 
-    // Ombre du texte
     ctx.fillStyle = 'rgba(0,0,0,0.85)';
     ctx.fillText(stats[i], tx2 + 1, ty + 1);
-    // Texte blanc
     ctx.fillStyle = '#fff';
     ctx.fillText(stats[i], tx2, ty);
   }
@@ -1327,23 +1327,10 @@ function dansBuisson(x, y, obs) {
 var killFeed = [];
 var killFeedEl;
 
-function initHUD() { killFeedEl = document.getElementById('kf'); }
+function initHUD() {}
 
-function majKillFeed() {
-  if (!killFeedEl) return;
-  var now = Date.now();
-  killFeed = killFeed.filter(function(k){return now-k.t < 5000;});
-  var html = '';
-  for (var i = 0; i < killFeed.length; i++) html += '<div>' + killFeed[i].text + '</div>';
-  killFeedEl.innerHTML = html;
-}
-
-function ajouteKill(kills) {
-  if (!kills || !kills.length) return;
-  for (var i = 0; i < kills.length; i++)
-    killFeed.unshift({text: kills[i].killer + ' > ' + kills[i].victim, t: Date.now()});
-  if (killFeed.length > 6) killFeed.length = 6;
-}
+function majKillFeed() {}
+function ajouteKill(kills) {}
 
 // =================== Particules locales ===================
 var localParticules = [];
@@ -1880,7 +1867,6 @@ function connect() {
         var ag = msg.agents[id];
         if (ag.tirTimer > 0.30) genMuzzleFlash(ag);
       }
-      ajouteKill(msg.kills);
       majObs(msg.decorMaj);
       if (typeof msg.retard === 'number') RETARD = msg.retard;
       snapDernier = msg;
@@ -2030,7 +2016,7 @@ function boucle(maintenant) {
 
   majParticulesLocales(dt);
   majObsPerFrame(dt);
-  majKillFeed();
+  // hud minimap dessiné dans dessine()
 
   var vue = etatAffiche();
   if (!vue) return;
