@@ -1001,7 +1001,7 @@ function dessine(p, moi, viseur, drag) {
   for (const j of agentsArr) {
     if (!j.vivant) continue;
     const sien = (j.id === moi);
-    if (j.alphaVis === undefined) j.alphaVis = 1;
+    if (j.alphaVis === undefined) j.alphaVis = (alphaVisJoueurs[j.id] !== undefined) ? alphaVisJoueurs[j.id] : 1;
 
     let dansUnBuisson = false;
     let buissonPartage = false;      // je touche le buisson ou il se cache
@@ -1036,6 +1036,8 @@ function dessine(p, moi, viseur, drag) {
     j.alphaVis += (cible - j.alphaVis) * taux;
     // Snap à la cible exacte quand on est assez proche (sinon le lerp n'atteint jamais 0)
     if (Math.abs(j.alphaVis - cible) < 0.015) j.alphaVis = cible;
+    // Persister pour la prochaine frame (vue.agents recrée des objets neufs)
+    alphaVisJoueurs[j.id] = j.alphaVis;
     // un joueur repere dans un buisson doit se voir en ENTIER :
     // on le dessine alors par dessus le feuillage
     j._dessus = !sien && dansUnBuisson && (trahi || buissonPartage);
@@ -1232,6 +1234,8 @@ function ajouteKill(kills) {
 
 // =================== Particules locales ===================
 var localParticules = [];
+// alphaVis des joueurs : persiste entre les frames (vue.agents recrée des objets neufs à chaque frame)
+var alphaVisJoueurs = {};
 var prevTirTimer = {};
 
 function genMuzzleFlash(a) {
