@@ -1359,7 +1359,7 @@ function calcInput() {
   var mx = 0, my = 0;
   if (joyG.actif) {
     var d = Math.hypot(joyG.dx, joyG.dy);
-    if (d > 0.12) { mx = joyG.dx; my = joyG.dy; }
+    if (d > 0.12) { mx = joyG.dx / d; my = joyG.dy / d; }
   }
   if (keys['haut'])   my -= 1;
   if (keys['bas'])    my += 1;
@@ -1543,6 +1543,8 @@ function reconcilie(snap) {
 
   // on repart de la verite serveur
   moi.x = s.x; moi.y = s.y;
+  moi.vivant = s.vivant;
+  moi.pv = s.pv;
   moi.munitions = s.munitions;
   moi.rechargement = s.rechargement;
   moi.dureeRechargeMax = s.dureeRechargeMax;
@@ -1620,9 +1622,18 @@ function etatAffiche() {
       }
     }
   } else {
-    for (var id2 in av.agents) vue.agents[id2] = av.agents[id2];
+    for (var id2 in av.agents) {
+      // Ne pas afficher un joueur absent ou mort dans le snapshot le plus récent
+      if (snapDernier.agents[id2]) vue.agents[id2] = av.agents[id2];
+    }
     vue.balles = av.balles.slice();
     vue.zone = av.zone;
+  }
+  // Post-correction : forcer vivant=false sur quiconque est mort dans le dernier snap
+  for (var zid in vue.agents) {
+    var zSnap = snapDernier.agents[zid];
+    if (!zSnap) { delete vue.agents[zid]; }
+    else if (!zSnap.vivant) { vue.agents[zid].vivant = false; }
   }
 
   // MON personnage : etat predit, jamais interpole => zero latence ressentie
@@ -1743,8 +1754,18 @@ function connect() {
     if (etatJeu === 'connecting') setLobbyMsg('Erreur de connexion', 'Le serveur ne repond pas');
   };
   ws.onclose = function () {
-    if (etatJeu === 'connecting')
+    if (etatJeu === 'connecting') {
       setLobbyMsg('Impossible de se connecter', 'Verifie GAME_SERVER_URL du Worker');
+    } else if (etatJeu === 'jeu' || etatJeu === 'mort') {
+      // Déconnexion en cours de partie → retour au lobby propre
+      pid = null; moi = null; snapDernier = null;
+      buffer = []; pendantes = []; seq = 0;
+      ws = null;
+      setLobbyMsg('Connexion perdue', 'Le serveur s\'est déconnecté');
+      etatJeu = 'lobby';
+      document.getElementById('lobby').style.display = 'flex';
+      document.getElementById('mort').style.display = 'none';
+    }
   };
 }
 
@@ -1757,6 +1778,10 @@ function produitCommande(dt) {
 
   var angle = moi.angle, tire = false;
   if (isMobile) {
+    // Par défaut : face au sens du déplacement
+    if (mouvement.mx !== 0 || mouvement.my !== 0) {
+      angle = Math.atan2(mouvement.my, mouvement.mx);
+    }
     if (viseStick()) { angle = Math.atan2(joyD.dy, joyD.dx); tire = true; }
   } else {
     if (souris.vu) angle = ecranAngle;
