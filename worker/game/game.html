@@ -125,7 +125,7 @@ const C = {
     { ext: '#1f6b4a', int: '#2d8a5f', tache: '#18543a' },
   ],
   perso:    '#f0cd8f',
-  persoEnn: '#e9a273',
+  persoEnn: '#f0cd8f',
   main:     '#e0b273',
   bras:     '#c8985c',
   traitP:   '#2b2b2b',
@@ -1975,7 +1975,7 @@ function rejouer() {
   etatJeu = 'lobby';
   pid = null; moi = null; snapDernier = null;
   buffer = []; pendantes = []; seq = 0;
-  myKills = 0; nbVivants = 0;
+  myKills = 0; nbVivants = 0; alphaVisJoueurs = {};
   if (ws) { try { ws.close(); } catch (e) {} ws = null; }
   showLobbyForm();
 }
