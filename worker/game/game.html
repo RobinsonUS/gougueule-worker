@@ -690,44 +690,44 @@ function dessineViseur(x, y) {
 // ===================== nom au-dessus de la tête =====================
 // ===================== minimap + HUD stats =====================
 function dessineMinimap() {
-  var mW = 110, mH = 110;         // taille de la carte
-  var mX = LARG - mW - 12;        // coin haut-droit
+  var mW = 220, mH = 220;
+  var mX = LARG - mW - 12;
   var mY = 12;
-  var statH = 36;                  // hauteur de la barre stats
-  var pad = 6;
 
-  // — Fond minimap gris à 50% —
   ctx.save();
+
+  // Fond vert foncé à 50%
   ctx.globalAlpha = 0.5;
-  ctx.fillStyle = '#555';
+  ctx.fillStyle = '#1a5218';
   ctx.fillRect(mX, mY, mW, mH);
+
+  // Lignes de grille (4×4)
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 1;
+  var step = mW / 4;
+  for (var g = 1; g < 4; g++) {
+    ctx.beginPath(); ctx.moveTo(mX + g*step, mY); ctx.lineTo(mX + g*step, mY + mH); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mX, mY + g*step); ctx.lineTo(mX + mW, mY + g*step); ctx.stroke();
+  }
   ctx.globalAlpha = 1;
 
-  // — Point joueur (toujours au centre) —
+  // Point joueur blanc au centre
   ctx.beginPath();
-  ctx.arc(mX + mW / 2, mY + mH / 2, 4, 0, Math.PI * 2);
+  ctx.arc(mX + mW/2, mY + mH/2, 4, 0, Math.PI * 2);
   ctx.fillStyle = '#fff';
   ctx.fill();
-  ctx.restore();
 
-  // — Barre de stats en dessous —
-  var bY = mY + mH + 4;
-  var bW = mW;
-  ctx.save();
-  ctx.globalAlpha = 0.72;
-  ctx.fillStyle = '#111';
-  ctx.beginPath();
-  ctx.roundRect ? ctx.roundRect(mX, bY, bW, statH, 6) : ctx.rect(mX, bY, bW, statH);
-  ctx.fill();
-  ctx.globalAlpha = 1;
+  // ── Stats sous la minimap ── pas de fond ──
+  // Layout calqué sur la capture : 3 groupes [icone+texte] espacés uniformément
+  // icône 28px, texte bold 16px, rangée haute de 36px, centrée verticalement
+  var bY = mY + mH + 6;
+  var rowH = 36;
+  var icSize = 28;
+  var ty = bY + rowH / 2;          // centre vertical de la rangée
+  var colW = mW / 3;               // chaque tiers = 73px
 
-  var icSize = 22;
-  var cols = [mX + 4, mX + bW / 2 - icSize / 2 - 2, mX + bW - icSize - 18];
-
-  // Textes
-  ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
+  ctx.font = 'bold 16px system-ui, -apple-system, sans-serif';
   ctx.textBaseline = 'middle';
-  var ty = bY + statH / 2;
 
   var t = snapDernier ? snapDernier.t || 0 : 0;
   var att = SIM.ZONE_ATTENTE || 12, dur = SIM.ZONE_DUREE || 70;
@@ -739,14 +739,22 @@ function dessineMinimap() {
   var icos  = [ICO_KILLS, ICO_TEAM, ICO_TIME];
 
   for (var i = 0; i < 3; i++) {
-    var cx = cols[i];
-    // Icône
+    // Centre du groupe = milieu du tiers
+    var groupCx = mX + colW * i + colW / 2;
+    var textW = ctx.measureText(stats[i]).width;
+    var totalW = icSize + 4 + textW;
+    var ix = groupCx - totalW / 2;
+    var tx2 = ix + icSize + 4;
+
     if (icos[i].complete && icos[i].naturalWidth > 0)
-      ctx.drawImage(icos[i], cx, ty - icSize / 2, icSize, icSize);
-    // Valeur à droite de l'icône
+      ctx.drawImage(icos[i], ix, ty - icSize/2, icSize, icSize);
+
+    // Ombre du texte
+    ctx.fillStyle = 'rgba(0,0,0,0.85)';
+    ctx.fillText(stats[i], tx2 + 1, ty + 1);
+    // Texte blanc
     ctx.fillStyle = '#fff';
-    ctx.textAlign = 'left';
-    ctx.fillText(stats[i], cx + icSize + 2, ty);
+    ctx.fillText(stats[i], tx2, ty);
   }
 
   ctx.textBaseline = 'alphabetic';
@@ -827,15 +835,15 @@ function dessineBarrePV(pv) {
 
   // Propre pseudo au-dessus de la barre de PV
   if (myName) {
-    ctx.font = 'bold 34px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
+    ctx.font = 'bold 30px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
     // Ombre décalée
     ctx.fillStyle = 'rgba(0,0,0,0.9)';
-    ctx.fillText(myName, x + 22, y - 25);
+    ctx.fillText(myName, x + 22, y - 20);
     // Texte blanc
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(myName, x + 20, y - 27);
+    ctx.fillText(myName, x + 20, y - 22);
     ctx.textBaseline = 'alphabetic';
   }
 }
