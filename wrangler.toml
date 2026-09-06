@@ -1,0 +1,6 @@
+name = "gougueule"
+main = "worker_complete.js"
+compatibility_date = "2024-09-01"
+
+[vars]
+GAME_SERVER_URL = "wss://CHANGE-ME.onrender.com"
