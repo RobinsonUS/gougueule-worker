@@ -694,10 +694,10 @@ function dessineNom(x, y, nom, alpha) {
   if (!nom || alpha < 0.01) return;
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.font = 'bold 26px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
+  ctx.font = 'bold 22px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
-  var py = y - (SIM.R_JOUEUR || 30) - 18;
+  var py = y - (SIM.R_JOUEUR || 30) - 26;
   // Ombre noire légèrement décalée
   ctx.fillStyle = 'rgba(0,0,0,0.9)';
   ctx.fillText(nom, x + 2, py + 2);
@@ -764,15 +764,15 @@ function dessineBarrePV(pv) {
 
   // Propre pseudo au-dessus de la barre de PV
   if (myName) {
-    ctx.font = 'bold 42px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
+    ctx.font = 'bold 34px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
     // Ombre décalée
     ctx.fillStyle = 'rgba(0,0,0,0.9)';
-    ctx.fillText(myName, x + 14, y - 22);
+    ctx.fillText(myName, x + 22, y - 40);
     // Texte blanc
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(myName, x + 12, y - 24);
+    ctx.fillText(myName, x + 20, y - 42);
     ctx.textBaseline = 'alphabetic';
   }
 }
