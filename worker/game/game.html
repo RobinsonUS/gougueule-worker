@@ -18,12 +18,12 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #hud div{margin:4px 0;font-size:15px;font-weight:600}
 #kf{position:fixed;top:12px;right:12px;color:#fff;z-index:10;text-align:right;font-size:13px;text-shadow:1px 1px 2px rgba(0,0,0,0.9);pointer-events:none}
 #kf div{margin:3px 0;background:rgba(0,0,0,0.4);padding:3px 8px;border-radius:4px}
-#mort{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:40;flex-direction:column;align-items:center;justify-content:center;color:#fff}
-#mort h2{font-size:48px;color:#ff4444;margin-bottom:20px}
-#mort button{background:#4285F4;border:none;border-radius:10px;color:#fff;font-size:18px;font-weight:700;padding:14px 50px;cursor:pointer}
-#fin{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:45;flex-direction:column;align-items:center;justify-content:center;color:#fff}
-#fin h2{font-size:52px;font-weight:900;margin-bottom:20px}
-#fin button{background:#34A853;border:none;border-radius:10px;color:#fff;font-size:18px;font-weight:700;padding:14px 50px;cursor:pointer;margin-top:10px}
+#mort{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.80);z-index:40;flex-direction:column;align-items:center;justify-content:center;color:#fff;border-radius:16px;padding:24px 40px;pointer-events:auto}
+#mort h2{font-size:36px;color:#ff4444;margin-bottom:14px}
+#mort button{background:#4285F4;border:none;border-radius:10px;color:#fff;font-size:16px;font-weight:700;padding:12px 40px;cursor:pointer}
+#fin{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.80);z-index:45;flex-direction:column;align-items:center;justify-content:center;color:#fff;border-radius:16px;padding:24px 40px;pointer-events:auto}
+#fin h2{font-size:40px;font-weight:900;margin-bottom:14px}
+#fin button{background:#34A853;border:none;border-radius:10px;color:#fff;font-size:16px;font-weight:700;padding:12px 40px;cursor:pointer;margin-top:8px}
 
 #att{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:20;
 color:#fff;font-size:20px;font-weight:700;background:rgba(0,0,0,0.55);padding:14px 28px;
@@ -1019,25 +1019,21 @@ function dessine(p, moi, viseur, drag) {
 
     let cible = 1.0;
     if (sien) {
-      // Dans le buisson : toujours 50% visible pour soi-même, qu'on soit révélé ou non.
-      // (Identique à ce que les ennemis voient quand révélé — cohérence visuelle)
-      cible = dansUnBuisson ? 0.5 : 1.0;
+      if (dansUnBuisson) {
+        // Dans le buisson : 50% au repos, légèrement plus visible quand on tire/dégâts
+        cible = trahi ? 0.75 : 0.5;
+      } else {
+        cible = 1.0;
+      }
     } else if (dansUnBuisson) {
-      // la transparence ne concerne que ce qui est camoufle
       cible = (trahi || buissonPartage) ? 0.5 : 0.0;
     } else {
       cible = 1.0;
     }
 
-    // Snap instantané quand on devient MOINS visible (entrée dans le buisson) :
-    // - enemies : 1.0 → 0.0 instantané (ENTIEREMENT invisible)
-    // - soi     : 1.0 → 0.5 instantané
-    // Lerp lent uniquement pour réapparaître (sortie du buisson ou révélation par dégâts)
-    if (cible < j.alphaVis) {
-      j.alphaVis = cible;
-    } else {
-      j.alphaVis += (cible - j.alphaVis) * 0.16;
-    }
+    // Fondu léger : rapide pour se cacher (0.5), lent pour réapparaître (0.16)
+    const taux = (cible < j.alphaVis) ? 0.5 : 0.16;
+    j.alphaVis += (cible - j.alphaVis) * taux;
     // un joueur repere dans un buisson doit se voir en ENTIER :
     // on le dessine alors par dessus le feuillage
     j._dessus = !sien && dansUnBuisson && (trahi || buissonPartage);
@@ -1771,8 +1767,14 @@ function connect() {
       nbVivants = arr.filter(function (a) { return a.vivant; }).length;
 
       var s = msg.agents[pid];
-      if (s && !s.vivant && etatJeu === 'jeu') etatJeu = 'mort';
-      if (msg.fini && etatJeu !== 'fin') { etatJeu = 'fin'; showFin(msg.vainqueur); }
+      if (s && !s.vivant && etatJeu === 'jeu') {
+        etatJeu = 'mort';  // pause — pas d'éjection, le joueur peut bouger
+        document.getElementById('mort').style.display = 'flex';
+      }
+      if (msg.fini && etatJeu !== 'fin') {
+        etatJeu = 'fin';   // pause — pas d'éjection
+        showFin(msg.vainqueur);
+      }
     }
   };
 
@@ -1799,19 +1801,29 @@ function connect() {
 var aEnvoyer = [];
 
 function produitCommande(dt) {
-  if (!moi || etatJeu !== 'jeu') return;
+  if (!moi || (etatJeu !== 'jeu' && etatJeu !== 'mort' && etatJeu !== 'fin')) return;
   calcInput();
 
+  // En mode pause (mort ou fin) : mouvement uniquement, pas de tir
+  var enPause = (etatJeu === 'mort' || etatJeu === 'fin' || (moi.vivant === false));
+
   var angle = moi.angle, tire = false;
-  if (isMobile) {
-    // Par défaut : face au sens du déplacement
+  if (!enPause) {
+    if (isMobile) {
+      if (mouvement.mx !== 0 || mouvement.my !== 0) {
+        angle = Math.atan2(mouvement.my, mouvement.mx);
+      }
+      if (viseStick()) { angle = Math.atan2(joyD.dy, joyD.dx); tire = true; }
+    } else {
+      if (souris.vu) angle = ecranAngle;
+      tire = shooting;
+    }
+  } else if (isMobile) {
     if (mouvement.mx !== 0 || mouvement.my !== 0) {
       angle = Math.atan2(mouvement.my, mouvement.mx);
     }
-    if (viseStick()) { angle = Math.atan2(joyD.dy, joyD.dx); tire = true; }
   } else {
     if (souris.vu) angle = ecranAngle;
-    tire = shooting;
   }
   viseeAngle = angle; viseeActive = tire;
 
@@ -1898,7 +1910,6 @@ function boucle(maintenant) {
   if (hviv) hviv.textContent = nbVivants;
   var att = document.getElementById('att');
   if (att) att.style.display = (snapDernier && snapDernier.attente) ? 'block' : 'none';
-  if (etatJeu === 'mort') document.getElementById('mort').style.display = 'flex';
 }
 
 window.addEventListener('load', function () {
