@@ -10,6 +10,6 @@
 
   "vars": {
     // URL WebSocket de ton serveur Render. A remplacer.
-    "GAME_SERVER_URL": "wss://TON-SERVEUR.onrender.com"
+    "GAME_SERVER_URL": "wss://gougueule-server.onrender.com"
   }
 }
