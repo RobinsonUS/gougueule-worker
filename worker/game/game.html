@@ -1029,11 +1029,15 @@ function dessine(p, moi, viseur, drag) {
       cible = 1.0;
     }
 
-    // Lerp rapide vers le bas (cacher), plus lent vers le haut (révéler)
-    // Évite le "visible à 90%" pendant 1s quand on entre dans un buisson en prenant des dégâts
-    const taux = (cible < j.alphaVis) ? 0.35 : 0.16;
-    j.alphaVis += (cible - j.alphaVis) * taux;
-
+    // Snap instantané quand on devient MOINS visible (entrée dans le buisson) :
+    // - enemies : 1.0 → 0.0 instantané (ENTIEREMENT invisible)
+    // - soi     : 1.0 → 0.5 instantané
+    // Lerp lent uniquement pour réapparaître (sortie du buisson ou révélation par dégâts)
+    if (cible < j.alphaVis) {
+      j.alphaVis = cible;
+    } else {
+      j.alphaVis += (cible - j.alphaVis) * 0.16;
+    }
     // un joueur repere dans un buisson doit se voir en ENTIER :
     // on le dessine alors par dessus le feuillage
     j._dessus = !sien && dansUnBuisson && (trahi || buissonPartage);
@@ -1513,6 +1517,23 @@ function appliqueLoc(a, cmd) {
   var n = Math.hypot(mx, my);
   if (n > 1) { mx /= n; my /= n; }
   deplaceLoc(a, mx * SIM.VITESSE * dt, my * SIM.VITESSE * dt);
+
+  // Séparation joueur-joueur : comme separeJoueurs() côté serveur
+  if (snapDernier) {
+    var R2 = SIM.R_JOUEUR * 2;
+    for (var otherId in snapDernier.agents) {
+      if (otherId === pid) continue;
+      var b = snapDernier.agents[otherId];
+      if (!b || !b.vivant) continue;
+      var nx = a.x - b.x, ny = a.y - b.y;
+      var d = Math.hypot(nx, ny);
+      if (d < R2 && d > 1e-6) {
+        var push = (R2 - d);
+        a.x += nx / d * push; a.y += ny / d * push;
+        borneLoc(a);
+      }
+    }
+  }
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
   if (cmd.recharger && a.rechargement <= 0 && a.munitions < SIM.CHARGEUR) {
