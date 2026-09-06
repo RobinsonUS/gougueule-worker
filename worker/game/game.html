@@ -694,16 +694,29 @@ function dessineMinimap() {
 
   ctx.save();
 
-  // Fond vert foncé à 30%
+  // Fond vert foncé à 30%, coins légèrement arrondis
+  var r = 6; // rayon d'arrondi
+  ctx.beginPath();
+  ctx.moveTo(mX + r, mY);
+  ctx.lineTo(mX + mW - r, mY);
+  ctx.arcTo(mX + mW, mY, mX + mW, mY + r, r);
+  ctx.lineTo(mX + mW, mY + mH - r);
+  ctx.arcTo(mX + mW, mY + mH, mX + mW - r, mY + mH, r);
+  ctx.lineTo(mX + r, mY + mH);
+  ctx.arcTo(mX, mY + mH, mX, mY + mH - r, r);
+  ctx.lineTo(mX, mY + r);
+  ctx.arcTo(mX, mY, mX + r, mY, r);
+  ctx.closePath();
+
   ctx.globalAlpha = 0.3;
   ctx.fillStyle = '#47594a';
-  ctx.fillRect(mX, mY, mW, mH);
+  ctx.fill();
   ctx.globalAlpha = 1;
 
-  // Contour légèrement plus vert et plus foncé
-  ctx.strokeStyle = '#2e3d2f';
+  // Contour vert, semi-transparent
+  ctx.strokeStyle = 'rgba(90, 160, 90, 0.55)';
   ctx.lineWidth = 2;
-  ctx.strokeRect(mX, mY, mW, mH);
+  ctx.stroke();
 
   // Point joueur blanc au centre
   ctx.beginPath();
