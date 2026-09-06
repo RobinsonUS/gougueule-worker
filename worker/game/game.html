@@ -694,20 +694,16 @@ function dessineMinimap() {
 
   ctx.save();
 
-  // Fond vert foncé à 50%
+  // Fond vert foncé à 30%
   ctx.globalAlpha = 0.3;
   ctx.fillStyle = '#47594a';
   ctx.fillRect(mX, mY, mW, mH);
-
-  // Lignes de grille (4×4)
-  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-  ctx.lineWidth = 1;
-  var step = mW / 4;
-  for (var g = 1; g < 4; g++) {
-    ctx.beginPath(); ctx.moveTo(mX + g*step, mY); ctx.lineTo(mX + g*step, mY + mH); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(mX, mY + g*step); ctx.lineTo(mX + mW, mY + g*step); ctx.stroke();
-  }
   ctx.globalAlpha = 1;
+
+  // Contour légèrement plus vert et plus foncé
+  ctx.strokeStyle = '#2e3d2f';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(mX, mY, mW, mH);
 
   // Point joueur blanc au centre
   ctx.beginPath();
