@@ -1,0 +1,14 @@
+{
+  "name": "gougueule-server",
+  "version": "1.0.0",
+  "main": "server_game.js",
+  "scripts": {
+    "start": "node server_game.js"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  },
+  "engines": {
+    "node": "18"
+  }
+}
