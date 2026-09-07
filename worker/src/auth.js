@@ -25,6 +25,10 @@ async function importHmacKey(secret) {
   );
 }
 
+export function generateSessionToken() {
+  return b64url(crypto.getRandomValues(new Uint8Array(24)));
+}
+
 export async function signJWT(payload, secret) {
   const header  = b64url(new TextEncoder().encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
   const body    = b64url(new TextEncoder().encode(JSON.stringify({
