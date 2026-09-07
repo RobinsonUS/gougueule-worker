@@ -4,8 +4,27 @@
 // ═══════════════════════════════════════════════════════════════════
 const WebSocket = require('ws');
 const http = require('http');
+const { createHmac, timingSafeEqual } = require('crypto');
 
-// ─────────────── Constantes (identiques au client) ───────────────
+// ─────────────── JWT (sans dépendance externe) ─────────────────────
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) console.warn('[WARN] JWT_SECRET non défini — aucun joueur ne pourra se connecter !');
+
+function verifyJWT(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const data = `${parts[0]}.${parts[1]}`;
+    const sig  = Buffer.from(parts[2].replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    const expected = createHmac('sha256', JWT_SECRET).update(data).digest();
+    if (sig.length !== expected.length || !timingSafeEqual(sig, expected)) return null;
+    const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+    if (payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch { return null; }
+}
+
+// ─────────────── Constantes (identiques au client) ─────────────────
 const MONDE = 3200, CELL = 50;
 const R_JOUEUR = CELL * 0.60, VITESSE = 320, PV_MAX = 100;
 const CANON_L = R_JOUEUR * 3.05, CADENCE = 0.12, V_BALLE = 1500;
@@ -16,12 +35,12 @@ const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
 
-const DT = 1 / 60;                 // pas de simulation fixe
-const TICK_MS = 1000 / 60;         // 60 simulations/s
-const SNAP_TOUS_LES = 2;           // snapshot 1 tick sur 2 => 30/s
-const DT_MAX_INPUT = 0.05;         // un input ne peut pas valoir plus de 50 ms
+const DT = 1 / 60;
+const TICK_MS = 1000 / 60;
+const SNAP_TOUS_LES = 2;
+const DT_MAX_INPUT = 0.05;
 
-// ─────────────── RNG deterministe ───────────────
+// ─────────────── RNG deterministe ─────────────────────────────────
 function creeRng(graine) {
   let a = graine | 0;
   return function () {
@@ -32,7 +51,7 @@ function creeRng(graine) {
   };
 }
 
-// ─────────────── Decor ───────────────
+// ─────────────── Decor ────────────────────────────────────────────
 function genereDecor(rng) {
   const obs = [];
   const marge = 160, libre = MONDE - 2 * marge;
@@ -105,7 +124,7 @@ function ajouteJoueur(partie, pid, name) {
   };
 }
 
-// ─────────────── Deplacement (DOIT rester identique cote client) ───────────────
+// ─────────────── Deplacement ───────────────────────────────────────
 function borne(a) {
   a.x = Math.min(MONDE - R_JOUEUR, Math.max(R_JOUEUR, a.x));
   a.y = Math.min(MONDE - R_JOUEUR, Math.max(R_JOUEUR, a.y));
@@ -147,8 +166,8 @@ function separeJoueurs(arr) {
   }
 }
 
-// ─────────────── Une commande d'un joueur ───────────────
-function appliqueCommande(p, a, cmd) {
+// ─────────────── Commande d'un joueur ─────────────────────────────
+function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   let dt = Math.min(DT_MAX_INPUT, Math.max(0, cmd.dt || DT));
   let mx = cmd.mx || 0, my = cmd.my || 0;
   const n = Math.hypot(mx, my);
@@ -156,6 +175,8 @@ function appliqueCommande(p, a, cmd) {
 
   deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.obs);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
+
+  if (mouvSeulement) { a.lastSeq = cmd.seq; return; }
 
   if (cmd.recharger && a.rechargement <= 0 && a.munitions < CHARGEUR) {
     a.rechargement = RECHARGE_DUREE; a.dureeRechargeMax = RECHARGE_DUREE;
@@ -166,33 +187,47 @@ function appliqueCommande(p, a, cmd) {
     a.recharge = CADENCE; a.tirTimer = 0.35; a.revele = 0.35; a.recul = 0.08;
     a.munitions--;
     const at = a.angle + (p.rng() - 0.5) * DISPERSION;
-    p.balles.push({
-      id: ++p.balleId,
-      x: a.x + Math.cos(a.angle) * CANON_L, y: a.y + Math.sin(a.angle) * CANON_L,
-      vx: Math.cos(at) * V_BALLE, vy: Math.sin(at) * V_BALLE,
-      ang: at, reste: PORTEE, par: a.id,
-    });
+    const bx = a.x + Math.cos(a.angle) * CANON_L;
+    const by = a.y + Math.sin(a.angle) * CANON_L;
+    const liveArr = Object.values(p.agents);
+    let spawnHit = false;
+    for (const c of liveArr) {
+      if (!c.vivant || c.id === a.id) continue;
+      if (Math.hypot(c.x - bx, c.y - by) < R_JOUEUR + R_BALLE) {
+        const dg = p.rng() < 0.5 ? 10 : 11;
+        c.pv -= dg; c.secousse = 0.16; c.touche = 0.30; c.revele = 0.35;
+        if (c.pv <= 0) { c.pv = 0; c.vivant = false; p.kills.push({ killer: a.name, victim: c.name }); }
+        spawnHit = true; break;
+      }
+    }
+    if (!spawnHit) {
+      p.balles.push({
+        id: ++p.balleId, x: bx, y: by,
+        vx: Math.cos(at) * V_BALLE, vy: Math.sin(at) * V_BALLE,
+        ang: at, reste: PORTEE, par: a.id,
+      });
+    }
     p.evts.push({ e: 'tir', id: a.id, x: a.x, y: a.y, ang: a.angle });
     if (a.munitions <= 0) { a.rechargement = RECHARGE_DUREE; a.dureeRechargeMax = RECHARGE_DUREE; }
   }
   a.lastSeq = cmd.seq;
 }
 
-// ─────────────── Un tick de simulation ───────────────
+// ─────────────── Un tick de simulation ────────────────────────────
 function pas(p) {
-  if (p.fini) return;
   p.tick++;
 
   const arr = Object.values(p.agents);
-  // la partie ne demarre vraiment qu'a partir de 2 joueurs :
-  // un joueur seul peut se deplacer, mais la zone ne le ronge pas
-  if (!p.demarree && arr.length >= 2) p.demarree = true;
-  if (p.demarree) p.t += DT;
+  if (!p.fini) {
+    if (!p.demarree && arr.length >= 2) p.demarree = true;
+    if (p.demarree) p.t += DT;
+  }
 
   const t = p.t - ZONE_ATTENTE;
   p.zone.r = (!p.demarree || t <= 0)
     ? ZONE_R0
     : ZONE_R0 + (ZONE_R1 - ZONE_R0) * Math.min(1, t / ZONE_DUREE);
+
   for (const o of p.obs) if (o.secousse > 0) o.secousse = Math.max(0, o.secousse - DT);
   for (const a of arr) {
     if (a.secousse > 0) a.secousse = Math.max(0, a.secousse - DT);
@@ -206,23 +241,24 @@ function pas(p) {
     }
   }
 
-  // toutes les commandes en attente sont consommees ce tick : zero retard
   for (const a of arr) {
     if (!a.vivant) { a.file.length = 0; continue; }
+    const mouvSeulement = p.fini;
     if (a.file.length === 0) {
-      appliqueCommande(p, a, { seq: a.lastSeq, mx: 0, my: 0, angle: a.angle, dt: DT });
+      appliqueCommande(p, a, { seq: a.lastSeq, mx: 0, my: 0, angle: a.angle, dt: DT }, mouvSeulement);
     } else {
       let budget = 0;
       while (a.file.length && budget < 0.10) {
         const cmd = a.file.shift();
         budget += Math.min(DT_MAX_INPUT, cmd.dt || DT);
-        appliqueCommande(p, a, cmd);
+        appliqueCommande(p, a, cmd, mouvSeulement);
       }
     }
   }
   separeJoueurs(arr);
 
-  // zone (aucun degat tant que la partie n'a pas demarre)
+  if (p.fini) return;
+
   for (const a of arr) {
     if (!a.vivant || !p.demarree) continue;
     if (Math.hypot(a.x - p.zone.x, a.y - p.zone.y) > p.zone.r) {
@@ -233,7 +269,6 @@ function pas(p) {
     }
   }
 
-  // balles
   for (let k = p.balles.length - 1; k >= 0; k--) {
     const b = p.balles[k];
     const dx = b.vx * DT, dy = b.vy * DT;
@@ -267,7 +302,6 @@ function pas(p) {
 
   const vivants = arr.filter(a => a.vivant);
   if (p.demarree && arr.length > 0) {
-    // couvre aussi la deconnexion : s'il ne reste qu'un joueur, il gagne
     if (p.nbMax > 1 && vivants.length <= 1) {
       p.fini = true; p.vainqueur = vivants.length ? vivants[0].id : null;
     } else if (vivants.length === 0) {
@@ -276,7 +310,7 @@ function pas(p) {
   }
 }
 
-// ─────────────── Serveur ───────────────
+// ─────────────── Serveur WebSocket ────────────────────────────────
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => { res.writeHead(200); res.end('OK'); });
 const wss = new WebSocket.Server({ server });
@@ -284,20 +318,31 @@ const rooms = {};
 
 wss.on('connection', (ws) => {
   let pid = null, gid = null;
+
   ws.on('message', (raw) => {
     let msg; try { msg = JSON.parse(raw); } catch { return; }
 
+    // ── join : vérification JWT obligatoire ───────────────────────
     if (msg.type === 'join') {
-      pid = uid(); gid = msg.gameId || uid();
+      if (!JWT_SECRET) { ws.close(4003, 'Serveur non configuré'); return; }
+
+      const payload = verifyJWT(msg.token || '');
+      if (!payload) { ws.close(4001, 'Token invalide ou expiré'); return; }
+
+      // Le nom vient du JWT, pas du client (impossible à falsifier)
+      const playerName = (payload.name || 'Joueur').slice(0, 16);
+
+      pid = uid();
+      gid = (msg.gameId || '').trim().toUpperCase().slice(0, 10) || uid();
       if (!rooms[gid]) rooms[gid] = { partie: creePartie(), players: {} };
       const room = rooms[gid];
-      ajouteJoueur(room.partie, pid, (msg.name || 'Joueur').slice(0, 16));
+      ajouteJoueur(room.partie, pid, playerName);
       room.players[pid] = { ws };
       const a = room.partie.agents[pid];
       ws.send(JSON.stringify({
         type: 'init', playerId: pid, gameId: gid, map: MONDE,
         spawn: { x: a.x, y: a.y }, st: Date.now(),
-        cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT },
+        cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT, ZONE_ATTENTE, ZONE_DUREE, ZONE_R0, ZONE_R1, MONDE },
         decor: room.partie.obs.map(o => ({
           x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv,
           lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches,
@@ -306,7 +351,6 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    // paquet d'entrees : on empile, le tick les consommera toutes
     if (msg.type === 'in' && pid && rooms[gid]) {
       const a = rooms[gid].partie.agents[pid];
       if (!a) return;
@@ -319,7 +363,6 @@ wss.on('connection', (ws) => {
     }
 
     if (msg.type === 'ping' && ws.readyState === WebSocket.OPEN) {
-      // le client nous communique son aller-retour mesure
       if (pid && rooms[gid] && typeof msg.rtt === 'number') {
         const a = rooms[gid].partie.agents[pid];
         if (a) a.rtt = Math.min(600, Math.max(0, msg.rtt));
@@ -331,21 +374,33 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     if (pid && rooms[gid]) {
       const r = rooms[gid];
-      delete r.partie.agents[pid];
+      const a = r.partie.agents[pid];
+      if (a && a.vivant) {
+        a.vivant = false; a.pv = 0;
+        r.partie.kills.push({ killer: 'Déconnexion', victim: a.name });
+      }
       delete r.players[pid];
       if (!Object.keys(r.players).length) delete rooms[gid];
     }
   });
 });
 
-// ─────────────── Boucle a pas fixe, sans derive ───────────────
+// ─────────────── Boucle à pas fixe ────────────────────────────────
 let prochain = Date.now();
 function boucleServeur() {
   const maintenant = Date.now();
   let tours = 0;
   while (prochain <= maintenant && tours < 5) {
-    for (const room of Object.values(rooms)) {
+    for (const [gid, room] of Object.entries(rooms)) {
       const p = room.partie;
+      for (const [id, pl] of Object.entries(room.players)) {
+        if (pl.ws.readyState !== WebSocket.OPEN) {
+          const a = p.agents[id];
+          if (a && a.vivant) { a.vivant = false; a.pv = 0; p.kills.push({ killer: 'Déconnexion', victim: a.name }); }
+          delete room.players[id];
+        }
+      }
+      if (!Object.keys(room.players).length) { delete rooms[gid]; continue; }
       pas(p);
       if (p.tick % SNAP_TOUS_LES === 0) envoieSnapshot(room);
     }
@@ -355,8 +410,6 @@ function boucleServeur() {
   setTimeout(boucleServeur, Math.max(1, prochain - Date.now()));
 }
 
-// Retard d'interpolation commun : dicte par le joueur le plus lent,
-// pour que TOUS les ecrans affichent le meme instant serveur.
 function retardCommun(p) {
   let pire = 0;
   for (const a of Object.values(p.agents)) pire = Math.max(pire, (a.rtt || 120) / 2);
@@ -372,7 +425,6 @@ function envoieSnapshot(room) {
       o._lt = o.type;
     }
   });
-
   const base = {
     type: 'snap', tick: p.tick, t: p.t, st: Date.now(), attente: !p.demarree,
     retard: retardCommun(p),
@@ -380,7 +432,6 @@ function envoieSnapshot(room) {
     balles: p.balles.map(b => ({ id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par })),
     kills: p.kills, evts: p.evts, decorMaj,
   };
-
   const agents = {};
   for (const [id, a] of Object.entries(p.agents)) {
     agents[id] = {
@@ -391,7 +442,6 @@ function envoieSnapshot(room) {
     };
   }
   base.agents = agents;
-
   for (const [id, pl] of Object.entries(room.players)) {
     if (pl.ws.readyState !== WebSocket.OPEN) continue;
     const a = p.agents[id];
