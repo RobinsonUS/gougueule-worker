@@ -8,6 +8,19 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif}
 canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
+#auth{position:fixed;inset:0;background:linear-gradient(135deg,#1a2a1a,#0d1a0d);z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff}
+#auth h1{font-size:30px;font-weight:900;margin-bottom:22px;color:#4ade80;letter-spacing:1px}
+#auth .tabs{display:flex;margin-bottom:18px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.18)}
+#auth .tab{padding:9px 26px;cursor:pointer;font-size:14px;font-weight:600;background:rgba(255,255,255,0.05);transition:background .2s}
+#auth .tab.active{background:rgba(255,255,255,0.16)}
+#auth input{background:rgba(255,255,255,0.09);border:1px solid rgba(255,255,255,0.2);border-radius:10px;color:#fff;font-size:16px;padding:11px 18px;width:260px;text-align:center;margin:5px 0;outline:none}
+#auth input:focus{border-color:rgba(74,222,128,.6)}
+#auth input::placeholder{color:rgba(255,255,255,.38)}
+#auth button.main{background:#34A853;border:none;border-radius:10px;color:#fff;font-size:16px;font-weight:700;padding:13px 50px;cursor:pointer;margin-top:12px;transition:opacity .15s}
+#auth button.main:disabled{opacity:.5;cursor:default}
+#auth .errmsg{color:#f87171;font-size:13px;min-height:18px;margin-top:7px;text-align:center}
+#auth .deco{font-size:12px;color:rgba(255,255,255,.36);margin-top:18px;cursor:pointer;text-decoration:underline}
+#auth .deco:hover{color:rgba(255,255,255,.7)}
 #lobby{position:fixed;inset:0;background:linear-gradient(135deg,#1a2a1a,#0d1a0d);z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff}
 #lobby h1{font-size:clamp(28px,7vw,56px);font-weight:900;color:#8cc152;text-shadow:0 0 30px rgba(140,193,82,0.4);margin-bottom:28px}
 #lobby input{background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:10px;color:#fff;font-size:16px;padding:12px 20px;width:260px;text-align:center;margin:6px 0;outline:none}
@@ -30,11 +43,26 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 </style>
 </head>
 <body>
-<div id="lobby">
+<div id="auth">
+  <h1>Gougueule</h1>
+  <div class="tabs">
+    <div class="tab active" onclick="authTab('login')">Se connecter</div>
+    <div class="tab" onclick="authTab('register')">Créer un compte</div>
+  </div>
+  <input id="auth-user" type="text" placeholder="Pseudo" maxlength="16" autocomplete="username">
+  <input id="auth-pass" type="password" placeholder="Mot de passe" maxlength="64" autocomplete="new-password">
+  <input id="auth-pass2" type="password" placeholder="Répéter le mot de passe" maxlength="64" style="display:none" autocomplete="new-password">
+  <input id="auth-key" type="text" placeholder="Clé admin (PYLAB-XXXX-XXXX-XXXX)" maxlength="20" style="display:none;text-transform:uppercase" autocomplete="off">
+  <div class="errmsg" id="auth-err"></div>
+  <button class="main" id="auth-btn" onclick="authSubmit()">Jouer</button>
+  <span class="deco" onclick="deconnexion()">Changer de compte</span>
+</div>
+<div id="lobby" style="display:none">
   <h1>Battle Royale</h1>
-  <input id="name-in" type="text" placeholder="Ton pseudo" maxlength="16" autocomplete="off">
+  <input id="name-in" type="text" placeholder="Ton pseudo" maxlength="16" autocomplete="off" disabled style="opacity:.6;cursor:default">
   <input id="room-in" type="text" placeholder="Code room (obligatoire)" maxlength="10" autocomplete="off" style="text-transform:uppercase">
   <button onclick="startGame()">Jouer</button>
+  <span class="deco" onclick="deconnexion()" style="font-size:12px;color:rgba(255,255,255,.36);margin-top:16px;cursor:pointer;text-decoration:underline">Déconnexion</span>
 </div>
 <!-- hud supprimé -->
 <div id="mort"><h2>ELIMINE</h2><button onclick="rejouer()">Rejouer</button></div>
@@ -1562,7 +1590,7 @@ window.addEventListener('mouseup',   function(){ if(!isMobile) { shooting = fals
 //  Reseau : prediction locale + reconciliation serveur
 // ═══════════════════════════════════════════════════════════════════
 var ws = null, pid = null, gid = null;
-var myName = 'Joueur', myRoom = '';
+var myName = '', myRoom = '', myToken = null;
 var etatJeu = 'lobby';
 var nbVivants = 0;
 var myKills = 0;
@@ -1829,7 +1857,7 @@ function planifiePing() {
 function connect() {
   ws = new WebSocket(SERVER);
   ws.onopen = function () {
-    ws.send(JSON.stringify({ type: 'join', gameId: myRoom, name: myName }));
+    ws.send(JSON.stringify({ type: 'join', gameId: myRoom, name: myName, token: myToken }));
     planifiePing();
   };
 
@@ -1907,7 +1935,16 @@ function connect() {
   ws.onerror = function () {
     if (etatJeu === 'connecting') setLobbyMsg('Erreur de connexion', 'Le serveur ne repond pas');
   };
-  ws.onclose = function () {
+  ws.onclose = function (e) {
+    // Token invalide ou expiré : retour à l'écran de connexion
+    if (e.code === 4001 || e.code === 4002) {
+      localStorage.removeItem('gougueule_token');
+      localStorage.removeItem('gougueule_user');
+      myToken = null;
+      ws = null; etatJeu = 'lobby';
+      deconnexion();
+      return;
+    }
     if (etatJeu === 'connecting') {
       setLobbyMsg('Impossible de se connecter', 'Verifie GAME_SERVER_URL du Worker');
     } else if (etatJeu === 'jeu' || etatJeu === 'mort') {
@@ -1986,20 +2023,95 @@ function showFin(vainqueur) {
   document.getElementById('fin').style.display = 'flex';
 }
 
+// ══════════════════ AUTH ══════════════════════════════════════════
+var _authTab = 'login';
+
+function authTab(tab) {
+  _authTab = tab;
+  document.querySelectorAll('#auth .tab').forEach(function(el, i) {
+    el.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && tab === 'register'));
+  });
+  document.getElementById('auth-key').style.display   = tab === 'register' ? 'block' : 'none';
+  document.getElementById('auth-pass2').style.display = tab === 'register' ? 'block' : 'none';
+  document.getElementById('auth-err').textContent = '';
+}
+
+function jwtPayload(token) {
+  try { return JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }
+  catch { return null; }
+}
+
+function checkStoredAuth() {
+  var token = localStorage.getItem('gougueule_token');
+  var name  = localStorage.getItem('gougueule_user');
+  if (!token || !name) return false;
+  var p = jwtPayload(token);
+  if (!p || p.exp < Math.floor(Date.now() / 1000)) {
+    localStorage.removeItem('gougueule_token');
+    localStorage.removeItem('gougueule_user');
+    return false;
+  }
+  myToken = token; myName = name;
+  return true;
+}
+
+async function authSubmit() {
+  var user = document.getElementById('auth-user').value.trim();
+  var pass = document.getElementById('auth-pass').value;
+  var key  = document.getElementById('auth-key').value.trim().toUpperCase();
+  var errEl = document.getElementById('auth-err');
+  errEl.textContent = '';
+  if (!user || !pass) { errEl.textContent = 'Remplis tous les champs.'; return; }
+  var pass2 = document.getElementById('auth-pass2').value;
+  if (_authTab === 'register' && !key) { errEl.textContent = 'Clé admin requise.'; return; }
+  if (_authTab === 'register' && pass !== pass2) { errEl.textContent = 'Les mots de passe ne correspondent pas.'; return; }
+  var btn = document.getElementById('auth-btn');
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    var endpoint = _authTab === 'login' ? '/auth/login' : '/auth/register';
+    var body = _authTab === 'login'
+      ? { username: user, password: pass }
+      : { username: user, password: pass, adminKey: key };
+    var res  = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    var data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Erreur.'; return; }
+    myToken = data.token; myName = data.username;
+    localStorage.setItem('gougueule_token', data.token);
+    localStorage.setItem('gougueule_user', data.username);
+    showLobby();
+  } catch { errEl.textContent = 'Erreur réseau.'; }
+  finally { btn.disabled = false; btn.textContent = 'Jouer'; }
+}
+
+function showLobby() {
+  document.getElementById('auth').style.display  = 'none';
+  document.getElementById('lobby').style.display = 'flex';
+  var ni = document.getElementById('name-in');
+  if (ni) ni.value = myName;
+}
+
+function deconnexion() {
+  localStorage.removeItem('gougueule_token');
+  localStorage.removeItem('gougueule_user');
+  myToken = null; myName = '';
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('auth').style.display  = 'flex';
+}
+
+// Démarrage : vérifier si un token valide est stocké
+(function boot() {
+  if (checkStoredAuth()) showLobby();
+  // sinon #auth est déjà visible (style par défaut)
+})();
+// ═══════════════════════════════════════════════════════════════════
+
 function startGame() {
-  var nameEl = document.getElementById('name-in');
+  if (!myToken || !myName) { deconnexion(); return; }
   var roomEl = document.getElementById('room-in');
-  if (!nameEl || !roomEl) return;
-  var nom = nameEl.value.trim();
+  if (!roomEl) return;
   var room = roomEl.value.trim().toUpperCase();
-  // Les deux champs sont obligatoires
-  var ok = true;
-  if (!nom) { nameEl.style.outline = '2px solid #f44'; nameEl.focus(); ok = false; }
-  else nameEl.style.outline = '';
-  if (!room) { roomEl.style.outline = '2px solid #f44'; if (ok) roomEl.focus(); ok = false; }
-  else roomEl.style.outline = '';
-  if (!ok) return;
-  myName = nom.slice(0, 16);
+  if (!room) { roomEl.style.outline = '2px solid #f44'; roomEl.focus(); return; }
+  roomEl.style.outline = '';
   myRoom = room.slice(0, 10);
   etatJeu = 'connecting';
   setLobbyMsg('Connexion...', 'Room : ' + myRoom);
