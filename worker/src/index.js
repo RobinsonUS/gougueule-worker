@@ -4,8 +4,8 @@ import { rw, rewriteImports, isJs, mkInterceptor, proxyWS,
 import { uiNavigateur } from './navigateur.js';
 import gameHtml from '../game/game.html';
 import {
-  signJWT, hashPassword, hashAdminKey,
-  randomSalt, jsonOk, jsonErr
+  signJWT, verifyJWT, hashPassword, hashAdminKey,
+  randomSalt, generateSessionToken, jsonOk, jsonErr
 } from './auth.js';
 
 function uiGame(serverUrl) {
@@ -63,7 +63,10 @@ async function handleRegister(request, env) {
     'UPDATE admin_keys SET used = 1, account_id = ? WHERE id = ?'
   ).bind(accountId, keyRow.id).run();
 
-  const token = await signJWT({ sub: accountId, name: username }, env.JWT_SECRET);
+  const sessionToken = generateSessionToken();
+  await env.DB.prepare('UPDATE accounts SET session_token = ? WHERE id = ?')
+    .bind(sessionToken, accountId).run();
+  const token = await signJWT({ sub: accountId, name: username, st: sessionToken }, env.JWT_SECRET);
   return jsonOk({ token, username }, 201);
 }
 
@@ -86,7 +89,10 @@ async function handleLogin(request, env) {
   const hash = await hashPassword(password, account.salt);
   if (hash !== account.password_h) return jsonErr('Identifiants incorrects', 401);
 
-  const token = await signJWT({ sub: account.id, name: username }, env.JWT_SECRET);
+  const sessionToken = generateSessionToken();
+  await env.DB.prepare('UPDATE accounts SET session_token = ? WHERE id = ?')
+    .bind(sessionToken, account.id).run();
+  const token = await signJWT({ sub: account.id, name: username, st: sessionToken }, env.JWT_SECRET);
   return jsonOk({ token, username });
 }
 
@@ -106,6 +112,24 @@ export default {
 
     if (url.pathname === '/auth/login' && request.method === 'POST')
       return handleLogin(request, env);
+
+    // ── Validation de session (appelée par le serveur de jeu) ──
+    if (url.pathname === '/auth/validate' && request.method === 'POST') {
+      if (!env.JWT_SECRET) return jsonErr('JWT_SECRET manquant', 500);
+      let body2;
+      try { body2 = await request.json(); } catch { return jsonErr('JSON invalide'); }
+      const { token: tok } = body2;
+      if (!tok) return jsonErr('Token manquant', 400);
+      // 1. Vérifier la signature
+      const payload = await verifyJWT(tok, env.JWT_SECRET);
+      if (!payload) return jsonErr('Token invalide ou expiré', 401);
+      // 2. Vérifier que le session_token est le bon en base
+      const row = await env.DB.prepare('SELECT session_token FROM accounts WHERE id = ?')
+        .bind(payload.sub).first();
+      if (!row || row.session_token !== payload.st)
+        return jsonErr('Session expirée (connexion depuis un autre appareil)', 401);
+      return jsonOk({ valid: true, name: payload.name });
+    }
 
     // ── Jeu ──
     if (url.pathname === '/game') {
