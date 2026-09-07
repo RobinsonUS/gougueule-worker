@@ -14,6 +14,7 @@ function uiGame(serverUrl) {
 
 // ── /auth/register ─────────────────────────────────────────────────
 async function handleRegister(request, env) {
+  if (!env.JWT_SECRET) return jsonErr('Serveur mal configuré (JWT_SECRET manquant)', 500);
   let body;
   try { body = await request.json(); } catch { return jsonErr('JSON invalide'); }
 
@@ -46,9 +47,14 @@ async function handleRegister(request, env) {
   const passwordH = await hashPassword(password, salt);
   const now = Math.floor(Date.now() / 1000);
 
-  const result = await env.DB.prepare(
-    'INSERT INTO accounts (username, salt, password_h, created_at) VALUES (?, ?, ?, ?)'
-  ).bind(username, salt, passwordH, now).run();
+  let result;
+  try {
+    result = await env.DB.prepare(
+      'INSERT INTO accounts (username, salt, password_h, created_at) VALUES (?, ?, ?, ?)'
+    ).bind(username, salt, passwordH, now).run();
+  } catch {
+    return jsonErr('Ce pseudo est déjà pris');
+  }
 
   const accountId = result.meta.last_row_id;
 
@@ -63,6 +69,7 @@ async function handleRegister(request, env) {
 
 // ── /auth/login ────────────────────────────────────────────────────
 async function handleLogin(request, env) {
+  if (!env.JWT_SECRET) return jsonErr('Serveur mal configuré (JWT_SECRET manquant)', 500);
   let body;
   try { body = await request.json(); } catch { return jsonErr('JSON invalide'); }
 
