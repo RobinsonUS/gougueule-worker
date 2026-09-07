@@ -320,72 +320,82 @@ wss.on('connection', (ws) => {
   let pid = null, gid = null;
 
   ws.on('message', async (raw) => {
-    let msg; try { msg = JSON.parse(raw); } catch { return; }
+    // Tout le handler est dans un try-catch global : une erreur ne crash plus le serveur
+    try {
+      let msg; try { msg = JSON.parse(raw); } catch { return; }
 
-    // ── join : vérification JWT obligatoire ───────────────────────
-    if (msg.type === 'join') {
-      const WORKER_URL = process.env.WORKER_URL;
-      if (!WORKER_URL) { ws.close(4003, 'WORKER_URL non configuré'); return; }
+      // ── join : vérification JWT obligatoire ───────────────────────
+      if (msg.type === 'join') {
+        const WORKER_URL = process.env.WORKER_URL;
+        if (!WORKER_URL) { ws.close(4003, 'WORKER_URL non configuré'); return; }
 
-      // Vérification locale (signature + expiry) — rapide, sans réseau
-      const payload = verifyJWT(msg.token || '');
-      if (!payload) { ws.close(4001, 'Token invalide ou expiré'); return; }
+        // Vérification locale (signature + expiry) — rapide, sans réseau
+        const payload = verifyJWT(msg.token || '');
+        if (!payload) { ws.close(4001, 'Token invalide ou expiré'); return; }
 
-      // Vérification de session via le Worker — garantit l'unicité de session
-      let valid = false;
-      try {
-        const res = await fetch(WORKER_URL + '/auth/validate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: msg.token }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          valid = data.valid === true;
+        // Vérification de session via le Worker — garantit l'unicité de session
+        let valid = false;
+        try {
+          const res = await fetch(WORKER_URL + '/auth/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: msg.token }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            valid = data.valid === true;
+          }
+        } catch { valid = false; }
+
+        if (!valid) { ws.close(4001, 'Session expirée ou révoquée'); return; }
+
+        // Le nom vient du JWT/Worker, pas du client (impossible à falsifier)
+        const playerName = (payload.name || 'Joueur').slice(0, 16);
+
+        pid = uid();
+        gid = (msg.gameId || '').trim().toUpperCase().slice(0, 10) || uid();
+        if (!rooms[gid]) rooms[gid] = { partie: creePartie(), players: {} };
+        const room = rooms[gid];
+        ajouteJoueur(room.partie, pid, playerName);
+        room.players[pid] = { ws };
+        const a = room.partie.agents[pid];
+        // Vérifier que le WS est encore ouvert après les awaits avant d'envoyer
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'init', playerId: pid, gameId: gid, map: MONDE,
+            spawn: { x: a.x, y: a.y }, st: Date.now(),
+            cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT, ZONE_ATTENTE, ZONE_DUREE, ZONE_R0, ZONE_R1, MONDE },
+            decor: room.partie.obs.map(o => ({
+              x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv,
+              lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches,
+            })),
+          }));
         }
-      } catch { valid = false; }
-
-      if (!valid) { ws.close(4001, 'Session expirée ou révoquée'); return; }
-
-      // Le nom vient du JWT/Worker, pas du client (impossible à falsifier)
-      const playerName = (payload.name || 'Joueur').slice(0, 16);
-
-      pid = uid();
-      gid = (msg.gameId || '').trim().toUpperCase().slice(0, 10) || uid();
-      if (!rooms[gid]) rooms[gid] = { partie: creePartie(), players: {} };
-      const room = rooms[gid];
-      ajouteJoueur(room.partie, pid, playerName);
-      room.players[pid] = { ws };
-      const a = room.partie.agents[pid];
-      ws.send(JSON.stringify({
-        type: 'init', playerId: pid, gameId: gid, map: MONDE,
-        spawn: { x: a.x, y: a.y }, st: Date.now(),
-        cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT, ZONE_ATTENTE, ZONE_DUREE, ZONE_R0, ZONE_R1, MONDE },
-        decor: room.partie.obs.map(o => ({
-          x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv,
-          lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches,
-        })),
-      }));
-      return;
-    }
-
-    if (msg.type === 'in' && pid && rooms[gid]) {
-      const a = rooms[gid].partie.agents[pid];
-      if (!a) return;
-      const cmds = msg.c || [];
-      for (const c of cmds) {
-        if (c.seq > a.lastSeq + a.file.length) a.file.push(c);
+        return;
       }
-      if (a.file.length > 40) a.file.splice(0, a.file.length - 40);
-      return;
-    }
 
-    if (msg.type === 'ping' && ws.readyState === WebSocket.OPEN) {
-      if (pid && rooms[gid] && typeof msg.rtt === 'number') {
+      if (msg.type === 'in' && pid && rooms[gid]) {
         const a = rooms[gid].partie.agents[pid];
-        if (a) a.rtt = Math.min(600, Math.max(0, msg.rtt));
+        if (!a) return;
+        const cmds = msg.c || [];
+        for (const c of cmds) {
+          if (c.seq > a.lastSeq + a.file.length) a.file.push(c);
+        }
+        if (a.file.length > 40) a.file.splice(0, a.file.length - 40);
+        return;
       }
-      ws.send(JSON.stringify({ type: 'pong', c: msg.c, st: Date.now() }));
+
+      if (msg.type === 'ping' && ws.readyState === WebSocket.OPEN) {
+        if (pid && rooms[gid] && typeof msg.rtt === 'number') {
+          const a = rooms[gid].partie.agents[pid];
+          if (a) a.rtt = Math.min(600, Math.max(0, msg.rtt));
+        }
+        ws.send(JSON.stringify({ type: 'pong', c: msg.c, st: Date.now() }));
+      }
+    } catch (err) {
+      console.error('[WS message error]', err.message);
+      // Ne pas laisser crasher le serveur — fermeture propre si possible
+      try { if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'Erreur serveur'); } catch {}
     }
   });
 
