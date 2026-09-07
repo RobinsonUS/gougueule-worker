@@ -3,13 +3,19 @@
   "main": "src/index.js",
   "compatibility_date": "2025-01-01",
 
-  // Le HTML du jeu est importe comme texte brut par src/index.js
   "rules": [
     { "type": "Text", "globs": ["**/*.html"], "fallthrough": false }
   ],
 
   "vars": {
-    // URL WebSocket de ton serveur Render. A remplacer.
     "GAME_SERVER_URL": "wss://gougueule-server.onrender.com"
-  }
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gougueule-db",
+      "database_id": "REMPLACE-PAR-TON-DATABASE-ID"
+    }
+  ]
 }
