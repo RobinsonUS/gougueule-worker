@@ -50,7 +50,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
     <div class="tab" onclick="authTab('register')">Créer un compte</div>
   </div>
   <input id="auth-user" type="text" placeholder="Pseudo" maxlength="16" autocomplete="username">
-  <input id="auth-pass" type="password" placeholder="Mot de passe" maxlength="64" autocomplete="new-password">
+  <input id="auth-pass" type="password" placeholder="Mot de passe" maxlength="64" autocomplete="current-password">
   <input id="auth-pass2" type="password" placeholder="Répéter le mot de passe" maxlength="64" style="display:none" autocomplete="new-password">
   <input id="auth-key" type="text" placeholder="Clé admin (PYLAB-XXXX-XXXX-XXXX)" maxlength="20" style="display:none;text-transform:uppercase" autocomplete="off">
   <div class="errmsg" id="auth-err"></div>
@@ -1837,12 +1837,14 @@ function setLobbyMsg(txt, sub) {
 }
 
 function showLobbyForm() {
-  var el = document.getElementById('lobby');
-  if (!el) return;
   etatJeu = 'lobby';
   if (ws) { try { ws.close(); } catch (e) {} ws = null; }
-  el.innerHTML = lobbyFormHTML;
-  el.style.display = 'flex';
+  // Avec le système de comptes : vérifier le token avant d'afficher le lobby
+  if (myToken && myName) {
+    showLobby();
+  } else {
+    deconnexion();
+  }
 }
 
 function planifiePing() {
@@ -2033,6 +2035,7 @@ function authTab(tab) {
   });
   document.getElementById('auth-key').style.display   = tab === 'register' ? 'block' : 'none';
   document.getElementById('auth-pass2').style.display = tab === 'register' ? 'block' : 'none';
+  document.getElementById('auth-pass').autocomplete   = tab === 'register' ? 'new-password' : 'current-password';
   document.getElementById('auth-err').textContent = '';
 }
 
