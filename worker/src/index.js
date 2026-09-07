@@ -1,13 +1,89 @@
-// Point d'entree du Worker
+// worker/src/index.js
 import { rw, rewriteImports, isJs, mkInterceptor, proxyWS,
          buildReqHdrs, buildOutHdrs, corsHdrs, rewriteHtml } from './proxy.js';
 import { uiNavigateur } from './navigateur.js';
 import gameHtml from '../game/game.html';
+import {
+  signJWT, hashPassword, hashAdminKey,
+  randomSalt, jsonOk, jsonErr
+} from './auth.js';
 
 function uiGame(serverUrl) {
   return gameHtml.replace('${serverUrl}', serverUrl);
 }
 
+// ── /auth/register ─────────────────────────────────────────────────
+async function handleRegister(request, env) {
+  let body;
+  try { body = await request.json(); } catch { return jsonErr('JSON invalide'); }
+
+  const { username, password, adminKey } = body;
+
+  // Validation basique
+  if (!username || !password || !adminKey) return jsonErr('Champs manquants');
+  if (username.length < 3 || username.length > 16) return jsonErr('Pseudo : 3 à 16 caractères');
+  if (!/^[a-zA-Z0-9_-]+$/.test(username)) return jsonErr('Pseudo : lettres, chiffres, _ et - uniquement');
+  if (password.length < 8) return jsonErr('Mot de passe : 8 caractères minimum');
+
+  const keyHash = await hashAdminKey(adminKey);
+
+  // Vérifier la clé admin
+  const keyRow = await env.DB.prepare(
+    'SELECT id, used FROM admin_keys WHERE key_hash = ?'
+  ).bind(keyHash).first();
+
+  if (!keyRow) return jsonErr('Clé admin invalide', 403);
+  if (keyRow.used) return jsonErr('Clé admin déjà utilisée', 403);
+
+  // Vérifier que le pseudo n'existe pas
+  const existing = await env.DB.prepare(
+    'SELECT id FROM accounts WHERE username = ?'
+  ).bind(username).first();
+  if (existing) return jsonErr('Ce pseudo est déjà pris');
+
+  // Créer le compte
+  const salt = randomSalt();
+  const passwordH = await hashPassword(password, salt);
+  const now = Math.floor(Date.now() / 1000);
+
+  const result = await env.DB.prepare(
+    'INSERT INTO accounts (username, salt, password_h, created_at) VALUES (?, ?, ?, ?)'
+  ).bind(username, salt, passwordH, now).run();
+
+  const accountId = result.meta.last_row_id;
+
+  // Marquer la clé admin comme utilisée
+  await env.DB.prepare(
+    'UPDATE admin_keys SET used = 1, account_id = ? WHERE id = ?'
+  ).bind(accountId, keyRow.id).run();
+
+  const token = await signJWT({ sub: accountId, name: username }, env.JWT_SECRET);
+  return jsonOk({ token, username }, 201);
+}
+
+// ── /auth/login ────────────────────────────────────────────────────
+async function handleLogin(request, env) {
+  let body;
+  try { body = await request.json(); } catch { return jsonErr('JSON invalide'); }
+
+  const { username, password } = body;
+  if (!username || !password) return jsonErr('Champs manquants');
+
+  const account = await env.DB.prepare(
+    'SELECT id, salt, password_h FROM accounts WHERE username = ?'
+  ).bind(username).first();
+
+  // Message volontairement identique pour éviter l'énumération de pseudos
+  if (!account) return jsonErr('Identifiants incorrects', 401);
+
+  const hash = await hashPassword(password, account.salt);
+  if (hash !== account.password_h) return jsonErr('Identifiants incorrects', 401);
+
+  const token = await signJWT({ sub: account.id, name: username }, env.JWT_SECRET);
+  return jsonOk({ token, username });
+}
+
+// ── Routeur principal ──────────────────────────────────────────────
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -17,11 +93,20 @@ export default {
 
     if (request.method === 'OPTIONS') return new Response(null, { headers: corsHdrs() });
 
+    // ── Routes auth ──
+    if (url.pathname === '/auth/register' && request.method === 'POST')
+      return handleRegister(request, env);
+
+    if (url.pathname === '/auth/login' && request.method === 'POST')
+      return handleLogin(request, env);
+
+    // ── Jeu ──
     if (url.pathname === '/game') {
       const serverUrl = env.GAME_SERVER_URL || 'wss://CHANGE-ME.onrender.com';
       return new Response(uiGame(serverUrl), { headers: { 'content-type': 'text/html;charset=utf-8' } });
     }
 
+    // ── Proxy navigateur (reste inchangé) ──
     if (!target && url.pathname !== '/') {
       const m = (request.headers.get('Cookie') || '').match(/proxy_target=([^;]+)/);
       if (m) target = decodeURIComponent(m[1]) + url.pathname + url.search;
@@ -36,7 +121,7 @@ export default {
     if (request.headers.get('Upgrade') === 'websocket') return proxyWS(request, target, T);
 
     try {
-      const resp = await fetch(target, { method: request.method, headers: buildReqHdrs(request, T), body: ['GET','HEAD'].includes(request.method) ? undefined : request.body, redirect: 'manual' });
+      const resp = await fetch(target, { method: request.method, headers: buildReqHdrs(request, T), body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body, redirect: 'manual' });
       const out = buildOutHdrs(resp, T);
       if (resp.status >= 300 && resp.status < 400) { const loc = resp.headers.get('Location'); if (loc) out.set('Location', rw(T, W, loc)); return new Response(null, { status: resp.status, headers: out }); }
       const ct = resp.headers.get('content-type') || ''; out.set('content-type', ct || 'application/octet-stream');
