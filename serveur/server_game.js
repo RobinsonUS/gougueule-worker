@@ -319,7 +319,7 @@ const rooms = {};
 wss.on('connection', (ws) => {
   let pid = null, gid = null;
 
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     let msg; try { msg = JSON.parse(raw); } catch { return; }
 
     // ── join : vérification JWT obligatoire ───────────────────────
