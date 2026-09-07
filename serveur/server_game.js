@@ -324,12 +324,30 @@ wss.on('connection', (ws) => {
 
     // ── join : vérification JWT obligatoire ───────────────────────
     if (msg.type === 'join') {
-      if (!JWT_SECRET) { ws.close(4003, 'Serveur non configuré'); return; }
+      const WORKER_URL = process.env.WORKER_URL;
+      if (!WORKER_URL) { ws.close(4003, 'WORKER_URL non configuré'); return; }
 
+      // Vérification locale (signature + expiry) — rapide, sans réseau
       const payload = verifyJWT(msg.token || '');
       if (!payload) { ws.close(4001, 'Token invalide ou expiré'); return; }
 
-      // Le nom vient du JWT, pas du client (impossible à falsifier)
+      // Vérification de session via le Worker — garantit l'unicité de session
+      let valid = false;
+      try {
+        const res = await fetch(WORKER_URL + '/auth/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: msg.token }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          valid = data.valid === true;
+        }
+      } catch { valid = false; }
+
+      if (!valid) { ws.close(4001, 'Session expirée ou révoquée'); return; }
+
+      // Le nom vient du JWT/Worker, pas du client (impossible à falsifier)
       const playerName = (payload.name || 'Joueur').slice(0, 16);
 
       pid = uid();
