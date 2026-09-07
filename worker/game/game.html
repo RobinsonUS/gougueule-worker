@@ -29,12 +29,10 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #lobby button{background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:18px;font-weight:700;padding:14px 50px;cursor:pointer;margin-top:14px}
 
 
-#mort{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.80);z-index:40;flex-direction:column;align-items:center;justify-content:center;color:#fff;border-radius:16px;padding:24px 40px;pointer-events:auto}
-#mort h2{font-size:36px;color:#ff4444;margin-bottom:14px}
-#mort button{background:#4285F4;border:none;border-radius:10px;color:#fff;font-size:16px;font-weight:700;padding:12px 40px;cursor:pointer}
-#fin{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.80);z-index:45;flex-direction:column;align-items:center;justify-content:center;color:#fff;border-radius:16px;padding:24px 40px;pointer-events:auto}
-#fin h2{font-size:40px;font-weight:900;margin-bottom:14px}
-#fin button{background:#34A853;border:none;border-radius:10px;color:#fff;font-size:16px;font-weight:700;padding:12px 40px;cursor:pointer;margin-top:8px}
+#ecran-fin{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:45;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:auto}
+#ecran-fin h1{font-size:56px;font-weight:900;margin-bottom:10px;letter-spacing:1px}
+#ecran-fin .kills-txt{font-size:22px;font-weight:600;color:rgba(255,255,255,0.75);margin-bottom:28px}
+#ecran-fin button{background:#34A853;border:none;border-radius:12px;color:#fff;font-size:17px;font-weight:700;padding:14px 52px;cursor:pointer}
 
 #att{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:20;
 color:#fff;font-size:20px;font-weight:700;background:rgba(0,0,0,0.55);padding:14px 28px;
@@ -64,8 +62,11 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
   <span class="deco" onclick="deconnexion()" style="font-size:12px;color:rgba(255,255,255,.36);margin-top:16px;cursor:pointer;text-decoration:underline">Déconnexion</span>
 </div>
 <!-- hud supprimé -->
-<div id="mort"><h2>ELIMINE</h2><button onclick="rejouer()">Rejouer</button></div>
-<div id="fin"><h2 id="fin-txt">Victoire !</h2><button onclick="rejouer()">Rejouer</button></div>
+<div id="ecran-fin">
+  <h1 id="fin-titre">Victoire !</h1>
+  <div class="kills-txt" id="fin-kills"></div>
+  <button onclick="rejouer()">Retour au menu</button>
+</div>
 <canvas id="jeu" tabindex="0"></canvas>
 <script>
 var SERVER = '${serverUrl}';
@@ -1564,7 +1565,7 @@ window.addEventListener('keydown', function(e) {
   if (code==='KeyD'||key==='d'||code==='ArrowRight') keys['droite']=true;
   if (code==='KeyR'||key==='r') keys['r']=true;
   if (code==='Space') { shooting=true; e.preventDefault(); }
-  if (code==='Enter' && etatJeu==='fin') rejouer();
+  if (code==='Enter' && (etatJeu==='fin' || etatJeu==='mort')) rejouer();
 });
 window.addEventListener('keyup', function(e) {
   var code = e.code, key = (e.key||'').toLowerCase();
@@ -1924,7 +1925,10 @@ function connect() {
       var s = msg.agents[pid];
       if (s && !s.vivant && etatJeu === 'jeu') {
         etatJeu = 'mort';  // pause — pas d'éjection, le joueur peut bouger
-        document.getElementById('mort').style.display = 'flex';
+        document.getElementById('ecran-fin').style.display = 'flex';
+        document.getElementById('fin-titre').textContent = 'Éliminé';
+        document.getElementById('fin-titre').style.color = '#ff4444';
+        document.getElementById('fin-kills').textContent = myKills + (myKills > 1 ? ' kills' : ' kill');
       }
       if (msg.fini && etatJeu !== 'fin') {
         etatJeu = 'fin';   // pause — pas d'éjection
@@ -1937,7 +1941,7 @@ function connect() {
     if (etatJeu === 'connecting') setLobbyMsg('Erreur de connexion', 'Le serveur ne repond pas');
   };
   ws.onclose = function (e) {
-    // Token invalide ou expiré : retour à l'écran de connexion
+    // Token invalide, expiré ou session révoquée → retour à l'écran de connexion
     if (e.code === 4001 || e.code === 4002) {
       localStorage.removeItem('gougueule_token');
       localStorage.removeItem('gougueule_user');
@@ -1946,9 +1950,17 @@ function connect() {
       deconnexion();
       return;
     }
+    // WORKER_URL manquant côté Render → erreur de config serveur
+    if (e.code === 4003) {
+      ws = null; etatJeu = 'lobby';
+      setLobbyMsg('Erreur de configuration serveur', 'Ajoute WORKER_URL dans les variables Render');
+      document.getElementById('lobby').style.display = 'flex';
+      document.getElementById('auth').style.display = 'none';
+      return;
+    }
     if (etatJeu === 'connecting') {
       setLobbyMsg('Impossible de se connecter', 'Verifie GAME_SERVER_URL du Worker');
-    } else if (etatJeu === 'jeu' || etatJeu === 'mort') {
+    } else if (etatJeu === 'jeu' || etatJeu === 'mort' || etatJeu === 'fin') {
       // Déconnexion en cours de partie → retour au lobby propre
       pid = null; moi = null; snapDernier = null;
       buffer = []; pendantes = []; seq = 0;
@@ -1956,7 +1968,7 @@ function connect() {
       setLobbyMsg('Connexion perdue', 'Le serveur s\'est déconnecté');
       etatJeu = 'lobby';
       document.getElementById('lobby').style.display = 'flex';
-      document.getElementById('mort').style.display = 'none';
+      document.getElementById('ecran-fin').style.display = 'none';
     }
   };
 }
@@ -2008,8 +2020,7 @@ function produitCommande(dt) {
 }
 
 function rejouer() {
-  document.getElementById('fin').style.display = 'none';
-  document.getElementById('mort').style.display = 'none';
+  document.getElementById('ecran-fin').style.display = 'none';
   etatJeu = 'lobby';
   pid = null; moi = null; snapDernier = null;
   buffer = []; pendantes = []; seq = 0;
@@ -2019,9 +2030,12 @@ function rejouer() {
 }
 
 function showFin(vainqueur) {
-  document.getElementById('fin-txt').textContent =
-    vainqueur === pid ? 'Victoire !' : (vainqueur === null ? 'Nul' : 'Defaite');
-  document.getElementById('fin').style.display = 'flex';
+  var gagne = (vainqueur === pid);
+  var titre = gagne ? 'Victoire !' : (vainqueur === null ? 'Match nul' : 'Défaite');
+  document.getElementById('fin-titre').textContent = titre;
+  document.getElementById('fin-titre').style.color = gagne ? '#4ade80' : '#ff4444';
+  document.getElementById('fin-kills').textContent = myKills + (myKills > 1 ? ' kills' : ' kill');
+  document.getElementById('ecran-fin').style.display = 'flex';
 }
 
 // ══════════════════ AUTH ══════════════════════════════════════════
