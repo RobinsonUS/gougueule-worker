@@ -11,6 +11,10 @@
     "GAME_SERVER_URL": "wss://gougueule-server.onrender.com"
   },
 
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+
   "d1_databases": [
     {
       "binding": "DB",
