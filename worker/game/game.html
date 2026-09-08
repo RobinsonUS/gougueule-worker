@@ -1822,7 +1822,8 @@ function reconcilie(snap) {
   if (!moi) {
     moi = { x: s.x, y: s.y, angle: s.angle, recharge: 0,
             munitions: s.munitions, rechargement: s.rechargement,
-            dureeRechargeMax: s.dureeRechargeMax, tirTimer: s.tirTimer, recul: s.recul };
+            dureeRechargeMax: s.dureeRechargeMax, tirTimer: s.tirTimer, recul: s.recul,
+            slot: s.slot || 1, inv: s.inv || [null, 'fusil', null, null, null, null] };
     return;
   }
 
@@ -1830,6 +1831,8 @@ function reconcilie(snap) {
 
   // on repart de la verite serveur
   moi.x = s.x; moi.y = s.y;
+  if (s.slot !== undefined) moi.slot = s.slot;
+  if (s.inv) moi.inv = s.inv;
   moi.vivant = s.vivant;
   moi.pv = s.pv;
   moi.munitions = s.munitions;
@@ -2009,7 +2012,8 @@ function connect(create) {
       initObs(msg.decor);
       moi = { x: msg.spawn.x, y: msg.spawn.y, angle: 0, recharge: 0,
               munitions: SIM.CHARGEUR, rechargement: 0, dureeRechargeMax: 0,
-              tirTimer: 0, recul: 0 };
+              tirTimer: 0, recul: 0,
+              slot: 1, inv: [null, 'fusil', null, null, null, null] };
       pendantes = []; seq = 0; buffer = [];
       erreurLissage.x = 0; erreurLissage.y = 0;
       document.getElementById('lobby').style.display = 'none';
