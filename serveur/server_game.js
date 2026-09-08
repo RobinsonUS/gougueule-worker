@@ -219,7 +219,6 @@ function pas(p) {
 
   const arr = Object.values(p.agents);
   if (!p.fini) {
-    if (!p.demarree && arr.length >= 2) p.demarree = true;
     if (p.demarree) p.t += DT;
   }
 
@@ -314,101 +313,144 @@ function pas(p) {
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => { res.writeHead(200); res.end('OK'); });
 const wss = new WebSocket.Server({ server });
+// rooms[gid] = { etat: 'attente'|'en_cours'|'fini', createur: pid, players: {pid:{ws,name}}, partie: null|{...} }
 const rooms = {};
+
+function diffuseAttente(room, gid) {
+  const joueurs = Object.entries(room.players).map(([id, pl]) => ({ id, name: pl.name }));
+  for (const [plPid, pl] of Object.entries(room.players)) {
+    if (pl.ws.readyState !== WebSocket.OPEN) continue;
+    try { pl.ws.send(JSON.stringify({ type: 'attente', joueurs, createur: room.createur, gameId: gid, yourId: plPid })); } catch {}
+  }
+}
+
+async function valideJWT(token, ws) {
+  const WORKER_URL = process.env.WORKER_URL;
+  if (!WORKER_URL) { ws.close(4003, 'WORKER_URL non configuré'); return null; }
+  const payload = verifyJWT(token || '');
+  if (!payload) { ws.close(4001, 'Token invalide ou expiré'); return null; }
+  let valid = false;
+  try {
+    const res = await fetch(WORKER_URL + '/auth/validate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    if (res.ok) { const d = await res.json(); valid = d.valid === true; }
+  } catch { valid = false; }
+  if (!valid) { ws.close(4001, 'Session expirée ou révoquée'); return null; }
+  return payload;
+}
 
 wss.on('connection', (ws) => {
   let pid = null, gid = null;
 
   ws.on('message', async (raw) => {
-    // Tout le handler est dans un try-catch global : une erreur ne crash plus le serveur
     try {
       let msg; try { msg = JSON.parse(raw); } catch { return; }
 
-      // ── join : vérification JWT obligatoire ───────────────────────
-      if (msg.type === 'join') {
-        const WORKER_URL = process.env.WORKER_URL;
-        if (!WORKER_URL) { ws.close(4003, 'WORKER_URL non configuré'); return; }
-
-        // Vérification locale (signature + expiry) — rapide, sans réseau
-        const payload = verifyJWT(msg.token || '');
-        if (!payload) { ws.close(4001, 'Token invalide ou expiré'); return; }
-
-        // Vérification de session via le Worker — garantit l'unicité de session
-        let valid = false;
-        try {
-          const res = await fetch(WORKER_URL + '/auth/validate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: msg.token }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            valid = data.valid === true;
-          }
-        } catch { valid = false; }
-
-        if (!valid) { ws.close(4001, 'Session expirée ou révoquée'); return; }
-
-        // Le nom vient du JWT/Worker, pas du client (impossible à falsifier)
+      // ── creer / rejoindre ─────────────────────────────────────────
+      if (msg.type === 'creer' || msg.type === 'rejoindre') {
+        const payload = await valideJWT(msg.token, ws);
+        if (!payload) return;
         const playerName = (payload.name || 'Joueur').slice(0, 16);
+        const roomId = (msg.gameId || '').trim().toUpperCase().slice(0, 10);
+        if (!roomId) { ws.close(4004, 'Code room invalide'); return; }
+        gid = roomId;
 
-        pid = uid();
-        gid = (msg.gameId || '').trim().toUpperCase().slice(0, 10) || uid();
-        if (!rooms[gid]) rooms[gid] = { partie: creePartie(), players: {} };
+        if (msg.type === 'creer') {
+          // Refus si room en cours ; accepté si inexistante ou terminée
+          if (rooms[gid] && rooms[gid].etat !== 'fini') {
+            try { ws.send(JSON.stringify({ type: 'erreur', msg: 'Ce code est déjà utilisé' })); } catch {}
+            ws.close(4005, 'Code déjà utilisé'); return;
+          }
+          if (rooms[gid]) delete rooms[gid]; // libérer room finie
+          pid = uid();
+          rooms[gid] = { etat: 'attente', createur: pid, players: {}, partie: null };
+          rooms[gid].players[pid] = { ws, name: playerName };
+        } else {
+          // rejoindre
+          if (!rooms[gid] || rooms[gid].etat === 'fini') {
+            try { ws.send(JSON.stringify({ type: 'erreur', msg: 'Room introuvable' })); } catch {}
+            ws.close(4007, 'Room introuvable'); return;
+          }
+          if (rooms[gid].etat !== 'attente') {
+            try { ws.send(JSON.stringify({ type: 'erreur', msg: 'Partie déjà en cours' })); } catch {}
+            ws.close(4008, 'Partie en cours'); return;
+          }
+          pid = uid();
+          rooms[gid].players[pid] = { ws, name: playerName };
+        }
+        if (ws.readyState === WebSocket.OPEN) diffuseAttente(rooms[gid], gid);
+        return;
+      }
+
+      // ── start : le créateur lance la partie ───────────────────────
+      if (msg.type === 'start' && pid && rooms[gid]) {
         const room = rooms[gid];
-        ajouteJoueur(room.partie, pid, playerName);
-        room.players[pid] = { ws };
-        const a = room.partie.agents[pid];
-        // Vérifier que le WS est encore ouvert après les awaits avant d'envoyer
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: 'init', playerId: pid, gameId: gid, map: MONDE,
-            spawn: { x: a.x, y: a.y }, st: Date.now(),
-            cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT, ZONE_ATTENTE, ZONE_DUREE, ZONE_R0, ZONE_R1, MONDE },
-            decor: room.partie.obs.map(o => ({
-              x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv,
-              lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches,
-            })),
-          }));
+        if (room.etat !== 'attente') return;
+        if (room.createur !== pid) {
+          try { ws.send(JSON.stringify({ type: 'erreur', msg: 'Seul le créateur peut démarrer' })); } catch {}; return;
+        }
+        if (Object.keys(room.players).length < 2) {
+          try { ws.send(JSON.stringify({ type: 'erreur', msg: 'Il faut au moins 2 joueurs' })); } catch {}; return;
+        }
+        room.partie = creePartie();
+        room.partie.demarree = true;
+        room.etat = 'en_cours';
+        for (const [plPid, pl] of Object.entries(room.players)) ajouteJoueur(room.partie, plPid, pl.name);
+        for (const [plPid, pl] of Object.entries(room.players)) {
+          if (pl.ws.readyState !== WebSocket.OPEN) continue;
+          const a = room.partie.agents[plPid];
+          try {
+            pl.ws.send(JSON.stringify({
+              type: 'init', playerId: plPid, gameId: gid, map: MONDE,
+              spawn: { x: a.x, y: a.y }, st: Date.now(),
+              cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT, ZONE_ATTENTE, ZONE_DUREE, ZONE_R0, ZONE_R1, MONDE },
+              decor: room.partie.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches })),
+            }));
+          } catch {}
         }
         return;
       }
 
-      if (msg.type === 'in' && pid && rooms[gid]) {
+      // ── inputs de jeu ─────────────────────────────────────────────
+      if (msg.type === 'in' && pid && rooms[gid] && rooms[gid].partie) {
         const a = rooms[gid].partie.agents[pid];
         if (!a) return;
-        const cmds = msg.c || [];
-        for (const c of cmds) {
-          if (c.seq > a.lastSeq + a.file.length) a.file.push(c);
-        }
+        for (const c of (msg.c || [])) { if (c.seq > a.lastSeq + a.file.length) a.file.push(c); }
         if (a.file.length > 40) a.file.splice(0, a.file.length - 40);
         return;
       }
 
       if (msg.type === 'ping' && ws.readyState === WebSocket.OPEN) {
-        if (pid && rooms[gid] && typeof msg.rtt === 'number') {
+        if (pid && rooms[gid] && rooms[gid].partie && typeof msg.rtt === 'number') {
           const a = rooms[gid].partie.agents[pid];
           if (a) a.rtt = Math.min(600, Math.max(0, msg.rtt));
         }
-        ws.send(JSON.stringify({ type: 'pong', c: msg.c, st: Date.now() }));
+        try { ws.send(JSON.stringify({ type: 'pong', c: msg.c, st: Date.now() })); } catch {}
       }
     } catch (err) {
-      console.error('[WS message error]', err.message);
-      // Ne pas laisser crasher le serveur — fermeture propre si possible
+      console.error('[WS error]', err.message);
       try { if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'Erreur serveur'); } catch {}
     }
   });
 
   ws.on('close', () => {
-    if (pid && rooms[gid]) {
-      const r = rooms[gid];
-      const a = r.partie.agents[pid];
-      if (a && a.vivant) {
-        a.vivant = false; a.pv = 0;
-        r.partie.kills.push({ killer: 'Déconnexion', victim: a.name });
+    if (!pid || !rooms[gid]) return;
+    const room = rooms[gid];
+    if (room.etat === 'attente') {
+      delete room.players[pid];
+      if (pid === room.createur && Object.keys(room.players).length > 0)
+        room.createur = Object.keys(room.players)[0];
+      if (!Object.keys(room.players).length) { delete rooms[gid]; return; }
+      diffuseAttente(room, gid);
+    } else {
+      if (room.partie) {
+        const a = room.partie.agents[pid];
+        if (a && a.vivant) { a.vivant = false; a.pv = 0; room.partie.kills.push({ killer: 'Déconnexion', victim: a.name }); }
       }
-      delete r.players[pid];
-      if (!Object.keys(r.players).length) delete rooms[gid];
+      delete room.players[pid];
+      if (!Object.keys(room.players).length) delete rooms[gid];
     }
   });
 });
@@ -420,17 +462,31 @@ function boucleServeur() {
   let tours = 0;
   while (prochain <= maintenant && tours < 5) {
     for (const [gid, room] of Object.entries(rooms)) {
-      const p = room.partie;
+      // Nettoyer les WS morts
+      let attenteChange = false;
       for (const [id, pl] of Object.entries(room.players)) {
         if (pl.ws.readyState !== WebSocket.OPEN) {
-          const a = p.agents[id];
-          if (a && a.vivant) { a.vivant = false; a.pv = 0; p.kills.push({ killer: 'Déconnexion', victim: a.name }); }
-          delete room.players[id];
+          if (room.etat === 'attente') {
+            delete room.players[id];
+            if (id === room.createur && Object.keys(room.players).length > 0)
+              room.createur = Object.keys(room.players)[0];
+            attenteChange = true;
+          } else if (room.partie) {
+            const a = room.partie.agents[id];
+            if (a && a.vivant) { a.vivant = false; a.pv = 0; room.partie.kills.push({ killer: 'Déconnexion', victim: a.name }); }
+            delete room.players[id];
+          }
         }
       }
       if (!Object.keys(room.players).length) { delete rooms[gid]; continue; }
-      pas(p);
-      if (p.tick % SNAP_TOUS_LES === 0) envoieSnapshot(room);
+      if (attenteChange) diffuseAttente(room, gid);
+
+      // Simulation (seulement si partie lancée)
+      if (room.etat === 'en_cours' || room.etat === 'fini') {
+        pas(room.partie);
+        if (room.etat === 'en_cours' && room.partie.fini) room.etat = 'fini';
+        if (room.partie.tick % SNAP_TOUS_LES === 0) envoieSnapshot(room);
+      }
     }
     prochain += TICK_MS; tours++;
   }
