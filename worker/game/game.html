@@ -2196,7 +2196,7 @@ function lobbyTab(mode) {
   document.getElementById('lobby-btn').textContent = mode === 'creer' ? 'Créer' : 'Rejoindre';
   document.getElementById('lobby-hint').textContent = mode === 'creer'
     ? 'Les autres joueurs rejoignent avec ce code'
-    : 'Entre le code que le créateur t'a partagé';
+    : 'Entre le code que le créateur t\'a partagé';
   document.getElementById('lobby-err').textContent = '';
 }
 
@@ -2245,7 +2245,7 @@ function handleAttente(msg) {
   if (estCreateur) {
     btnStart.style.display = 'block';
     btnStart.classList.toggle('ok', msg.joueurs.length >= 2);
-    txtAttente.textContent = msg.joueurs.length < 2 ? 'En attente d'un autre joueur…' : '';
+    txtAttente.textContent = msg.joueurs.length < 2 ? 'En attente d\'un autre joueur…' : '';
   } else {
     btnStart.style.display = 'none';
     txtAttente.textContent = 'En attente que le créateur démarre…';
