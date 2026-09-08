@@ -36,8 +36,8 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #sa .liste{display:flex;flex-direction:column;gap:6px;min-width:220px;margin:8px 0}
 #sa .joueur{background:rgba(255,255,255,.08);border-radius:8px;padding:9px 16px;font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
 #sa .crown{font-size:14px}
-#sa-start{background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:16px;font-weight:700;padding:13px 44px;cursor:pointer;opacity:.4;pointer-events:none;transition:opacity .2s}
-#sa-start.ok{opacity:1;pointer-events:auto}
+#sa-start{background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:16px;font-weight:700;padding:13px 44px;cursor:pointer;transition:opacity .2s}
+#sa-start:disabled{opacity:.4;cursor:not-allowed}
 #sa-quitter{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#fff;font-size:14px;font-weight:600;padding:10px 30px;cursor:pointer}
 #sa .attente-txt{color:rgba(255,255,255,.5);font-size:13px}
 #lobby .tabs{display:flex;margin-bottom:16px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.18)}
@@ -2011,6 +2011,7 @@ function connect(create) {
       pendantes = []; seq = 0; buffer = [];
       erreurLissage.x = 0; erreurLissage.y = 0;
       document.getElementById('lobby').style.display = 'none';
+      document.getElementById('sa').style.display = 'none';
       etatJeu = 'jeu';
       return;
     }
@@ -2340,7 +2341,7 @@ function handleAttente(msg) {
   var txtAttente = document.getElementById('sa-attente-txt');
   if (estCreateur) {
     btnStart.style.display = 'block';
-    btnStart.classList.toggle('ok', msg.joueurs.length >= 2);
+    btnStart.disabled = msg.joueurs.length < 2;
     txtAttente.textContent = msg.joueurs.length < 2 ? 'En attente d\'un autre joueur…' : '';
   } else {
     btnStart.style.display = 'none';
