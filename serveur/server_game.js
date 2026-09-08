@@ -501,6 +501,7 @@ function retardCommun(p) {
 }
 
 function envoieSnapshot(room) {
+  if (!room.partie) return;  // sécurité si room réutilisée
   const p = room.partie;
   const decorMaj = [];
   p.obs.forEach((o, idx) => {
