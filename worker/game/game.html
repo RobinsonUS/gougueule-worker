@@ -29,7 +29,22 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #lobby button{background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:18px;font-weight:700;padding:14px 50px;cursor:pointer;margin-top:14px}
 
 
-#ecran-fin{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:45;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:auto}
+#ecran-fin{display:none;position:fixed;inset:0;background:linear-gradient(135deg,#1a2a1a,#0d1a0d);z-index:45;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:auto}
+#sa{display:none;position:fixed;inset:0;background:linear-gradient(135deg,#1a2a1a,#0d1a0d);z-index:50;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:12px}
+#sa h2{font-size:26px;font-weight:800;color:#8cc152;margin-bottom:4px}
+#sa .code{font-size:13px;color:rgba(255,255,255,.5)}
+#sa .liste{display:flex;flex-direction:column;gap:6px;min-width:220px;margin:8px 0}
+#sa .joueur{background:rgba(255,255,255,.08);border-radius:8px;padding:9px 16px;font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+#sa .crown{font-size:14px}
+#sa-start{background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:16px;font-weight:700;padding:13px 44px;cursor:pointer;opacity:.4;pointer-events:none;transition:opacity .2s}
+#sa-start.ok{opacity:1;pointer-events:auto}
+#sa-quitter{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#fff;font-size:14px;font-weight:600;padding:10px 30px;cursor:pointer}
+#sa .attente-txt{color:rgba(255,255,255,.5);font-size:13px}
+#lobby .tabs{display:flex;margin-bottom:16px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.18)}
+#lobby .tab{padding:9px 28px;cursor:pointer;font-size:14px;font-weight:600;background:rgba(255,255,255,.05);transition:background .2s}
+#lobby .tab.active{background:rgba(255,255,255,.16)}
+#lobby .hint{font-size:12px;color:rgba(255,255,255,.4);margin:2px 0 6px}
+#lobby .err{color:#f87171;font-size:13px;min-height:18px}
 #ecran-fin h1{font-size:56px;font-weight:900;margin-bottom:10px;letter-spacing:1px}
 #ecran-fin .kills-txt{font-size:22px;font-weight:600;color:rgba(255,255,255,0.75);margin-bottom:28px}
 #ecran-fin button{background:#34A853;border:none;border-radius:12px;color:#fff;font-size:17px;font-weight:700;padding:14px 52px;cursor:pointer}
@@ -56,10 +71,24 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 </div>
 <div id="lobby" style="display:none">
   <h1>Battle Royale</h1>
-  <input id="name-in" type="text" placeholder="Ton pseudo" maxlength="16" autocomplete="off" disabled style="opacity:.6;cursor:default">
-  <input id="room-in" type="text" placeholder="Code room (obligatoire)" maxlength="10" autocomplete="off" style="text-transform:uppercase">
-  <button onclick="startGame()">Jouer</button>
+  <div style="font-size:14px;color:rgba(255,255,255,.5);margin-bottom:18px">Connecté en tant que <strong id="lobby-pseudo" style="color:#8cc152"></strong></div>
+  <div class="tabs">
+    <div class="tab active" id="tab-creer" onclick="lobbyTab('creer')">Créer une room</div>
+    <div class="tab" id="tab-rejoindre" onclick="lobbyTab('rejoindre')">Rejoindre</div>
+  </div>
+  <input id="room-in" type="text" placeholder="Code room" maxlength="10" autocomplete="off" style="text-transform:uppercase">
+  <div class="hint" id="lobby-hint">Les autres joueurs rejoignent avec ce code</div>
+  <div class="err" id="lobby-err"></div>
+  <button id="lobby-btn" onclick="lobbyAction()">Créer</button>
   <span class="deco" onclick="deconnexion()" style="font-size:12px;color:rgba(255,255,255,.36);margin-top:16px;cursor:pointer;text-decoration:underline">Déconnexion</span>
+</div>
+<div id="sa">
+  <h2>Salle d'attente</h2>
+  <div class="code" id="sa-code"></div>
+  <div class="liste" id="sa-liste"></div>
+  <button id="sa-start" onclick="demandeStart()">Commencer</button>
+  <div class="attente-txt" id="sa-attente-txt"></div>
+  <button id="sa-quitter" onclick="quitterSalle()">Quitter</button>
 </div>
 <!-- hud supprimé -->
 <div id="ecran-fin">
@@ -1856,10 +1885,13 @@ function planifiePing() {
   setTimeout(planifiePing, nbPings < 15 ? 120 : 1000);
 }
 
-function connect() {
+var _createRoom = false;
+function connect(create) {
+  _createRoom = !!create;
   ws = new WebSocket(SERVER);
   ws.onopen = function () {
-    ws.send(JSON.stringify({ type: 'join', gameId: myRoom, name: myName, token: myToken }));
+    var msgType = (typeof _createRoom !== 'undefined' && _createRoom) ? 'creer' : 'rejoindre';
+    ws.send(JSON.stringify({ type: msgType, gameId: myRoom, token: myToken }));
     planifiePing();
   };
 
@@ -1897,6 +1929,18 @@ function connect() {
       erreurLissage.x = 0; erreurLissage.y = 0;
       document.getElementById('lobby').style.display = 'none';
       etatJeu = 'jeu';
+      return;
+    }
+
+    if (msg.type === 'attente') { handleAttente(msg); return; }
+
+    if (msg.type === 'erreur') {
+      // Erreur serveur (room introuvable, partie en cours, etc.)
+      etatJeu = 'lobby';
+      document.getElementById('sa').style.display = 'none';
+      document.getElementById('lobby').style.display = 'flex';
+      var errEl = document.getElementById('lobby-err');
+      if (errEl) errEl.textContent = msg.msg || 'Erreur inconnue';
       return;
     }
 
@@ -1953,13 +1997,29 @@ function connect() {
     // WORKER_URL manquant côté Render → erreur de config serveur
     if (e.code === 4003) {
       ws = null; etatJeu = 'lobby';
-      setLobbyMsg('Erreur de configuration serveur', 'Ajoute WORKER_URL dans les variables Render');
-      document.getElementById('lobby').style.display = 'flex';
-      document.getElementById('auth').style.display = 'none';
+      showLobby();
+      var er = document.getElementById('lobby-err'); if (er) er.textContent = 'Erreur serveur : WORKER_URL manquant sur Render';
       return;
     }
-    if (etatJeu === 'connecting') {
-      setLobbyMsg('Impossible de se connecter', 'Verifie GAME_SERVER_URL du Worker');
+    if (e.code === 4005 || e.code === 4006) {
+      ws = null; etatJeu = 'lobby'; showLobby();
+      var er = document.getElementById('lobby-err'); if (er) er.textContent = 'Ce code de room est déjà utilisé.';
+      return;
+    }
+    if (e.code === 4007) {
+      ws = null; etatJeu = 'lobby'; showLobby();
+      var er = document.getElementById('lobby-err'); if (er) er.textContent = 'Room introuvable. Vérifie le code.';
+      return;
+    }
+    if (e.code === 4008) {
+      ws = null; etatJeu = 'lobby'; showLobby();
+      var er = document.getElementById('lobby-err'); if (er) er.textContent = 'Cette partie est déjà en cours.';
+      return;
+    }
+    if (etatJeu === 'connecting' || etatJeu === 'attente') {
+      ws = null; etatJeu = 'lobby'; showLobby();
+      var er = document.getElementById('lobby-err');
+      if (er) er.textContent = 'Connexion perdue. Réessaie.';
     } else if (etatJeu === 'jeu' || etatJeu === 'mort' || etatJeu === 'fin') {
       // Déconnexion en cours de partie → retour au lobby propre
       pid = null; moi = null; snapDernier = null;
@@ -2021,12 +2081,13 @@ function produitCommande(dt) {
 
 function rejouer() {
   document.getElementById('ecran-fin').style.display = 'none';
+  document.getElementById('sa').style.display = 'none';
+  if (ws) { try { ws.close(); } catch {} ws = null; }
   etatJeu = 'lobby';
   pid = null; moi = null; snapDernier = null;
   buffer = []; pendantes = []; seq = 0;
   myKills = 0; nbVivants = 0; alphaVisJoueurs = {};
-  if (ws) { try { ws.close(); } catch (e) {} ws = null; }
-  showLobbyForm();
+  showLobby();
 }
 
 function showFin(vainqueur) {
@@ -2100,10 +2161,14 @@ async function authSubmit() {
 }
 
 function showLobby() {
-  document.getElementById('auth').style.display  = 'none';
+  document.getElementById('auth').style.display = 'none';
+  document.getElementById('sa').style.display   = 'none';
   document.getElementById('lobby').style.display = 'flex';
-  var ni = document.getElementById('name-in');
-  if (ni) ni.value = myName;
+  // Afficher le pseudo + réinitialiser le formulaire
+  var ps = document.getElementById('lobby-pseudo'); if (ps) ps.textContent = myName;
+  var ri = document.getElementById('room-in');      if (ri) { ri.value = ''; ri.style.outline = ''; }
+  var er = document.getElementById('lobby-err');    if (er) er.textContent = '';
+  lobbyTab(_lobbyMode || 'creer');
 }
 
 function deconnexion() {
@@ -2121,18 +2186,77 @@ function deconnexion() {
 })();
 // ═══════════════════════════════════════════════════════════════════
 
-function startGame() {
+// ══ Lobby (créer/rejoindre) ══════════════════════════════════════
+var _lobbyMode = 'creer';
+
+function lobbyTab(mode) {
+  _lobbyMode = mode;
+  document.getElementById('tab-creer').classList.toggle('active', mode === 'creer');
+  document.getElementById('tab-rejoindre').classList.toggle('active', mode === 'rejoindre');
+  document.getElementById('lobby-btn').textContent = mode === 'creer' ? 'Créer' : 'Rejoindre';
+  document.getElementById('lobby-hint').textContent = mode === 'creer'
+    ? 'Les autres joueurs rejoignent avec ce code'
+    : 'Entre le code que le créateur t'a partagé';
+  document.getElementById('lobby-err').textContent = '';
+}
+
+function lobbyAction() {
   if (!myToken || !myName) { deconnexion(); return; }
   var roomEl = document.getElementById('room-in');
-  if (!roomEl) return;
-  var room = roomEl.value.trim().toUpperCase();
-  if (!room) { roomEl.style.outline = '2px solid #f44'; roomEl.focus(); return; }
-  roomEl.style.outline = '';
+  var room = (roomEl ? roomEl.value.trim().toUpperCase() : '');
+  var errEl = document.getElementById('lobby-err');
+  if (!room) {
+    if (roomEl) roomEl.style.outline = '2px solid #f44';
+    if (errEl) errEl.textContent = 'Entre un code room.';
+    return;
+  }
+  if (roomEl) roomEl.style.outline = '';
+  if (errEl) errEl.textContent = '';
   myRoom = room.slice(0, 10);
-  etatJeu = 'connecting';
-  setLobbyMsg('Connexion...', 'Room : ' + myRoom);
-  connect();
+  connect(_lobbyMode === 'creer');
 }
+
+// ══ Salle d'attente ══════════════════════════════════════════════
+function demandeStart() {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'start' }));
+}
+
+function quitterSalle() {
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  etatJeu = 'lobby'; pid = null;
+  document.getElementById('sa').style.display = 'none';
+  document.getElementById('lobby').style.display = 'flex';
+}
+
+function handleAttente(msg) {
+  etatJeu = 'attente';
+  if (msg.yourId) pid = msg.yourId;
+  // Afficher la salle d'attente
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('sa').style.display = 'flex';
+  document.getElementById('sa-code').textContent = 'Code room : ' + (msg.gameId || myRoom);
+  var liste = document.getElementById('sa-liste');
+  liste.innerHTML = msg.joueurs.map(function(j) {
+    return '<div class="joueur">' + (j.id === msg.createur ? '<span class="crown">👑</span> ' : '') + escHtml(j.name) + '</div>';
+  }).join('');
+  var estCreateur = (pid === msg.createur);
+  var btnStart = document.getElementById('sa-start');
+  var txtAttente = document.getElementById('sa-attente-txt');
+  if (estCreateur) {
+    btnStart.style.display = 'block';
+    btnStart.classList.toggle('ok', msg.joueurs.length >= 2);
+    txtAttente.textContent = msg.joueurs.length < 2 ? 'En attente d'un autre joueur…' : '';
+  } else {
+    btnStart.style.display = 'none';
+    txtAttente.textContent = 'En attente que le créateur démarre…';
+  }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function startGame() {} // remplacé par lobbyAction()
 
 // ═══ Boucle ═══
 var precedent = 0;
