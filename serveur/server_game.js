@@ -314,6 +314,16 @@ const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => { res.writeHead(200); res.end('OK'); });
 const wss = new WebSocket.Server({ server });
 
+// Heartbeat protocol-level : termine les connexions mortes en ~25s
+// Résout les rooms fantômes quand le client ferme la page sans close frame
+setInterval(() => {
+  wss.clients.forEach(ws => {
+    if (ws.isAlive === false) { ws.terminate(); return; }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 25000);
+
 // rooms[gid] = { etat:'attente'|'en_cours'|'fini', createur:pid, players:{pid:{ws,name,accountId}}, partie:null|{} }
 const rooms = {};
 // activeSessions[accountId] = { gid, pid } — un compte = une seule session
@@ -349,6 +359,8 @@ function diffuseAttente(room, gid) {
 
 // ─── Connexion ─────────────────────────────────────────────────────
 wss.on('connection', (ws) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
   let pid = null, gid = null, accountId = null;
 
   ws.on('message', (raw) => {
