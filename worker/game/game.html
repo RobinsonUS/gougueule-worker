@@ -2081,7 +2081,16 @@ function connect(create) {
     if (e.code === 4003) {
       ws = null; etatJeu = 'lobby';
       showLobby();
-      var er = document.getElementById('lobby-err'); if (er) er.textContent = 'Erreur serveur : WORKER_URL manquant sur Render';
+      var er = document.getElementById('lobby-err'); if (er) er.textContent = 'Erreur serveur : JWT_SECRET manquant sur Render';
+      return;
+    }
+    if (e.code === 4009) {
+      // Cette session a été remplacée par une connexion plus récente du même compte
+      ws = null; etatJeu = 'lobby';
+      document.getElementById('sa').style.display = 'none';
+      document.getElementById('ecran-fin').style.display = 'none';
+      showLobby();
+      var er = document.getElementById('lobby-err'); if (er) er.textContent = 'Tu t\'es connecté depuis un autre onglet.';
       return;
     }
     if (e.code === 4005 || e.code === 4006) {
