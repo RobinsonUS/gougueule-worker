@@ -1400,6 +1400,72 @@ function ajouteKill(kills) {}
 
 // =================== Particules locales ===================
 var localParticules = [];
+var invDrag = null; // { depuis, x, y, objet } pendant un drag d'inventaire
+
+function contenuSlotMoi(i) {
+  if (!moi || !moi.inv) return null;
+  return i === 0 ? 'mains' : moi.inv[i];
+}
+
+function synchroInv() {
+  if (ws && ws.readyState === 1 && moi) {
+    try { ws.send(JSON.stringify({ type: 'invChange', slot: moi.slot, inv: moi.inv })); } catch {}
+  }
+}
+
+function swapInv(de, vers) {
+  if (!moi || !moi.inv) return;
+  var tmp = moi.inv[de];
+  moi.inv[de] = moi.inv[vers];
+  moi.inv[vers] = tmp;
+  moi.slot = vers;
+  synchroInv();
+}
+
+function posInv(e) {
+  var cx = e.clientX, cy = e.clientY;
+  if (e.touches && e.touches.length > 0) { cx = e.touches[0].clientX; cy = e.touches[0].clientY; }
+  if (e.changedTouches && e.changedTouches.length > 0) { cx = e.changedTouches[0].clientX; cy = e.changedTouches[0].clientY; }
+  return versJeu(cx, cy);
+}
+
+function detecteSlotInv(p) {
+  var zs = zonesInv();
+  for (var i = 0; i < zs.length; i++) {
+    var z = zs[i];
+    if (p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h) return z.i;
+  }
+  return -1;
+}
+
+function debuteInvDrag(e) {
+  if (etatJeu !== 'jeu' && etatJeu !== 'mort' && etatJeu !== 'fin') return false;
+  if (!moi || !moi.inv) return false;
+  var p = posInv(e);
+  var slot = detecteSlotInv(p);
+  if (slot < 0) return false;
+  var objet = contenuSlotMoi(slot);
+  if (objet) {
+    invDrag = { depuis: slot, x: p.x, y: p.y, objet: objet };
+  } else {
+    moi.slot = slot; synchroInv();
+    invDrag = null;
+  }
+  return true;
+}
+
+function termineInvDrag(e) {
+  if (!invDrag) return;
+  var p = posInv(e);
+  var cible = detecteSlotInv(p);
+  if (cible >= 0 && cible !== invDrag.depuis) {
+    swapInv(invDrag.depuis, cible);
+  } else {
+    moi.slot = invDrag.depuis; synchroInv();
+  }
+  invDrag = null;
+}
+
 // alphaVis des joueurs : persiste entre les frames (vue.agents recrée des objets neufs à chaque frame)
 var alphaVisJoueurs = {};
 var prevTirTimer = {};
@@ -1499,10 +1565,11 @@ function initTouchControls() {
     for (var i = 0; i < e.changedTouches.length; i++) {
       var t = e.changedTouches[i];
       var p = versJeu(t.clientX, t.clientY);
+      // Vérifier inventaire d'abord
+      if (!joyG.actif && !joyD.actif && debuteInvDrag(e)) { continue; }
       var cg = joyGauchePos(), cd = joyDroitePos();
       var dG = Math.hypot(p.x - cg.x, p.y - cg.y);
       var dD = Math.hypot(p.x - cd.x, p.y - cd.y);
-      // on capte le stick dont la zone est la plus proche, cote ecran
       if (!joyG.actif && p.x < LARG / 2 && dG < JOY_R * 2.2) {
         joyG.actif = true; joyG.id = t.identifier; majStick(joyG, p, cg);
       } else if (!joyD.actif && p.x >= LARG / 2 && dD < JOY_R * 2.2) {
@@ -1522,6 +1589,7 @@ function initTouchControls() {
   }, {passive:false});
 
   var relache = function(e) {
+    if (invDrag) { termineInvDrag(e); }
     for (var i = 0; i < e.changedTouches.length; i++) {
       var t = e.changedTouches[i];
       if (t.identifier === joyG.id) { joyG.actif=false; joyG.id=-1; joyG.dx=0; joyG.dy=0; }
@@ -1595,6 +1663,11 @@ window.addEventListener('keydown', function(e) {
   if (code==='KeyR'||key==='r') keys['r']=true;
   if (code==='Space') { shooting=true; e.preventDefault(); }
   if (code==='Enter' && (etatJeu==='fin' || etatJeu==='mort')) rejouer();
+  // Touches 1-6 : sélectionner le slot d'inventaire correspondant
+  var numTouche = parseInt(key);
+  if (numTouche >= 1 && numTouche <= 6 && moi && moi.inv) {
+    moi.slot = numTouche - 1; synchroInv();
+  }
 });
 window.addEventListener('keyup', function(e) {
   var code = e.code, key = (e.key||'').toLowerCase();
@@ -1610,9 +1683,19 @@ window.addEventListener('mousemove', function(e) {
   var p = versJeu(e.clientX, e.clientY);
   souris.x = p.x; souris.y = p.y; souris.vu = true;
   ecranAngle = Math.atan2(souris.y - ecranJoueur.y, souris.x - ecranJoueur.x);
+  if (invDrag) { invDrag.x = p.x; invDrag.y = p.y; }
 });
-window.addEventListener('mousedown', function(){ if(!isMobile) { shooting = true; souris.enfonce = true; } });
-window.addEventListener('mouseup',   function(){ if(!isMobile) { shooting = false; souris.enfonce = false; } });
+window.addEventListener('mousedown', function(e) {
+  if (isMobile) return;
+  // Vérifier si le clic est sur l'inventaire
+  if (debuteInvDrag(e)) return;  // géré par l'inventaire
+  shooting = true; souris.enfonce = true;
+});
+window.addEventListener('mouseup', function(e) {
+  if (isMobile) return;
+  if (invDrag) { termineInvDrag(e); return; }
+  shooting = false; souris.enfonce = false;
+});
 
 // =================== WebSocket + état ===================
 // ═══════════════════════════════════════════════════════════════════
@@ -2222,6 +2305,10 @@ function demandeStart() {
 }
 
 function quitterSalle() {
+  // Envoyer 'quitter' d'abord : le serveur nettoie immédiatement sans attendre le close event
+  if (ws && ws.readyState === 1) {
+    try { ws.send(JSON.stringify({ type: 'quitter' })); } catch {}
+  }
   if (ws) { try { ws.close(); } catch {} ws = null; }
   etatJeu = 'lobby'; pid = null;
   document.getElementById('sa').style.display = 'none';
@@ -2285,7 +2372,7 @@ function boucle(maintenant) {
   dessine({ agents: vue.agents, balles: vue.balles, particules: localParticules,
             obs: localObs, zone: vue.zone, t: vue.t,
             fini: vue.fini, vainqueur: vue.vainqueur },
-          pid, (!isMobile && souris.vu) ? souris : null, null);
+          pid, (!isMobile && souris.vu) ? souris : null, invDrag || null);
 
   if (isMobile) {
     repereEcran();
