@@ -1415,6 +1415,7 @@ function synchroInv() {
 
 function swapInv(de, vers) {
   if (!moi || !moi.inv) return;
+  if (de === 0 || vers === 0) { moi.slot = de; synchroInv(); return; } // mains immovable
   var tmp = moi.inv[de];
   moi.inv[de] = moi.inv[vers];
   moi.inv[vers] = tmp;
@@ -1444,8 +1445,10 @@ function debuteInvDrag(e) {
   var p = posInv(e);
   var slot = detecteSlotInv(p);
   if (slot < 0) return false;
+  // Slot 0 (mains) : sélectionnable mais pas draggable
+  if (slot === 0) { moi.slot = 0; synchroInv(); invDrag = null; return true; }
   var objet = contenuSlotMoi(slot);
-  if (objet) {
+  if (objet && objet !== 'mains') {
     invDrag = { depuis: slot, x: p.x, y: p.y, objet: objet };
   } else {
     moi.slot = slot; synchroInv();
@@ -1458,9 +1461,10 @@ function termineInvDrag(e) {
   if (!invDrag) return;
   var p = posInv(e);
   var cible = detecteSlotInv(p);
-  if (cible >= 0 && cible !== invDrag.depuis) {
+  if (cible >= 0 && cible !== invDrag.depuis && cible !== 0) {
     swapInv(invDrag.depuis, cible);
   } else {
+    // Drop hors zone ou sur slot 0 ou même slot : conserver la position, sélectionner
     moi.slot = invDrag.depuis; synchroInv();
   }
   invDrag = null;
@@ -1938,14 +1942,12 @@ function etatAffiche() {
 
 // ═══ Connexion ═══
 function setLobbyMsg(txt, sub) {
-  var el = document.getElementById('lobby');
-  if (!el) return;
-  el.innerHTML =
-    '<div style="font-size:28px;font-weight:800;color:#8cc152;margin-bottom:12px">' + txt + '</div>' +
-    (sub ? '<div style="color:#aaa;font-size:14px">' + sub + '</div>' : '') +
-    '<div style="margin-top:20px"><button onclick="showLobbyForm()" style="background:rgba(255,255,255,0.15);' +
-    'border:1px solid rgba(255,255,255,0.3);border-radius:8px;color:#fff;font-size:14px;padding:10px 24px;' +
-    'cursor:pointer">Retour</button></div>';
+  // Restaure le formulaire et affiche l'erreur dans #lobby-err (ne remplace plus l'innerHTML)
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  etatJeu = 'lobby';
+  showLobby();
+  var er = document.getElementById('lobby-err');
+  if (er) er.textContent = txt + (sub ? ' — ' + sub : '');
 }
 
 function showLobbyForm() {
