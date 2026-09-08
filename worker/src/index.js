@@ -98,6 +98,12 @@ async function handleLogin(request, env) {
 
 // ── Routeur principal ──────────────────────────────────────────────
 export default {
+  // Cron toutes les 5 min : garder le serveur Render éveillé
+  async scheduled(event, env, ctx) {
+    const url = (env.GAME_SERVER_URL || '').replace('wss://', 'https://').replace('ws://', 'http://').split('/')[0] + '//' + ((env.GAME_SERVER_URL || '').replace('wss://', '').replace('ws://', '').split('/')[0]);
+    try { await fetch(url, { signal: AbortSignal.timeout(8000) }); } catch {}
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const W = url.origin;
