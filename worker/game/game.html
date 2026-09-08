@@ -2267,7 +2267,7 @@ function boucle(maintenant) {
   if (dt > 0.15) dt = 0.05;
   precedent = maintenant;
 
-  if (etatJeu === 'lobby' || etatJeu === 'connecting') return;
+  if (etatJeu === 'lobby' || etatJeu === 'connecting' || etatJeu === 'attente') return;
 
   produitCommande(dt);
 
