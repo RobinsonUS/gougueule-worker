@@ -498,29 +498,41 @@ wss.on('connection', (ws) => {
 // ─────────────── Boucle à pas fixe ────────────────────────────────
 let prochain = Date.now();
 function boucleServeur() {
-  const maintenant = Date.now();
-  let tours = 0;
-  while (prochain <= maintenant && tours < 5) {
-    for (const [roomId, room] of Object.entries(rooms)) {
-      // Détecter les connexions mortes
-      const morts = Object.entries(room.players).filter(([, pl]) => pl.ws.readyState !== WebSocket.OPEN);
-      for (const [plId, pl] of morts) {
-        if (pl.accountId) delete activeSessions[pl.accountId];
-        nettoyeJoueur(roomId, plId);
-        if (!rooms[roomId]) break; // room supprimée
-      }
-      if (!rooms[roomId]) continue;
+  try {
+    const maintenant = Date.now();
+    let tours = 0;
+    while (prochain <= maintenant && tours < 5) {
+      for (const [roomId, room] of Object.entries(rooms)) {
+        // Détecter les connexions mortes
+        try {
+          const morts = Object.entries(room.players).filter(([, pl]) => pl.ws.readyState !== WebSocket.OPEN);
+          for (const [plId, pl] of morts) {
+            if (pl.accountId) delete activeSessions[pl.accountId];
+            nettoyeJoueur(roomId, plId);
+            if (!rooms[roomId]) break;
+          }
+        } catch (e) { console.error('[boucle/morts]', e.message); }
 
-      if (room.etat === 'en_cours' || room.etat === 'fini') {
-        if (!room.partie) continue;
-        pas(room.partie);
-        if (room.etat === 'en_cours' && room.partie.fini) room.etat = 'fini';
-        if (room.partie.tick % SNAP_TOUS_LES === 0) envoieSnapshot(room);
+        if (!rooms[roomId]) continue;
+
+        if (room.etat === 'en_cours' || room.etat === 'fini') {
+          if (!room.partie) continue;
+          try {
+            pas(room.partie);
+            if (room.etat === 'en_cours' && room.partie.fini) room.etat = 'fini';
+          } catch (e) { console.error('[boucle/pas]', e.message); }
+          try {
+            if (room.partie.tick % SNAP_TOUS_LES === 0) envoieSnapshot(room);
+          } catch (e) { console.error('[boucle/snap]', e.message); }
+        }
       }
+      prochain += TICK_MS; tours++;
     }
-    prochain += TICK_MS; tours++;
+    if (tours >= 5) prochain = maintenant + TICK_MS;
+  } catch (e) {
+    console.error('[boucleServeur]', e.message);
+    prochain = Date.now() + TICK_MS; // éviter la boucle infinie sur erreur
   }
-  if (tours >= 5) prochain = maintenant + TICK_MS;
   setTimeout(boucleServeur, Math.max(1, prochain - Date.now()));
 }
 
