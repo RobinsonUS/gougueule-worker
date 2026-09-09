@@ -27,10 +27,6 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #amis-toggle{font-size:13px;color:rgba(255,255,255,.5);cursor:pointer;margin-top:8px;user-select:none;text-decoration:underline}
 #amis-toggle:hover{color:rgba(255,255,255,.8)}
 #amis-section{display:none;flex-direction:column;align-items:center;margin-top:10px;width:100%}
-#lobby-overlay{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.72);z-index:30;flex-direction:column;align-items:center;justify-content:center;color:#fff;border-radius:18px;padding:28px 44px;pointer-events:none;text-align:center}
-#lo-txt{font-size:17px;font-weight:600;color:rgba(255,255,255,.85);margin-bottom:6px}
-#lo-count{font-size:52px;font-weight:900;color:#8cc152;line-height:1}
-#lo-nb{font-size:13px;color:rgba(255,255,255,.5);margin-top:8px}
 #lobby h1{font-size:clamp(28px,7vw,56px);font-weight:900;color:#8cc152;text-shadow:0 0 30px rgba(140,193,82,0.4);margin-bottom:28px}
 #lobby input{background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:10px;color:#fff;font-size:16px;padding:12px 20px;width:260px;text-align:center;margin:6px 0;outline:none}
 #lobby input::placeholder{color:#888}
@@ -100,12 +96,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 
   <span class="deco" onclick="deconnexion()" style="font-size:12px;color:rgba(255,255,255,.36);margin-top:18px;cursor:pointer;text-decoration:underline">Déconnexion</span>
 </div>
-<!-- Overlay in-game pendant la phase lobby solo -->
-<div id="lobby-overlay">
-  <div id="lo-txt">En attente d'un adversaire...</div>
-  <div id="lo-count"></div>
-  <div id="lo-nb"></div>
-</div>
+
 <div id="sa">
   <h2>Salle d'attente</h2>
   <div class="code" id="sa-code"></div>
@@ -815,11 +806,24 @@ function dessineMinimap() {
   ctx.font = 'bold 16px system-ui, -apple-system, sans-serif';
   ctx.textBaseline = 'middle';
 
-  var t = snapDernier ? snapDernier.t || 0 : 0;
-  var att = SIM.ZONE_ATTENTE || 12, dur = SIM.ZONE_DUREE || 70;
-  var secs = Math.max(0, t < att ? att - t : (att + dur) - t);
-  var mm = Math.floor(secs / 60), ss = Math.floor(secs % 60);
-  var timeStr = mm + ':' + (ss < 10 ? '0' : '') + ss;
+  var timeStr;
+  var _phLobby = snapDernier && snapDernier.phaseLobby;
+  var _ca = snapDernier ? snapDernier.compteARebours : null;
+  if (_phLobby) {
+    if (_ca !== null && _ca !== undefined) {
+      // Countdown 10s : afficher "0:10" → "0:01"
+      var cs = Math.ceil(_ca);
+      timeStr = '0:' + (cs < 10 ? '0' : '') + cs;
+    } else {
+      timeStr = '--:--'; // en attente d'adversaire
+    }
+  } else {
+    var t = snapDernier ? snapDernier.t || 0 : 0;
+    var att = SIM.ZONE_ATTENTE || 12, dur = SIM.ZONE_DUREE || 70;
+    var secs = Math.max(0, t < att ? att - t : (att + dur) - t);
+    var mm = Math.floor(secs / 60), ss = Math.floor(secs % 60);
+    timeStr = mm + ':' + (ss < 10 ? '0' : '') + ss;
+  }
 
   var stats = [String(myKills), String(nbVivants), timeStr];
   var icos  = [ICO_KILLS, ICO_TEAM, ICO_TIME];
@@ -1370,6 +1374,23 @@ function dessine(p, moi, viseur, drag) {
   if (a.inv) dessineInventaire(a, a.slot, drag);
   if (viseur) dessineViseur(viseur.x, viseur.y);
   dessineMinimap();
+
+  // Countdown 5,4,3,2,1 — apparaît puis fondu, centré à l'écran
+  if (_countdownDigit && _countdownAlpha > 0.01) {
+    ctx.save();
+    ctx.globalAlpha = _countdownAlpha;
+    ctx.font = 'bold 72px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var _cx = LARG / 2, _cy = HAUT / 2 - 30; // légèrement au-dessus du centre
+    // Ombre décalée
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillText(String(_countdownDigit), _cx + 3, _cy + 3);
+    // Chiffre blanc
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(String(_countdownDigit), _cx, _cy);
+    ctx.restore();
+  }
 }
 
 // Vraies icones BattleAI, embarquees en base64
@@ -1512,6 +1533,8 @@ function termineInvDrag(e) {
 
 // alphaVis des joueurs : persiste entre les frames (vue.agents recrée des objets neufs à chaque frame)
 var alphaVisJoueurs = {};
+var _countdownDigit = null;  // chiffre affiché (1-5)
+var _countdownAlpha = 0;     // opacité courante (fondu)
 var prevTirTimer = {};
 
 function genMuzzleFlash(a) {
@@ -2091,12 +2114,6 @@ function connect(mode) {
 
     if (msg.type === 'attente') { handleAttente(msg); return; }
 
-    // Mise à jour overlay lobby solo (envoyé à chaque changement de nb/countdown)
-    if (msg.type === 'lobbyStatus') {
-      actualiseLobbyOverlay(msg.nb, msg.compteARebours);
-      return;
-    }
-
     if (msg.type === 'erreur') {
       // Erreur serveur (room introuvable, partie en cours, etc.)
       etatJeu = 'lobby';
@@ -2118,13 +2135,6 @@ function connect(mode) {
       snapDernier = msg;
       pousseSnap(msg);
       reconcilie(msg);
-
-      // Phase lobby : mise à jour de l'overlay et blocage tir
-      if (msg.phaseLobby !== undefined) {
-        var lo = document.getElementById('lobby-overlay');
-        if (lo) lo.style.display = msg.phaseLobby ? 'flex' : 'none';
-        if (msg.phaseLobby) actualiseLobbyOverlay(msg.nbJoueursLobby, msg.compteARebours);
-      }
 
       var arr = [];
       for (var i2 in msg.agents) arr.push(msg.agents[i2]);
@@ -2275,7 +2285,6 @@ function produitCommande(dt) {
 function rejouer() {
   document.getElementById('ecran-fin').style.display = 'none';
   document.getElementById('sa').style.display = 'none';
-  var _lo = document.getElementById('lobby-overlay'); if (_lo) _lo.style.display = 'none';
   if (ws) { try { ws.close(); } catch {} ws = null; }
   etatJeu = 'lobby';
   pid = null; moi = null; snapDernier = null;
@@ -2359,7 +2368,6 @@ function showLobby() {
   document.getElementById('auth').style.display    = 'none';
   document.getElementById('sa').style.display      = 'none';
   document.getElementById('lobby').style.display   = 'flex';
-  var lo = document.getElementById('lobby-overlay'); if (lo) lo.style.display = 'none';
   var ps = document.getElementById('lobby-pseudo'); if (ps) ps.textContent = myName;
   var ri = document.getElementById('room-in');      if (ri) { ri.value = ''; ri.style.outline = ''; }
   var er = document.getElementById('lobby-err');    if (er) er.textContent = '';
@@ -2467,22 +2475,6 @@ function handleAttente(msg) {
   }
 }
 
-function actualiseLobbyOverlay(nb, compteARebours) {
-  var txt = document.getElementById('lo-txt');
-  var cnt = document.getElementById('lo-count');
-  var nbd = document.getElementById('lo-nb');
-  if (!txt) return;
-  if (compteARebours !== null && compteARebours !== undefined) {
-    txt.textContent = 'La partie commence dans';
-    if (cnt) cnt.textContent = Math.ceil(compteARebours) + 's';
-    if (nbd) nbd.textContent = (nb || 0) + ' joueur(s) prêt(s)';
-  } else {
-    txt.textContent = 'En attente d\'un adversaire...';
-    if (cnt) cnt.textContent = '';
-    if (nbd) nbd.textContent = (nb || 1) + ' joueur(s) connecté(s)';
-  }
-}
-
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -2533,6 +2525,16 @@ window.addEventListener('load', function () {
   initRendu();
   initHUD();
   if (isMobile) initTouchControls();
+  // Animation countdown 5..1 (fondu)
+  var _snapCA = snapDernier && snapDernier.phaseLobby ? snapDernier.compteARebours : null;
+  if (_snapCA !== null && _snapCA !== undefined) {
+    var _digit = Math.ceil(_snapCA);
+    if (_digit >= 1 && _digit <= 5) {
+      if (_digit !== _countdownDigit) { _countdownDigit = _digit; _countdownAlpha = 1.0; }
+      _countdownAlpha = Math.max(0, _countdownAlpha - dt);
+    } else { _countdownDigit = null; _countdownAlpha = 0; }
+  } else { _countdownDigit = null; _countdownAlpha = 0; }
+
   requestAnimationFrame(boucle);
 });
 
