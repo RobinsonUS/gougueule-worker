@@ -111,15 +111,15 @@ function creePartie() {
   };
 }
 
-function ajouteJoueur(partie, pid, name) {
+function ajouteJoueur(partie, pid, name, avecArme = true) {
   partie.nbMax++;
   const pos = placer(partie.rng, partie.obs);
   partie.agents[pid] = {
     id: pid, name, x: pos.x, y: pos.y,
     pv: PV_MAX, angle: 0, recharge: 0, vivant: true,
     secousse: 0, touche: 0, tirTimer: 0, recul: 0, revele: 0,
-    munitions: CHARGEUR, rechargement: 0, dureeRechargeMax: 0, slot: 1,
-    inv: [null, 'fusil', null, null, null, null],
+    munitions: CHARGEUR, rechargement: 0, dureeRechargeMax: 0, slot: 0,
+    inv: avecArme ? [null, 'fusil', null, null, null, null] : [null, null, null, null, null, null],
     ticZone: 0, lastSeq: 0, file: [], rtt: 120,
   };
 }
@@ -406,11 +406,13 @@ function demarrePartie(room, gid) {
   room.etat = 'en_cours';
   room.countdownStart = null;
   if (gid === soloRoomId) soloRoomId = null; // libérer pour les prochains
-  // Téléporter chaque joueur vivant à un endroit aléatoire
+  // Téléporter + équiper chaque joueur vivant
   for (const a of Object.values(p.agents)) {
     if (!a.vivant) continue;
     const pos = placer(p.rng, p.obs);
     a.x = pos.x; a.y = pos.y; a.pv = PV_MAX;
+    a.inv = [null, 'fusil', null, null, null, null]; // donner l'arme
+    a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
   }
 }
 
@@ -509,7 +511,7 @@ wss.on('connection', (ws) => {
         }
 
         pid = uid();
-        ajouteJoueur(rooms[gid].partie, pid, playerName);
+        ajouteJoueur(rooms[gid].partie, pid, playerName, false); // pas d'arme en lobby
         rooms[gid].players[pid] = { ws, name: playerName, accountId };
         activeSessions[accountId] = { gid, pid };
 
