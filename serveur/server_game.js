@@ -183,7 +183,8 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   }
 
   a.recharge -= dt;
-  if (cmd.tire && a.recharge <= 0 && a.rechargement <= 0 && a.munitions > 0) {
+  const armeEnMain = a.slot > 0 && a.inv && a.inv[a.slot];
+  if (cmd.tire && armeEnMain && a.recharge <= 0 && a.rechargement <= 0 && a.munitions > 0) {
     a.recharge = CADENCE; a.tirTimer = 0.35; a.revele = 0.35; a.recul = 0.08;
     a.munitions--;
     const at = a.angle + (p.rng() - 0.5) * DISPERSION;
