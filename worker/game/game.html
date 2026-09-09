@@ -1353,20 +1353,22 @@ function dessine(p, moi, viseur, drag) {
     dessineNom(_nj.x, _nj.y, _nj.name || '?', _na);
   }
 
-  // ---- oeil du cyclone ----
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(gch - 100, hau - 100, demiL * 2 + 200, demiH * 2 + 200);
-  ctx.arc(p.zone.x, p.zone.y, p.zone.r, 0, Math.PI * 2, true);
-  ctx.fillStyle = C.horsZone;
-  ctx.fill('evenodd');
-  ctx.restore();
+  // ---- oeil du cyclone (caché pendant la phase lobby) ----
+  if (!snapDernier || !snapDernier.phaseLobby) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(gch - 100, hau - 100, demiL * 2 + 200, demiH * 2 + 200);
+    ctx.arc(p.zone.x, p.zone.y, p.zone.r, 0, Math.PI * 2, true);
+    ctx.fillStyle = C.horsZone;
+    ctx.fill('evenodd');
+    ctx.restore();
 
-  ctx.strokeStyle = C.zone;
-  ctx.lineWidth = 7;
-  ctx.beginPath();
-  ctx.arc(p.zone.x, p.zone.y, p.zone.r, 0, Math.PI * 2);
-  ctx.stroke();
+    ctx.strokeStyle = C.zone;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(p.zone.x, p.zone.y, p.zone.r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   // ---- interface ----
   repereEcran();
@@ -1375,18 +1377,19 @@ function dessine(p, moi, viseur, drag) {
   if (viseur) dessineViseur(viseur.x, viseur.y);
   dessineMinimap();
 
-  // Countdown 5,4,3,2,1 — apparaît puis fondu, centré à l'écran
+  // Countdown 5,4,3,2,1 — chiffre centré à l'écran avec fondu
+  // Après repereEcran(), ctx est en espace écran (unités game)
+  // La font size est en px CSS mais la transform PX l'agrandit → on divise par PX
   if (_countdownDigit && _countdownAlpha > 0.01) {
     ctx.save();
     ctx.globalAlpha = _countdownAlpha;
-    ctx.font = 'bold 72px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
+    var _fsize = Math.round(80 / (PX || 1)); // taille visuelle constante ~80px
+    ctx.font = 'bold ' + _fsize + 'px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    var _cx = LARG / 2, _cy = HAUT / 2 - 30; // légèrement au-dessus du centre
-    // Ombre décalée
-    ctx.fillStyle = 'rgba(0,0,0,0.8)';
-    ctx.fillText(String(_countdownDigit), _cx + 3, _cy + 3);
-    // Chiffre blanc
+    var _cx = LARG / 2, _cy = HAUT / 2 - Math.round(40 / (PX || 1));
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillText(String(_countdownDigit), _cx + 2 / (PX || 1), _cy + 2 / (PX || 1));
     ctx.fillStyle = '#ffffff';
     ctx.fillText(String(_countdownDigit), _cx, _cy);
     ctx.restore();
@@ -2525,14 +2528,16 @@ window.addEventListener('load', function () {
   initRendu();
   initHUD();
   if (isMobile) initTouchControls();
-  // Animation countdown 5..1 (fondu)
+  // Animation countdown : seulement 5,4,3,2,1 avec fondu
   var _snapCA = snapDernier && snapDernier.phaseLobby ? snapDernier.compteARebours : null;
-  if (_snapCA !== null && _snapCA !== undefined) {
+  if (_snapCA !== null && _snapCA !== undefined && _snapCA > 0) {
     var _digit = Math.ceil(_snapCA);
     if (_digit >= 1 && _digit <= 5) {
       if (_digit !== _countdownDigit) { _countdownDigit = _digit; _countdownAlpha = 1.0; }
-      _countdownAlpha = Math.max(0, _countdownAlpha - dt);
-    } else { _countdownDigit = null; _countdownAlpha = 0; }
+      else { _countdownAlpha = Math.max(0, _countdownAlpha - dt); }
+    } else {
+      _countdownDigit = null; _countdownAlpha = 0;
+    }
   } else { _countdownDigit = null; _countdownAlpha = 0; }
 
   requestAnimationFrame(boucle);
