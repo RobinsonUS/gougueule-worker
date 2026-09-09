@@ -1840,7 +1840,8 @@ function appliqueLoc(a, cmd) {
     if (a.rechargement <= 0) { a.munitions = SIM.CHARGEUR; a.dureeRechargeMax = 0; }
   }
   a.recharge -= dt;
-  if (cmd.tire && a.recharge <= 0 && a.rechargement <= 0 && a.munitions > 0) {
+  var _itemEnMain = (a.slot > 0) && a.inv && a.inv[a.slot];
+  if (cmd.tire && _itemEnMain && a.recharge <= 0 && a.rechargement <= 0 && a.munitions > 0) {
     a.recharge = SIM.CADENCE; a.tirTimer = 0.35; a.recul = 0.08;
     a.munitions--;
     if (!cmd._rejeu) genMuzzleFlash({ x: a.x, y: a.y, angle: a.angle });
@@ -2100,8 +2101,13 @@ function connect(create) {
         document.getElementById('fin-kills').textContent = myKills + (myKills > 1 ? ' kills' : ' kill');
       }
       if (msg.fini && etatJeu !== 'fin') {
-        etatJeu = 'fin';   // pause — pas d'éjection
+        etatJeu = 'fin';
         showFin(msg.vainqueur);
+        // Déconnecter immédiatement : l'écran de fin est indépendant de la room
+        // Le code room redevient disponible proprement côté serveur
+        setTimeout(function() {
+          if (ws) { try { ws.close(1000, 'fin'); } catch {} ws = null; }
+        }, 300);
       }
     }
   };
@@ -2195,6 +2201,12 @@ function produitCommande(dt) {
   } else {
     if (souris.vu) angle = ecranAngle;
   }
+  // Bloquer le tir si le slot actif est vide ou les mains (slot 0)
+  // Le comportement de l'action tir dépend ENTIÈREMENT du slot sélectionné
+  var slotActif = moi.slot || 0;
+  var itemEnMain = slotActif > 0 && moi.inv && moi.inv[slotActif];
+  if (!itemEnMain) tire = false;
+
   viseeAngle = angle; viseeActive = tire;
 
   seq++;
