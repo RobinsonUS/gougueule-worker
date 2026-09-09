@@ -22,6 +22,15 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #auth .deco{font-size:12px;color:rgba(255,255,255,.36);margin-top:18px;cursor:pointer;text-decoration:underline}
 #auth .deco:hover{color:rgba(255,255,255,.7)}
 #lobby{position:fixed;inset:0;background:linear-gradient(135deg,#1a2a1a,#0d1a0d);z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff}
+#solo-btn{background:#8cc152;border:none;border-radius:16px;color:#1a2a1a;font-size:22px;font-weight:900;padding:20px 80px;cursor:pointer;margin:20px 0;letter-spacing:1px;transition:transform .1s,opacity .15s}
+#solo-btn:hover{transform:scale(1.04)}
+#amis-toggle{font-size:13px;color:rgba(255,255,255,.5);cursor:pointer;margin-top:8px;user-select:none;text-decoration:underline}
+#amis-toggle:hover{color:rgba(255,255,255,.8)}
+#amis-section{display:none;flex-direction:column;align-items:center;margin-top:10px;width:100%}
+#lobby-overlay{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.72);z-index:30;flex-direction:column;align-items:center;justify-content:center;color:#fff;border-radius:18px;padding:28px 44px;pointer-events:none;text-align:center}
+#lo-txt{font-size:17px;font-weight:600;color:rgba(255,255,255,.85);margin-bottom:6px}
+#lo-count{font-size:52px;font-weight:900;color:#8cc152;line-height:1}
+#lo-nb{font-size:13px;color:rgba(255,255,255,.5);margin-top:8px}
 #lobby h1{font-size:clamp(28px,7vw,56px);font-weight:900;color:#8cc152;text-shadow:0 0 30px rgba(140,193,82,0.4);margin-bottom:28px}
 #lobby input{background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:10px;color:#fff;font-size:16px;padding:12px 20px;width:260px;text-align:center;margin:6px 0;outline:none}
 #lobby input::placeholder{color:#888}
@@ -71,16 +80,31 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 </div>
 <div id="lobby" style="display:none">
   <h1>Battle Royale</h1>
-  <div style="font-size:14px;color:rgba(255,255,255,.5);margin-bottom:18px">Connecté en tant que <strong id="lobby-pseudo" style="color:#8cc152"></strong></div>
-  <div class="tabs">
-    <div class="tab active" id="tab-creer" onclick="lobbyTab('creer')">Créer une room</div>
-    <div class="tab" id="tab-rejoindre" onclick="lobbyTab('rejoindre')">Rejoindre</div>
+  <div style="font-size:14px;color:rgba(255,255,255,.5);margin-bottom:4px">Connecté en tant que <strong id="lobby-pseudo" style="color:#8cc152"></strong></div>
+
+  <!-- Solo (bouton principal) -->
+  <button id="solo-btn" onclick="joinSolo()">Solo</button>
+
+  <!-- Amis (section repliable) -->
+  <div id="amis-toggle" onclick="toggleAmis()">▶ Jouer avec des amis</div>
+  <div id="amis-section">
+    <div class="tabs" style="margin-top:14px">
+      <div class="tab active" id="tab-creer" onclick="lobbyTab('creer')">Créer une room</div>
+      <div class="tab" id="tab-rejoindre" onclick="lobbyTab('rejoindre')">Rejoindre</div>
+    </div>
+    <input id="room-in" type="text" placeholder="Code room" maxlength="10" autocomplete="off" style="text-transform:uppercase">
+    <div class="hint" id="lobby-hint">Les autres joueurs rejoignent avec ce code</div>
+    <div class="err" id="lobby-err"></div>
+    <button id="lobby-btn" onclick="lobbyAction()">Créer</button>
   </div>
-  <input id="room-in" type="text" placeholder="Code room" maxlength="10" autocomplete="off" style="text-transform:uppercase">
-  <div class="hint" id="lobby-hint">Les autres joueurs rejoignent avec ce code</div>
-  <div class="err" id="lobby-err"></div>
-  <button id="lobby-btn" onclick="lobbyAction()">Créer</button>
-  <span class="deco" onclick="deconnexion()" style="font-size:12px;color:rgba(255,255,255,.36);margin-top:16px;cursor:pointer;text-decoration:underline">Déconnexion</span>
+
+  <span class="deco" onclick="deconnexion()" style="font-size:12px;color:rgba(255,255,255,.36);margin-top:18px;cursor:pointer;text-decoration:underline">Déconnexion</span>
+</div>
+<!-- Overlay in-game pendant la phase lobby solo -->
+<div id="lobby-overlay">
+  <div id="lo-txt">En attente d'un adversaire...</div>
+  <div id="lo-count"></div>
+  <div id="lo-nb"></div>
 </div>
 <div id="sa">
   <h2>Salle d'attente</h2>
@@ -1840,7 +1864,8 @@ function appliqueLoc(a, cmd) {
     if (a.rechargement <= 0) { a.munitions = SIM.CHARGEUR; a.dureeRechargeMax = 0; }
   }
   a.recharge -= dt;
-  var _itemEnMain = (a.slot > 0) && a.inv && a.inv[a.slot];
+  var _phLobby = !!(snapDernier && snapDernier.phaseLobby);
+  var _itemEnMain = (a.slot > 0) && a.inv && a.inv[a.slot] && !_phLobby;
   if (cmd.tire && _itemEnMain && a.recharge <= 0 && a.rechargement <= 0 && a.munitions > 0) {
     a.recharge = SIM.CADENCE; a.tirTimer = 0.35; a.recul = 0.08;
     a.munitions--;
@@ -2010,12 +2035,18 @@ function planifiePing() {
 }
 
 var _createRoom = false;
-function connect(create) {
-  _createRoom = !!create;
+var _connectMode = 'solo'; // 'solo' | 'creer' | 'rejoindre'
+function connect(mode) {
+  _connectMode = mode || 'solo';
+  _createRoom = (mode === 'creer');
   ws = new WebSocket(SERVER);
   ws.onopen = function () {
-    var msgType = (typeof _createRoom !== 'undefined' && _createRoom) ? 'creer' : 'rejoindre';
-    ws.send(JSON.stringify({ type: msgType, gameId: myRoom, token: myToken }));
+    if (_connectMode === 'solo') {
+      ws.send(JSON.stringify({ type: 'solo', token: myToken }));
+    } else {
+      var msgType = _connectMode === 'creer' ? 'creer' : 'rejoindre';
+      ws.send(JSON.stringify({ type: msgType, gameId: myRoom, token: myToken }));
+    }
     planifiePing();
   };
 
@@ -2060,6 +2091,12 @@ function connect(create) {
 
     if (msg.type === 'attente') { handleAttente(msg); return; }
 
+    // Mise à jour overlay lobby solo (envoyé à chaque changement de nb/countdown)
+    if (msg.type === 'lobbyStatus') {
+      actualiseLobbyOverlay(msg.nb, msg.compteARebours);
+      return;
+    }
+
     if (msg.type === 'erreur') {
       // Erreur serveur (room introuvable, partie en cours, etc.)
       etatJeu = 'lobby';
@@ -2081,6 +2118,13 @@ function connect(create) {
       snapDernier = msg;
       pousseSnap(msg);
       reconcilie(msg);
+
+      // Phase lobby : mise à jour de l'overlay et blocage tir
+      if (msg.phaseLobby !== undefined) {
+        var lo = document.getElementById('lobby-overlay');
+        if (lo) lo.style.display = msg.phaseLobby ? 'flex' : 'none';
+        if (msg.phaseLobby) actualiseLobbyOverlay(msg.nbJoueursLobby, msg.compteARebours);
+      }
 
       var arr = [];
       for (var i2 in msg.agents) arr.push(msg.agents[i2]);
@@ -2204,11 +2248,11 @@ function produitCommande(dt) {
   } else {
     if (souris.vu) angle = ecranAngle;
   }
-  // Bloquer le tir si le slot actif est vide ou les mains (slot 0)
-  // Le comportement de l'action tir dépend ENTIÈREMENT du slot sélectionné
+  // Bloquer le tir si slot vide/mains OU phase lobby solo
   var slotActif = moi.slot || 0;
   var itemEnMain = slotActif > 0 && moi.inv && moi.inv[slotActif];
-  if (!itemEnMain) tire = false;
+  var _phaseLobby = !!(snapDernier && snapDernier.phaseLobby);
+  if (!itemEnMain || _phaseLobby) tire = false;
 
   viseeAngle = angle; viseeActive = tire;
 
@@ -2231,6 +2275,7 @@ function produitCommande(dt) {
 function rejouer() {
   document.getElementById('ecran-fin').style.display = 'none';
   document.getElementById('sa').style.display = 'none';
+  var _lo = document.getElementById('lobby-overlay'); if (_lo) _lo.style.display = 'none';
   if (ws) { try { ws.close(); } catch {} ws = null; }
   etatJeu = 'lobby';
   pid = null; moi = null; snapDernier = null;
@@ -2311,13 +2356,17 @@ async function authSubmit() {
 }
 
 function showLobby() {
-  document.getElementById('auth').style.display = 'none';
-  document.getElementById('sa').style.display   = 'none';
-  document.getElementById('lobby').style.display = 'flex';
-  // Afficher le pseudo + réinitialiser le formulaire
+  document.getElementById('auth').style.display    = 'none';
+  document.getElementById('sa').style.display      = 'none';
+  document.getElementById('lobby').style.display   = 'flex';
+  var lo = document.getElementById('lobby-overlay'); if (lo) lo.style.display = 'none';
   var ps = document.getElementById('lobby-pseudo'); if (ps) ps.textContent = myName;
   var ri = document.getElementById('room-in');      if (ri) { ri.value = ''; ri.style.outline = ''; }
   var er = document.getElementById('lobby-err');    if (er) er.textContent = '';
+  // Replier la section amis
+  _amisVisible = false;
+  var as = document.getElementById('amis-section'); if (as) as.style.display = 'none';
+  var at = document.getElementById('amis-toggle');  if (at) at.textContent = '▶ Jouer avec des amis';
   lobbyTab(_lobbyMode || 'creer');
 }
 
@@ -2338,6 +2387,18 @@ function deconnexion() {
 
 // ══ Lobby (créer/rejoindre) ══════════════════════════════════════
 var _lobbyMode = 'creer';
+var _amisVisible = false;
+
+function joinSolo() {
+  if (!myToken || !myName) { deconnexion(); return; }
+  connect('solo');
+}
+
+function toggleAmis() {
+  _amisVisible = !_amisVisible;
+  document.getElementById('amis-section').style.display = _amisVisible ? 'flex' : 'none';
+  document.getElementById('amis-toggle').textContent = (_amisVisible ? '▼' : '▶') + ' Jouer avec des amis';
+}
 
 function lobbyTab(mode) {
   _lobbyMode = mode;
@@ -2363,7 +2424,7 @@ function lobbyAction() {
   if (roomEl) roomEl.style.outline = '';
   if (errEl) errEl.textContent = '';
   myRoom = room.slice(0, 10);
-  connect(_lobbyMode === 'creer');
+  connect(_lobbyMode); // 'creer' ou 'rejoindre'
 }
 
 // ══ Salle d'attente ══════════════════════════════════════════════
@@ -2403,6 +2464,22 @@ function handleAttente(msg) {
   } else {
     btnStart.style.display = 'none';
     txtAttente.textContent = 'En attente que le créateur démarre…';
+  }
+}
+
+function actualiseLobbyOverlay(nb, compteARebours) {
+  var txt = document.getElementById('lo-txt');
+  var cnt = document.getElementById('lo-count');
+  var nbd = document.getElementById('lo-nb');
+  if (!txt) return;
+  if (compteARebours !== null && compteARebours !== undefined) {
+    txt.textContent = 'La partie commence dans';
+    if (cnt) cnt.textContent = Math.ceil(compteARebours) + 's';
+    if (nbd) nbd.textContent = (nb || 0) + ' joueur(s) prêt(s)';
+  } else {
+    txt.textContent = 'En attente d\'un adversaire...';
+    if (cnt) cnt.textContent = '';
+    if (nbd) nbd.textContent = (nb || 1) + ' joueur(s) connecté(s)';
   }
 }
 
