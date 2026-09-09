@@ -2103,12 +2103,11 @@ function connect(create) {
       if (msg.fini && etatJeu !== 'fin') {
         etatJeu = 'fin';
         showFin(msg.vainqueur);
-        // Déconnecter immédiatement : l'écran de fin est indépendant de la room
-        // Le code room redevient disponible proprement côté serveur
-        setTimeout(function() {
-          aEnvoyer = []; // vider les commandes accumulées pendant la fin
-          if (ws) { try { ws.close(1000, 'fin'); } catch {} ws = null; }
-        }, 300);
+        // Déconnecter immédiatement — plus de timer, plus de race condition
+        // L'écran de fin est une image statique totalement déconnectée de la room
+        aEnvoyer = [];
+        var _wsToClose = ws; ws = null;  // capturer AVANT de fermer
+        if (_wsToClose) { try { _wsToClose.close(1000, 'fin'); } catch {} }
       }
     }
   };
@@ -2236,6 +2235,7 @@ function rejouer() {
   etatJeu = 'lobby';
   pid = null; moi = null; snapDernier = null;
   buffer = []; pendantes = []; seq = 0; aEnvoyer = [];
+  nbPings = 0; pingEnvoi = {};
   myKills = 0; nbVivants = 0; alphaVisJoueurs = {};
   showLobby();
 }
