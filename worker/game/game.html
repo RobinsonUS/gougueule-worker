@@ -1377,21 +1377,21 @@ function dessine(p, moi, viseur, drag) {
   if (viseur) dessineViseur(viseur.x, viseur.y);
   dessineMinimap();
 
-  // Countdown 5,4,3,2,1 — chiffre centré à l'écran avec fondu
-  // Après repereEcran(), ctx est en espace écran (unités game)
-  // La font size est en px CSS mais la transform PX l'agrandit → on divise par PX
+  // Countdown 5,4,3,2,1 — dessiné en espace pixel pur (transform identité)
+  // Évite tout problème de mise à l'échelle selon l'écran
   if (_countdownDigit && _countdownAlpha > 0.01) {
     ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // reset : pixels physiques du canvas
     ctx.globalAlpha = _countdownAlpha;
-    var _fsize = Math.round(80 / (PX || 1)); // taille visuelle constante ~80px
-    ctx.font = 'bold ' + _fsize + 'px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
+    ctx.font = 'bold 90px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    var _cx = LARG / 2, _cy = HAUT / 2 - Math.round(40 / (PX || 1));
+    var _px = cv.width / 2;
+    var _py = cv.height / 2 - 40;
     ctx.fillStyle = 'rgba(0,0,0,0.75)';
-    ctx.fillText(String(_countdownDigit), _cx + 2 / (PX || 1), _cy + 2 / (PX || 1));
+    ctx.fillText(String(_countdownDigit), _px + 3, _py + 3);
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(String(_countdownDigit), _cx, _cy);
+    ctx.fillText(String(_countdownDigit), _px, _py);
     ctx.restore();
   }
 }
