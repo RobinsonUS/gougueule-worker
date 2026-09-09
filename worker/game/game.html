@@ -916,7 +916,7 @@ function dessineBarrePV(pv) {
 
 // ===================== inventaire =====================
 function zonesInv() {
-  const w = 72, gap = 12;
+  const w = 88, gap = 14;
   const total = NB_SLOTS * w + (NB_SLOTS - 1) * gap;
   const x0 = (LARG - total) / 2;
   const y0 = HAUT - w - 46;
@@ -1439,22 +1439,38 @@ function detecteSlotInv(p) {
   return -1;
 }
 
-function debuteInvDrag(e) {
-  if (etatJeu !== 'jeu' && etatJeu !== 'mort' && etatJeu !== 'fin') return false;
-  if (!moi || !moi.inv) return false;
-  var p = posInv(e);
+function _startInvAt(p, touchId) {
   var slot = detecteSlotInv(p);
   if (slot < 0) return false;
-  // Slot 0 (mains) : sélectionnable mais pas draggable
   if (slot === 0) { moi.slot = 0; synchroInv(); invDrag = null; return true; }
   var objet = contenuSlotMoi(slot);
   if (objet && objet !== 'mains') {
-    invDrag = { depuis: slot, x: p.x, y: p.y, objet: objet };
+    invDrag = { depuis: slot, x: p.x, y: p.y, objet: objet, touchId: touchId != null ? touchId : -1 };
   } else {
-    moi.slot = slot; synchroInv();
-    invDrag = null;
+    moi.slot = slot; synchroInv(); invDrag = null;
   }
   return true;
+}
+
+// Pour événement souris (desktop)
+function debuteInvDrag(e) {
+  if (etatJeu !== 'jeu' && etatJeu !== 'mort' && etatJeu !== 'fin') return false;
+  if (!moi || !moi.inv) return false;
+  return _startInvAt(posInv(e), -1);
+}
+
+// Pour un touch spécifique (mobile) — indépendant des joysticks actifs
+function debuteInvDragTouch(t) {
+  if (etatJeu !== 'jeu' && etatJeu !== 'mort' && etatJeu !== 'fin') return false;
+  if (!moi || !moi.inv) return false;
+  var p = versJeu(t.clientX, t.clientY);
+  // Ne pas intercepter si la position correspond au joystick gauche actif
+  var cg = joyGauchePos(), cd = joyDroitePos();
+  if (joyG.actif && t.identifier === joyG.id) return false;
+  if (joyD.actif && t.identifier === joyD.id) return false;
+  // Vérifier si le touch est sur l'inventaire
+  if (detecteSlotInv(p) < 0) return false;
+  return _startInvAt(p, t.identifier);
 }
 
 function termineInvDrag(e) {
@@ -1569,8 +1585,8 @@ function initTouchControls() {
     for (var i = 0; i < e.changedTouches.length; i++) {
       var t = e.changedTouches[i];
       var p = versJeu(t.clientX, t.clientY);
-      // Vérifier inventaire d'abord
-      if (!joyG.actif && !joyD.actif && debuteInvDrag(e)) { continue; }
+      // Inventaire : vérifier ce touch même si joystick actif
+      if (debuteInvDragTouch(t)) { continue; }
       var cg = joyGauchePos(), cd = joyDroitePos();
       var dG = Math.hypot(p.x - cg.x, p.y - cg.y);
       var dD = Math.hypot(p.x - cd.x, p.y - cd.y);
@@ -1589,11 +1605,30 @@ function initTouchControls() {
       var p = versJeu(t.clientX, t.clientY);
       if (t.identifier === joyG.id && joyG.actif) majStick(joyG, p, joyGauchePos());
       if (t.identifier === joyD.id && joyD.actif) majStick(joyD, p, joyDroitePos());
+      // Suivi du doigt pour le drag inventaire
+      if (invDrag && t.identifier === invDrag.touchId) { invDrag.x = p.x; invDrag.y = p.y; }
     }
   }, {passive:false});
 
   var relache = function(e) {
-    if (invDrag) { termineInvDrag(e); }
+    if (invDrag) {
+      // Chercher le touch qui correspond au drag
+      for (var ri = 0; ri < e.changedTouches.length; ri++) {
+        var rt = e.changedTouches[ri];
+        if (rt.identifier === invDrag.touchId || invDrag.touchId === -1) {
+          var rp = versJeu(rt.clientX, rt.clientY);
+          var rcible = detecteSlotInv(rp);
+          if (rcible >= 0 && rcible !== invDrag.depuis && rcible !== 0) {
+            swapInv(invDrag.depuis, rcible);
+          } else {
+            moi.slot = invDrag.depuis; synchroInv();
+          }
+          invDrag = null;
+          break;
+        }
+      }
+      if (invDrag) { invDrag = null; } // sécurité
+    }
     for (var i = 0; i < e.changedTouches.length; i++) {
       var t = e.changedTouches[i];
       if (t.identifier === joyG.id) { joyG.actif=false; joyG.id=-1; joyG.dx=0; joyG.dy=0; }
