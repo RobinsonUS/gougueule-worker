@@ -2106,6 +2106,7 @@ function connect(create) {
         // Déconnecter immédiatement : l'écran de fin est indépendant de la room
         // Le code room redevient disponible proprement côté serveur
         setTimeout(function() {
+          aEnvoyer = []; // vider les commandes accumulées pendant la fin
           if (ws) { try { ws.close(1000, 'fin'); } catch {} ws = null; }
         }, 300);
       }
@@ -2160,6 +2161,9 @@ function connect(create) {
       ws = null; etatJeu = 'lobby'; showLobby();
       var er = document.getElementById('lobby-err');
       if (er) er.textContent = 'Connexion perdue. Réessaie.';
+    } else if (e.code === 1000 && (etatJeu === 'fin' || etatJeu === 'mort')) {
+      // Fermeture intentionnelle après fin de partie — pas d'erreur à afficher
+      ws = null;
     } else if (etatJeu === 'jeu' || etatJeu === 'mort' || etatJeu === 'fin') {
       // Déconnexion en cours de partie → retour au lobby propre
       pid = null; moi = null; snapDernier = null;
@@ -2231,7 +2235,7 @@ function rejouer() {
   if (ws) { try { ws.close(); } catch {} ws = null; }
   etatJeu = 'lobby';
   pid = null; moi = null; snapDernier = null;
-  buffer = []; pendantes = []; seq = 0;
+  buffer = []; pendantes = []; seq = 0; aEnvoyer = [];
   myKills = 0; nbVivants = 0; alphaVisJoueurs = {};
   showLobby();
 }
