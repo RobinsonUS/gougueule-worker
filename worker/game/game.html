@@ -44,6 +44,7 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #sa-start{background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:16px;font-weight:700;padding:13px 44px;cursor:pointer;transition:opacity .2s}
 #sa-start:disabled{opacity:.4;cursor:not-allowed}
 #sa-quitter{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#fff;font-size:14px;font-weight:600;padding:10px 30px;cursor:pointer}
+#cpt{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:25;font-size:80px;font-weight:bold;font-family:system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;color:#fff;text-shadow:3px 3px 0 rgba(0,0,0,0.75);transition:opacity .7s}
 #sa .attente-txt{color:rgba(255,255,255,.5);font-size:13px}
 #lobby .tabs{display:flex;margin-bottom:16px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.18)}
 #lobby .tab{padding:9px 28px;cursor:pointer;font-size:14px;font-weight:600;background:rgba(255,255,255,.05);transition:background .2s}
@@ -111,6 +112,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
   <div class="kills-txt" id="fin-kills"></div>
   <button onclick="rejouer()">Retour au menu</button>
 </div>
+<div id="cpt"></div>
 <canvas id="jeu" tabindex="0"></canvas>
 <script>
 var SERVER = '${serverUrl}';
@@ -1377,23 +1379,7 @@ function dessine(p, moi, viseur, drag) {
   if (viseur) dessineViseur(viseur.x, viseur.y);
   dessineMinimap();
 
-  // Countdown 5,4,3,2,1 — dessiné en espace pixel pur (transform identité)
-  // Évite tout problème de mise à l'échelle selon l'écran
-  if (_countdownDigit && _countdownAlpha > 0.01) {
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // reset : pixels physiques du canvas
-    ctx.globalAlpha = _countdownAlpha;
-    ctx.font = 'bold 90px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    var _px = cv.width / 2;
-    var _py = cv.height / 2 - 40;
-    ctx.fillStyle = 'rgba(0,0,0,0.75)';
-    ctx.fillText(String(_countdownDigit), _px + 3, _py + 3);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(String(_countdownDigit), _px, _py);
-    ctx.restore();
-  }
+
 }
 
 // Vraies icones BattleAI, embarquees en base64
@@ -1536,8 +1522,7 @@ function termineInvDrag(e) {
 
 // alphaVis des joueurs : persiste entre les frames (vue.agents recrée des objets neufs à chaque frame)
 var alphaVisJoueurs = {};
-var _countdownDigit = null;  // chiffre affiché (1-5)
-var _countdownAlpha = 0;     // opacité courante (fondu)
+var _cptDernier = null; // dernier chiffre countdown affiché
 var prevTirTimer = {};
 
 function genMuzzleFlash(a) {
@@ -2143,6 +2128,32 @@ function connect(mode) {
       for (var i2 in msg.agents) arr.push(msg.agents[i2]);
       nbVivants = arr.filter(function (a) { return a.vivant; }).length;
 
+      // Countdown HTML (fiable, sans problème de transform canvas)
+      (function() {
+        var cptEl = document.getElementById('cpt');
+        if (!cptEl) return;
+        var ca = msg.compteARebours;
+        if (msg.phaseLobby && ca !== null && ca !== undefined && ca > 0) {
+          var num = Math.ceil(ca);
+          if (num !== _cptDernier) {
+            _cptDernier = num;
+            cptEl.textContent = num;
+            cptEl.style.display = 'block';
+            cptEl.style.transition = 'none';
+            cptEl.style.opacity = '1';
+            // Déclenche le fondu après une frame
+            requestAnimationFrame(function() {
+              cptEl.style.transition = 'opacity .85s';
+              cptEl.style.opacity = '0';
+            });
+          }
+        } else {
+          _cptDernier = null;
+          cptEl.style.display = 'none';
+          cptEl.style.opacity = '0';
+        }
+      })();
+
       // Kills du joueur local (cumulé sur toute la partie)
       if (msg.kills && myName) {
         msg.kills.forEach(function(k) {
@@ -2288,6 +2299,7 @@ function produitCommande(dt) {
 function rejouer() {
   document.getElementById('ecran-fin').style.display = 'none';
   document.getElementById('sa').style.display = 'none';
+  var _cptEl = document.getElementById('cpt'); if (_cptEl) _cptEl.style.display = 'none';
   if (ws) { try { ws.close(); } catch {} ws = null; }
   etatJeu = 'lobby';
   pid = null; moi = null; snapDernier = null;
@@ -2528,18 +2540,6 @@ window.addEventListener('load', function () {
   initRendu();
   initHUD();
   if (isMobile) initTouchControls();
-  // Animation countdown : seulement 5,4,3,2,1 avec fondu
-  var _snapCA = snapDernier && snapDernier.phaseLobby ? snapDernier.compteARebours : null;
-  if (_snapCA !== null && _snapCA !== undefined && _snapCA > 0) {
-    var _digit = Math.ceil(_snapCA);
-    if (_digit >= 1 && _digit <= 5) {
-      if (_digit !== _countdownDigit) { _countdownDigit = _digit; _countdownAlpha = 1.0; }
-      else { _countdownAlpha = Math.max(0, _countdownAlpha - dt); }
-    } else {
-      _countdownDigit = null; _countdownAlpha = 0;
-    }
-  } else { _countdownDigit = null; _countdownAlpha = 0; }
-
   requestAnimationFrame(boucle);
 });
 
