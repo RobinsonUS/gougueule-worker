@@ -243,7 +243,7 @@ function pas(p) {
 
   for (const a of arr) {
     if (!a.vivant) { a.file.length = 0; continue; }
-    const mouvSeulement = p.fini;
+    const mouvSeulement = p.fini || (p.phaseLobby === true);
     if (a.file.length === 0) {
       appliqueCommande(p, a, { seq: a.lastSeq, mx: 0, my: 0, angle: a.angle, dt: DT }, mouvSeulement);
     } else {
@@ -327,6 +327,7 @@ setInterval(() => {
 
 // rooms[gid] = { etat:'attente'|'en_cours'|'fini', createur:pid, players:{pid:{ws,name,accountId}}, partie:null|{} }
 const rooms = {};
+let soloRoomId = null; // gid de la room solo ouverte (accepte de nouveaux joueurs)
 // activeSessions[accountId] = { gid, pid } — un compte = une seule session
 const activeSessions = {};
 
@@ -334,19 +335,43 @@ const activeSessions = {};
 function nettoyeJoueur(roomId, playerId) {
   const room = rooms[roomId];
   if (!room || !room.players[playerId]) return; // idempotent
+
   if (room.etat === 'attente') {
+    // Salle d'attente amis
     delete room.players[playerId];
     if (playerId === room.createur && Object.keys(room.players).length > 0)
       room.createur = Object.keys(room.players)[0];
     if (!Object.keys(room.players).length) { delete rooms[roomId]; return; }
     diffuseAttente(room, roomId);
+
+  } else if (room.etat === 'lobby') {
+    // Phase lobby solo : retirer le joueur de la room ET de la partie
+    delete room.players[playerId];
+    if (room.partie && room.partie.agents[playerId]) {
+      delete room.partie.agents[playerId];
+    }
+    // Si plus personne : supprimer la room
+    if (!Object.keys(room.players).length) {
+      if (roomId === soloRoomId) soloRoomId = null;
+      delete rooms[roomId];
+      return;
+    }
+    // Si moins de 2 joueurs : annuler le countdown
+    if (Object.keys(room.players).length < 2) room.countdownStart = null;
+    // Diffuser l'état lobby aux joueurs restants
+    diffuseLobby(room, roomId);
+
   } else {
+    // Partie en cours ou terminée
     if (room.partie) {
       const a = room.partie.agents[playerId];
       if (a && a.vivant) { a.vivant = false; a.pv = 0; room.partie.kills.push({ killer: 'Déconnexion', victim: a.name }); }
     }
     delete room.players[playerId];
-    if (!Object.keys(room.players).length) delete rooms[roomId];
+    if (!Object.keys(room.players).length) {
+      if (roomId === soloRoomId) soloRoomId = null;
+      delete rooms[roomId];
+    }
   }
 }
 
@@ -355,6 +380,37 @@ function diffuseAttente(room, gid) {
   for (const [plPid, pl] of Object.entries(room.players)) {
     if (pl.ws.readyState !== WebSocket.OPEN) continue;
     try { pl.ws.send(JSON.stringify({ type: 'attente', joueurs, createur: room.createur, gameId: gid, yourId: plPid })); } catch {}
+  }
+}
+
+// Diffuser l'état lobby (nombre de joueurs + countdown) à tous les joueurs solo
+function diffuseLobby(room, gid) {
+  if (!room || room.etat !== 'lobby') return;
+  const nb = Object.keys(room.players).length;
+  let compteARebours = null;
+  if (room.countdownStart && nb >= 2) {
+    compteARebours = Math.max(0, 10 - (Date.now() - room.countdownStart) / 1000);
+  }
+  const snap = JSON.stringify({ type: 'lobbyStatus', nb, compteARebours });
+  for (const pl of Object.values(room.players)) {
+    if (pl.ws.readyState !== WebSocket.OPEN) continue;
+    try { pl.ws.send(snap); } catch {}
+  }
+}
+
+// Lancer la partie solo après le countdown
+function demarrePartie(room, gid) {
+  const p = room.partie;
+  p.phaseLobby = false;
+  p.demarree = true;
+  room.etat = 'en_cours';
+  room.countdownStart = null;
+  if (gid === soloRoomId) soloRoomId = null; // libérer pour les prochains
+  // Téléporter chaque joueur vivant à un endroit aléatoire
+  for (const a of Object.values(p.agents)) {
+    if (!a.vivant) continue;
+    const pos = placer(p.rng, p.obs);
+    a.x = pos.x; a.y = pos.y; a.pv = PV_MAX;
   }
 }
 
@@ -417,6 +473,58 @@ wss.on('connection', (ws) => {
 
         activeSessions[accountId] = { gid, pid };
         if (ws.readyState === WebSocket.OPEN) diffuseAttente(rooms[gid], gid);
+        return;
+      }
+
+      // ── solo : rejoindre la matchmaking automatique ─────────────
+      if (msg.type === 'solo') {
+        if (!JWT_SECRET) { ws.close(4003, 'JWT_SECRET manquant'); return; }
+        const payload = verifyJWT(msg.token || '');
+        if (!payload) { ws.close(4001, 'Token invalide ou expiré'); return; }
+
+        const sub = payload.sub;
+        if (activeSessions[sub]) {
+          const prev = activeSessions[sub];
+          const prevRoom = rooms[prev.gid];
+          if (prevRoom && prevRoom.players[prev.pid]) {
+            try { prevRoom.players[prev.pid].ws.close(4009, 'Reconnecté depuis un autre onglet'); } catch {}
+          }
+          nettoyeJoueur(prev.gid, prev.pid);
+          delete activeSessions[sub];
+        }
+
+        const playerName = (payload.name || 'Joueur').slice(0, 16);
+        accountId = sub;
+
+        // Trouver ou créer la room solo ouverte
+        if (!soloRoomId || !rooms[soloRoomId] || rooms[soloRoomId].etat !== 'lobby') {
+          const newGid = uid();
+          const partie = creePartie();
+          partie.phaseLobby = true; // bloque tir + zone
+          rooms[newGid] = { etat: 'lobby', mode: 'solo', createur: null, players: {}, partie, countdownStart: null };
+          soloRoomId = newGid;
+          gid = newGid;
+        } else {
+          gid = soloRoomId;
+        }
+
+        pid = uid();
+        ajouteJoueur(rooms[gid].partie, pid, playerName);
+        rooms[gid].players[pid] = { ws, name: playerName, accountId };
+        activeSessions[accountId] = { gid, pid };
+
+        const a = rooms[gid].partie.agents[pid];
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({
+              type: 'init', playerId: pid, gameId: gid, map: MONDE,
+              spawn: { x: a.x, y: a.y }, st: Date.now(),
+              cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT, ZONE_ATTENTE, ZONE_DUREE, ZONE_R0, ZONE_R1, MONDE },
+              decor: rooms[gid].partie.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches })),
+            }));
+          } catch {}
+        }
+        diffuseLobby(rooms[gid], gid);
         return;
       }
 
@@ -515,6 +623,20 @@ function boucleServeur() {
 
         if (!rooms[roomId]) continue;
 
+        // Phase lobby solo : physique + gestion countdown
+        if (room.etat === 'lobby' && room.mode === 'solo' && room.partie) {
+          try {
+            const nb = Object.keys(room.players).length;
+            if (nb >= 2 && !room.countdownStart) { room.countdownStart = Date.now(); diffuseLobby(room, roomId); }
+            else if (nb < 2 && room.countdownStart) { room.countdownStart = null; diffuseLobby(room, roomId); }
+            if (room.countdownStart && (Date.now() - room.countdownStart) >= 10000) {
+              demarrePartie(room, roomId);
+            }
+            pas(room.partie);
+            if (room.partie.tick % SNAP_TOUS_LES === 0) envoieSnapshot(room);
+          } catch (e) { console.error('[boucle/lobby]', e.message); }
+        }
+
         if (room.etat === 'en_cours' || room.etat === 'fini') {
           if (!room.partie) continue;
           try {
@@ -552,9 +674,18 @@ function envoieSnapshot(room) {
       o._lt = o.type;
     }
   });
+  // Champs lobby solo
+  let compteARebours = null;
+  const phaseLobby = !!p.phaseLobby;
+  if (phaseLobby && room.countdownStart) {
+    compteARebours = Math.max(0, 10 - (Date.now() - room.countdownStart) / 1000);
+  }
+  const nbJoueursLobby = phaseLobby ? Object.keys(room.players).length : undefined;
+
   const base = {
     type: 'snap', tick: p.tick, t: p.t, st: Date.now(), attente: !p.demarree,
     retard: retardCommun(p), fini: p.fini, vainqueur: p.vainqueur, zone: p.zone,
+    phaseLobby, compteARebours, nbJoueursLobby,
     balles: p.balles.map(b => ({ id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par })),
     kills: p.kills, evts: p.evts, decorMaj,
   };
