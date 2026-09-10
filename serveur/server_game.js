@@ -435,6 +435,18 @@ function calculeBotCmd(p, bot) {
   bot._tick = (bot._tick || 0) + 1;
   const t = bot._tick;
 
+  let mx = 0, my = 0, angle = bot.angle, tire = false, recharger = false;
+  if (bot.munitions === 0 && bot.rechargement <= 0) recharger = true;
+
+  // Phase lobby : errance libre à pleine vitesse, sans logique de combat
+  if (p.phaseLobby) {
+    if (t % 150 === 1) bot._wanderAngle = Math.random() * Math.PI * 2;
+    const wa = bot._wanderAngle || 0;
+    mx = Math.cos(wa); my = Math.sin(wa);
+    angle = lerpAngle(bot.angle, wa, 3 * DT);
+    return { seq: bot.lastSeq + 1, mx, my, angle, tire: false, recharger: false, dt: DT };
+  }
+
   // Ennemi le plus proche
   let nearest = null, nearestDist = Infinity;
   for (const a of Object.values(p.agents)) {
@@ -443,101 +455,85 @@ function calculeBotCmd(p, bot) {
     if (d < nearestDist) { nearestDist = d; nearest = a; }
   }
 
-  let mx = 0, my = 0, angle = bot.angle, tire = false, recharger = false;
-  if (bot.munitions === 0 && bot.rechargement <= 0) recharger = true;
-
-  // Sécurité zone (marge 8%)
   const dz = Math.hypot(bot.x - p.zone.x, bot.y - p.zone.y);
-  const inZone = !p.demarree || (dz < p.zone.r * 0.92);
+  const inZone = !p.demarree || (dz < p.zone.r * 0.90);
   const inBush = estDansBuilsson(p, bot);
 
-  // ── Priorité 1 : fuir la zone ─────────────────────────────────
+  // Délai de réaction : ~0.3s avant de tirer
+  bot._vueEnnemi = nearest ? (bot._vueEnnemi || 0) + 1 : 0;
+  const peutTirer = bot._vueEnnemi > 18;
+
+  // Priorité 1 : fuir la zone
   if (!inZone) {
     const dx = p.zone.x - bot.x, dy = p.zone.y - bot.y;
     const d = Math.hypot(dx, dy);
     mx = dx / d; my = dy / d;
-    if (nearest && nearestDist < 360 && bot.munitions > 0 && bot.rechargement <= 0) {
-      const lx = nearest.x + (nearest._vx || 0) * (nearestDist / V_BALLE);
-      const ly = nearest.y + (nearest._vy || 0) * (nearestDist / V_BALLE);
-      angle = Math.atan2(ly - bot.y, lx - bot.x);
-      tire = true;
-    } else {
-      angle = Math.atan2(dy, dx);
-    }
+    angle = Math.atan2(dy, dx);
 
   } else if (nearest) {
     const dx = nearest.x - bot.x, dy = nearest.y - bot.y;
-    const leadT = nearestDist / V_BALLE;
-    const predX = nearest.x + (nearest._vx || 0) * leadT;
-    const predY = nearest.y + (nearest._vy || 0) * leadT;
-    const aimBase = Math.atan2(predY - bot.y, predX - bot.x);
-    // Légère imperfection de visée (diminue avec la santé perdue)
-    const spread = 0.05 + 0.08 * (1 - bot.pv / PV_MAX);
-    const aimAngle = aimBase + (Math.random() - 0.5) * spread;
+    // Visée imprécise : grand spread, sans prédiction
+    const spread = 0.22 + 0.12 * (1 - bot.pv / PV_MAX);
+    const aimAngle = Math.atan2(dy, dx) + (Math.random() - 0.5) * spread;
 
-    if (bot.pv < PV_MAX * 0.28 && !inBush) {
-      // ── Priorité 2 : PV critique → buisson ou fuite ────────────
+    if (bot.pv < PV_MAX * 0.32 && !inBush) {
+      // Priorité 2 : PV critique → fuite vers buisson
       const b = buissonRefuge(p, bot, nearest);
       if (b) {
         const bdx = b.x - bot.x, bdy = b.y - bot.y;
         const bd = Math.hypot(bdx, bdy);
-        if (bd > 15) { mx = bdx / bd; my = bdy / bd; }
+        if (bd > 20) { mx = bdx / bd; my = bdy / bd; }
       } else {
         mx = -dx / nearestDist; my = -dy / nearestDist;
       }
       angle = aimAngle;
-      if (nearestDist < 290 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
+      if (peutTirer && nearestDist < 250 && bot.munitions > 0 && bot.rechargement <= 0
+          && Math.random() < 0.4) tire = true;
 
-    } else if (inBush && bot.pv < PV_MAX * 0.6) {
-      // ── Priorité 3 : dans le buisson, santé moyenne → embuscade ─
+    } else if (inBush && bot.pv < PV_MAX * 0.65) {
+      // Priorité 3 : embuscade dans le buisson
       angle = aimAngle;
-      if (nearestDist < 380 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
-      // Sortir si l'ennemi rush
-      if (nearestDist < 110) { mx = -dx / nearestDist; my = -dy / nearestDist; }
+      if (peutTirer && nearestDist < 340 && bot.munitions > 0 && bot.rechargement <= 0
+          && Math.random() < 0.6) tire = true;
+      if (nearestDist < 120) { mx = -dx / nearestDist; my = -dy / nearestDist; }
 
     } else {
-      // ── Priorité 4 : combat normal ───────────────────────────────
-      const IDEAL = 330;
-      if (nearestDist > IDEAL + 90) {
+      // Priorité 4 : combat à distance raisonnable
+      const IDEAL = 420;
+      if (nearestDist > IDEAL + 120) {
         mx = dx / nearestDist; my = dy / nearestDist;
-      } else if (nearestDist < IDEAL - 90) {
-        mx = -dx / nearestDist * 0.65; my = -dy / nearestDist * 0.65;
+      } else if (nearestDist < IDEAL - 120) {
+        mx = -dx / nearestDist * 0.5; my = -dy / nearestDist * 0.5;
       }
-      // Strafing oscillant
+      // Strafing modéré
       const perpX = -dy / nearestDist, perpY = dx / nearestDist;
-      const sd = Math.sin(t * 0.038 + (bot._wanderAngle || 0)) > 0 ? 1 : -1;
-      mx += perpX * sd * 0.52; my += perpY * sd * 0.52;
+      const sd = Math.sin(t * 0.03 + (bot._wanderAngle || 0)) > 0 ? 1 : -1;
+      mx += perpX * sd * 0.35; my += perpY * sd * 0.35;
       angle = aimAngle;
-      if (nearestDist < 570 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
+      if (peutTirer && nearestDist < 440 && bot.munitions > 0 && bot.rechargement <= 0
+          && Math.random() < 0.7) tire = true;
     }
 
   } else {
-    // ── Priorité 5 : errance vers le centre de zone ───────────────
+    // Priorité 5 : errance large vers le centre
     const tzx = p.zone.x - bot.x, tzy = p.zone.y - bot.y;
     const tzd = Math.hypot(tzx, tzy);
-    if (t % 100 === 0) bot._wanderAngle = Math.random() * Math.PI * 2;
+    if (t % 180 === 1) bot._wanderAngle = Math.random() * Math.PI * 2;
     const wa = bot._wanderAngle || 0;
-    if (tzd > 450 && p.demarree) {
-      mx = tzx / tzd * 0.65 + Math.cos(wa) * 0.35;
-      my = tzy / tzd * 0.65 + Math.sin(wa) * 0.35;
+    if (tzd > 500) {
+      mx = tzx / tzd * 0.8 + Math.cos(wa) * 0.2;
+      my = tzy / tzd * 0.8 + Math.sin(wa) * 0.2;
     } else {
       mx = Math.cos(wa); my = Math.sin(wa);
     }
     angle = Math.atan2(my, mx);
   }
 
-  // Bruit de mouvement léger
-  mx += (Math.random() - 0.5) * 0.14;
-  my += (Math.random() - 0.5) * 0.14;
   const n = Math.hypot(mx, my);
-  if (n > 1) { mx /= n; my /= n; }
-
-  // Rotation d'angle douce (5 rad/s max)
-  angle = lerpAngle(bot.angle, angle, 5 * DT);
-
+  if (n > 0.01) { mx /= n; my /= n; }
+  angle = lerpAngle(bot.angle, angle, 4 * DT);
   return { seq: bot.lastSeq + 1, mx, my, angle, tire, recharger, dt: DT };
 }
-
 function spawnBot(partie, nom) {
   const pid = 'bot_' + Math.random().toString(36).slice(2, 7);
   ajouteJoueur(partie, pid, nom, false); // pas d'arme en lobby
