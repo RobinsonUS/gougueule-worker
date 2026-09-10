@@ -3,6 +3,9 @@ import { rw, rewriteImports, isJs, mkInterceptor, proxyWS,
          buildReqHdrs, buildOutHdrs, corsHdrs, rewriteHtml } from './proxy.js';
 import { uiNavigateur } from './navigateur.js';
 import gameHtml from '../game/game.html';
+import bgAuth  from '../game/bg_auth.png';
+import bgLobby from '../game/bg_lobby.png';
+import bouton  from '../game/bouton.png';
 import {
   signJWT, verifyJWT, hashPassword, hashAdminKey,
   randomSalt, generateSessionToken, jsonOk, jsonErr
@@ -135,6 +138,18 @@ export default {
       if (!row || row.session_token !== payload.st)
         return jsonErr('Session expirée (connexion depuis un autre appareil)', 401);
       return jsonOk({ valid: true, name: payload.name });
+    }
+
+    // ── Assets statiques (images) ──
+    const imgRoutes = {
+      '/game/bg_auth.png':  bgAuth,
+      '/game/bg_lobby.png': bgLobby,
+      '/game/bouton.png':   bouton,
+    };
+    if (imgRoutes[url.pathname]) {
+      return new Response(imgRoutes[url.pathname], {
+        headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' }
+      });
     }
 
     // ── Jeu ──
