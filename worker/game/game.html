@@ -8,20 +8,22 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif}
 canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
-#auth{position:fixed;inset:0;background:linear-gradient(135deg,#1a2a1a,#0d1a0d);z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff}
-#auth h1{font-size:30px;font-weight:900;margin-bottom:22px;color:#4ade80;letter-spacing:1px}
-#auth .tabs{display:flex;margin-bottom:18px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.18)}
-#auth .tab{padding:9px 26px;cursor:pointer;font-size:14px;font-weight:600;background:rgba(255,255,255,0.05);transition:background .2s}
-#auth .tab.active{background:rgba(255,255,255,0.16)}
-#auth input{background:rgba(255,255,255,0.09);border:1px solid rgba(255,255,255,0.2);border-radius:10px;color:#fff;font-size:16px;padding:11px 18px;width:260px;text-align:center;margin:5px 0;outline:none}
-#auth input:focus{border-color:rgba(74,222,128,.6)}
-#auth input::placeholder{color:rgba(255,255,255,.38)}
-#auth button.main{background:#34A853;border:none;border-radius:10px;color:#fff;font-size:16px;font-weight:700;padding:13px 50px;cursor:pointer;margin-top:12px;transition:opacity .15s}
-#auth button.main:disabled{opacity:.5;cursor:default}
-#auth .errmsg{color:#f87171;font-size:13px;min-height:18px;margin-top:7px;text-align:center}
-#auth .deco{font-size:12px;color:rgba(255,255,255,.36);margin-top:18px;cursor:pointer;text-decoration:underline}
-#auth .deco:hover{color:rgba(255,255,255,.7)}
-#lobby{position:fixed;inset:0;background:linear-gradient(135deg,#1a2a1a,#0d1a0d);z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff}
+#auth{position:fixed;inset:0;background:url('bg_auth.png') center/cover no-repeat;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff}
+#auth-card{background:rgba(10,8,28,0.82);border:2px solid rgba(140,80,255,0.45);border-radius:22px;padding:30px 36px;width:320px;display:flex;flex-direction:column;align-items:center;gap:0;backdrop-filter:blur(8px)}
+#auth h1{font-size:22px;font-weight:900;margin:0 0 18px;color:#c084fc;letter-spacing:2px;text-transform:uppercase;text-shadow:0 0 18px rgba(168,85,247,.7)}
+#auth .tabs{display:flex;margin-bottom:14px;border-radius:10px;overflow:hidden;border:1px solid rgba(140,80,255,0.35);width:100%}
+#auth .tab{flex:1;padding:9px 0;cursor:pointer;font-size:13px;font-weight:700;background:rgba(80,40,160,0.2);transition:background .2s;text-align:center}
+#auth .tab.active{background:rgba(140,80,255,0.45)}
+#auth input{background:rgba(255,255,255,0.07);border:1px solid rgba(140,80,255,0.35);border-radius:10px;color:#fff;font-size:15px;padding:11px 16px;width:100%;box-sizing:border-box;text-align:center;margin:4px 0;outline:none;transition:border-color .2s}
+#auth input:focus{border-color:rgba(168,85,247,.8)}
+#auth input::placeholder{color:rgba(255,255,255,.3);letter-spacing:.5px}
+#auth button.main{background:linear-gradient(135deg,#9333ea,#6d28d9);border:none;border-radius:12px;color:#fff;font-size:16px;font-weight:800;padding:13px 0;cursor:pointer;margin-top:14px;width:100%;letter-spacing:.5px;box-shadow:0 4px 0 #4c1d95,0 6px 16px rgba(109,40,217,.4);transition:transform .1s,box-shadow .1s}
+#auth button.main:active{transform:translateY(3px);box-shadow:0 1px 0 #4c1d95}
+#auth button.main:disabled{opacity:.45;cursor:default}
+#auth .errmsg{color:#f87171;font-size:12px;min-height:16px;margin:6px 0 0;text-align:center;width:100%}
+#auth .deco{font-size:11px;color:rgba(200,180,255,.4);margin-top:14px;cursor:pointer;text-decoration:underline}
+#auth .deco:hover{color:rgba(200,180,255,.8)}
+#lobby{position:fixed;inset:0;background:url('bg_lobby.png') center/cover no-repeat;z-index:50;color:#fff;overflow:hidden}
 #solo-btn{background:#8cc152;border:none;border-radius:16px;color:#1a2a1a;font-size:22px;font-weight:900;padding:20px 80px;cursor:pointer;margin:20px 0;letter-spacing:1px;transition:transform .1s,opacity .15s}
 #solo-btn:hover{transform:scale(1.04)}
 #amis-toggle{font-size:13px;color:rgba(255,255,255,.5);cursor:pointer;margin-top:8px;user-select:none;text-decoration:underline}
@@ -44,7 +46,7 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #sa-start{background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:16px;font-weight:700;padding:13px 44px;cursor:pointer;transition:opacity .2s}
 #sa-start:disabled{opacity:.4;cursor:not-allowed}
 #sa-quitter{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#fff;font-size:14px;font-weight:600;padding:10px 30px;cursor:pointer}
-#cpt{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:25;font-size:80px;font-weight:bold;font-family:system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;color:#fff;text-shadow:3px 3px 0 rgba(0,0,0,0.75);transition:opacity .7s}
+#cpt{display:none;position:fixed;top:calc(50% - 160px);left:50%;transform:translateX(-50%);pointer-events:none;z-index:25;font-size:56px;font-weight:bold;font-family:system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;color:#fff;text-shadow:3px 3px 0 rgba(0,0,0,0.75);transition:opacity .7s}
 #sa .attente-txt{color:rgba(255,255,255,.5);font-size:13px}
 #lobby .tabs{display:flex;margin-bottom:16px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.18)}
 #lobby .tab{padding:9px 28px;cursor:pointer;font-size:14px;font-weight:600;background:rgba(255,255,255,.05);transition:background .2s}
@@ -63,39 +65,49 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 </head>
 <body>
 <div id="auth">
-  <h1>Gougueule</h1>
-  <div class="tabs">
-    <div class="tab active" onclick="authTab('login')">Se connecter</div>
-    <div class="tab" onclick="authTab('register')">Créer un compte</div>
+  <div id="auth-card">
+    <h1>Gougueule</h1>
+    <div class="tabs" style="width:100%">
+      <div class="tab active" onclick="authTab('login')">Se connecter</div>
+      <div class="tab" onclick="authTab('register')">Créer un compte</div>
+    </div>
+    <input id="auth-user" type="text" placeholder="Pseudo" maxlength="16" autocomplete="username">
+    <input id="auth-pass" type="password" placeholder="Mot de passe" maxlength="64" autocomplete="current-password">
+    <input id="auth-pass2" type="password" placeholder="Répéter le mot de passe" maxlength="64" style="display:none" autocomplete="new-password">
+    <input id="auth-key" type="text" placeholder="CLÉ ADMIN" maxlength="20" style="display:none;text-transform:uppercase" autocomplete="off">
+    <div class="errmsg" id="auth-err"></div>
+    <button class="main" id="auth-btn" onclick="authSubmit()">Jouer</button>
   </div>
-  <input id="auth-user" type="text" placeholder="Pseudo" maxlength="16" autocomplete="username">
-  <input id="auth-pass" type="password" placeholder="Mot de passe" maxlength="64" autocomplete="current-password">
-  <input id="auth-pass2" type="password" placeholder="Répéter le mot de passe" maxlength="64" style="display:none" autocomplete="new-password">
-  <input id="auth-key" type="text" placeholder="Clé admin (PYLAB-XXXX-XXXX-XXXX)" maxlength="20" style="display:none;text-transform:uppercase" autocomplete="off">
-  <div class="errmsg" id="auth-err"></div>
-  <button class="main" id="auth-btn" onclick="authSubmit()">Jouer</button>
 </div>
 <div id="lobby" style="display:none">
-  <h1>Battle Royale</h1>
-  <div style="font-size:14px;color:rgba(255,255,255,.5);margin-bottom:4px">Connecté en tant que <strong id="lobby-pseudo" style="color:#8cc152"></strong></div>
-
-  <!-- Solo (bouton principal) -->
-  <button id="solo-btn" onclick="joinSolo()">Solo</button>
-
-  <!-- Amis (section repliable) -->
-  <div id="amis-toggle" onclick="toggleAmis()">▶ Jouer avec des amis</div>
-  <div id="amis-section">
-    <div class="tabs" style="margin-top:14px">
-      <div class="tab active" id="tab-creer" onclick="lobbyTab('creer')">Créer une room</div>
-      <div class="tab" id="tab-rejoindre" onclick="lobbyTab('rejoindre')">Rejoindre</div>
-    </div>
-    <input id="room-in" type="text" placeholder="Code room" maxlength="10" autocomplete="off" style="text-transform:uppercase">
-    <div class="hint" id="lobby-hint">Les autres joueurs rejoignent avec ce code</div>
-    <div class="err" id="lobby-err"></div>
-    <button id="lobby-btn" onclick="lobbyAction()">Créer</button>
+  <!-- Barre du haut : pseudo (gauche) + déconnexion (droite) -->
+  <div style="position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:16px 20px;pointer-events:none">
+    <div id="lobby-pseudo" style="pointer-events:none;font-size:19px;font-weight:700;font-family:system-ui,-apple-system,sans-serif;color:#fff;text-shadow:2px 2px 0 rgba(0,0,0,.85),0 0 12px rgba(0,0,0,.6)"></div>
+    <button onclick="deconnexion()" style="pointer-events:auto;background:linear-gradient(135deg,#ef4444,#b91c1c);border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:800;padding:9px 18px;cursor:pointer;box-shadow:0 3px 0 #7f1d1d,0 5px 12px rgba(239,68,68,.35);letter-spacing:.5px;transition:transform .1s" onmousedown="this.style.transform='translateY(2px)'" onmouseup="this.style.transform=''" onmouseleave="this.style.transform=''">DÉCO</button>
   </div>
 
-  <span class="deco" onclick="deconnexion()" style="font-size:12px;color:rgba(255,255,255,.36);margin-top:18px;cursor:pointer;text-decoration:underline">Déconnexion</span>
+  <!-- Centre : bouton Solo + amis -->
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:16px">
+    <!-- Bouton Solo image -->
+    <button id="solo-btn" onclick="joinSolo()" style="background:none;border:none;padding:0;cursor:pointer;transition:transform .1s;filter:drop-shadow(0 6px 12px rgba(0,0,0,.5))" onmousedown="this.style.transform='translateY(4px) scale(.97)'" onmouseup="this.style.transform=''" onmouseleave="this.style.transform=''">
+      <img src="bouton.png" alt="Solo" style="width:200px;height:200px;display:block">
+    </button>
+
+    <!-- Amis (section repliable) -->
+    <div id="amis-toggle" onclick="toggleAmis()" style="background:rgba(0,0,0,.55);border:2px solid rgba(255,255,255,.25);border-radius:12px;padding:10px 22px;cursor:pointer;font-size:14px;font-weight:700;color:rgba(255,255,255,.85);letter-spacing:.5px;backdrop-filter:blur(4px);transition:background .2s;user-select:none">▶ Jouer avec des amis</div>
+    <div id="amis-section" style="display:none;flex-direction:column;align-items:center;gap:8px">
+      <div style="background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:18px 24px;display:flex;flex-direction:column;align-items:center;gap:8px;backdrop-filter:blur(6px);min-width:260px">
+        <div class="tabs" style="width:100%;margin:0">
+          <div class="tab active" id="tab-creer" onclick="lobbyTab('creer')">Créer</div>
+          <div class="tab" id="tab-rejoindre" onclick="lobbyTab('rejoindre')">Rejoindre</div>
+        </div>
+        <input id="room-in" type="text" placeholder="Code room" maxlength="10" autocomplete="off" style="text-transform:uppercase;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);border-radius:10px;color:#fff;font-size:15px;padding:10px 14px;width:100%;box-sizing:border-box;text-align:center;outline:none">
+        <div class="hint" id="lobby-hint" style="font-size:11px;color:rgba(255,255,255,.45);text-align:center"></div>
+        <div class="err" id="lobby-err" style="color:#f87171;font-size:12px;min-height:14px;text-align:center"></div>
+        <button id="lobby-btn" onclick="lobbyAction()" style="background:linear-gradient(135deg,#22c55e,#16a34a);border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:800;padding:11px 0;cursor:pointer;width:100%;box-shadow:0 3px 0 #14532d;transition:transform .1s" onmousedown="this.style.transform='translateY(2px)'" onmouseup="this.style.transform=''" onmouseleave="this.style.transform=''">Créer</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="sa">
@@ -2135,6 +2147,7 @@ function connect(mode) {
         var ca = msg.compteARebours;
         if (msg.phaseLobby && ca !== null && ca !== undefined && ca > 0) {
           var num = Math.ceil(ca);
+          if (num > 5) { _cptDernier = null; cptEl.style.display = 'none'; return; } // seulement 5,4,3,2,1
           if (num !== _cptDernier) {
             _cptDernier = num;
             cptEl.textContent = num;
@@ -2388,7 +2401,7 @@ function showLobby() {
   var er = document.getElementById('lobby-err');    if (er) er.textContent = '';
   // Replier la section amis
   _amisVisible = false;
-  var as = document.getElementById('amis-section'); if (as) as.style.display = 'none';
+  var as = document.getElementById('amis-section'); if (as) { as.style.display = 'none'; as.style.flexDirection = 'column'; }
   var at = document.getElementById('amis-toggle');  if (at) at.textContent = '▶ Jouer avec des amis';
   lobbyTab(_lobbyMode || 'creer');
 }
