@@ -1951,7 +1951,7 @@ function reconcilie(snap) {
 // ═══ Interpolation des autres joueurs, sur l'horloge serveur ═══
 function pousseSnap(snap) {
   buffer.push(snap);
-  while (buffer.length > 40) buffer.shift();
+  while (buffer.length > 25) buffer.shift(); // 25 snaps ≈ 0.83s d'historique
 }
 
 function etatAffiche() {
@@ -1978,7 +1978,7 @@ function etatAffiche() {
     for (var id in ap.agents) {
       var b = ap.agents[id], a2 = av.agents[id];
       if (!a2) { vue.agents[id] = b; continue; }
-      var c = {}; for (var k in b) c[k] = b[k];
+      var c = Object.assign({}, b); // plus rapide qu'une boucle for-in
       c.x = a2.x + (b.x - a2.x) * w;
       c.y = a2.y + (b.y - a2.y) * w;
       c.angle = angleLerp(a2.angle, b.angle, w);
@@ -2020,7 +2020,7 @@ function etatAffiche() {
   // MON personnage : etat predit, jamais interpole => zero latence ressentie
   var sMoi = snapDernier.agents[pid];
   if (sMoi && moi) {
-    var m = {}; for (var k2 in sMoi) m[k2] = sMoi[k2];
+    var m = Object.assign({}, sMoi);
     m.x = moi.x + erreurLissage.x;
     m.y = moi.y + erreurLissage.y;
     m.angle = moi.angle;
@@ -2143,8 +2143,7 @@ function connect(mode) {
       pousseSnap(msg);
       reconcilie(msg);
 
-      var arr = [];
-      for (var i2 in msg.agents) arr.push(msg.agents[i2]);
+      var arr = Object.values(msg.agents);
       nbVivants = arr.filter(function (a) { return a.vivant; }).length;
 
       // Countdown HTML (fiable, sans problème de transform canvas)
@@ -2179,6 +2178,10 @@ function connect(mode) {
         msg.kills.forEach(function(k) {
           if (k.killer === myName) myKills++;
         });
+      }
+      // Purger alphaVisJoueurs des agents qui ont quitté (évite la croissance infinie)
+      for (var _aid in alphaVisJoueurs) {
+        if (!msg.agents[_aid]) delete alphaVisJoueurs[_aid];
       }
       var s = msg.agents[pid];
       if (s && !s.vivant && etatJeu === 'jeu') {
