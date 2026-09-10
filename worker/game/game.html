@@ -24,8 +24,10 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #auth .deco{font-size:11px;color:rgba(200,180,255,.4);margin-top:14px;cursor:pointer;text-decoration:underline}
 #auth .deco:hover{color:rgba(200,180,255,.8)}
 #lobby{position:fixed;inset:0;background:url('/game/bg_lobby.png') center/cover no-repeat;z-index:50;color:#fff;overflow:hidden}
-#solo-btn{background:#8cc152;border:none;border-radius:16px;color:#1a2a1a;font-size:22px;font-weight:900;padding:20px 80px;cursor:pointer;margin:20px 0;letter-spacing:1px;transition:transform .1s,opacity .15s}
-#solo-btn:hover{transform:scale(1.04)}
+#solo-btn{background:none;border:none;padding:0;cursor:pointer;
+  filter:drop-shadow(0 10px 0 rgba(0,0,0,0.65));
+  transition:filter .06s,transform .06s}
+#solo-btn:active{filter:drop-shadow(0 0 0 transparent) brightness(0.82);transform:translateY(7px) scale(0.97)}
 #amis-toggle{font-size:13px;color:rgba(255,255,255,.5);cursor:pointer;margin-top:8px;user-select:none;text-decoration:underline}
 #amis-toggle:hover{color:rgba(255,255,255,.8)}
 #amis-section{display:none;flex-direction:column;align-items:center;margin-top:10px;width:100%}
@@ -96,7 +98,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
   <!-- Centre : bouton Solo + amis -->
   <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:16px">
     <!-- Bouton Solo image -->
-    <button id="solo-btn" onclick="joinSolo()" style="background:none;border:none;padding:0;cursor:pointer;transition:transform .1s;filter:drop-shadow(0 6px 12px rgba(0,0,0,.5))" onmousedown="this.style.transform='translateY(4px) scale(.97)'" onmouseup="this.style.transform=''" onmouseleave="this.style.transform=''">
+    <button id="solo-btn" onclick="joinSolo()">
       <img src="/game/bouton.png" alt="Solo" style="width:500px;height:500px;display:block">
     </button>
 
