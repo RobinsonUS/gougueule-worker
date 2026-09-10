@@ -23,12 +23,10 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #auth .errmsg{color:#f87171;font-size:12px;min-height:16px;margin:6px 0 0;text-align:center;width:100%}
 #auth .deco{font-size:11px;color:rgba(200,180,255,.4);margin-top:14px;cursor:pointer;text-decoration:underline}
 #auth .deco:hover{color:rgba(200,180,255,.8)}
-#lobby{position:fixed;inset:0;background:linear-gradient(135deg,#2a5a2a,#1a3a1a);background-image:url("/game/bg_lobby.png");background-size:cover;background-position:center;background-repeat:no-repeat;z-index:50;color:#fff;overflow:hidden}
-#solo-btn{background:none;border:none;padding:0;cursor:pointer;
-  filter:drop-shadow(0 8px 16px rgba(0,0,0,0.7));
-  transition:filter .08s,transform .08s,opacity .08s}
+#solo-btn{background:none;border:none;padding:0;cursor:pointer;filter:drop-shadow(0 8px 16px rgba(0,0,0,0.7));transition:filter .08s,transform .08s,opacity .08s}
 #solo-btn:hover{filter:drop-shadow(0 8px 16px rgba(0,0,0,0.7))}
 #solo-btn:active{filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:translateY(4px) scale(0.96);opacity:0.85}
+#lobby{position:fixed;inset:0;background:url('/game/bg_lobby.png') center/cover no-repeat;z-index:50;color:#fff;overflow:hidden}
 #amis-toggle{font-size:13px;color:rgba(255,255,255,.5);cursor:pointer;margin-top:8px;user-select:none;text-decoration:underline}
 #amis-toggle:hover{color:rgba(255,255,255,.8)}
 #amis-section{display:none;flex-direction:column;align-items:center;margin-top:10px;width:100%}
@@ -36,7 +34,7 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #lobby input{background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:10px;color:#fff;font-size:16px;padding:12px 20px;width:260px;text-align:center;margin:6px 0;outline:none}
 #lobby input::placeholder{color:#888}
 #lobby input:focus{border-color:#8cc152;box-shadow:0 0 0 2px rgba(140,193,82,0.2)}
-#lobby button{background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:18px;font-weight:700;padding:14px 50px;cursor:pointer;margin-top:14px}
+#lobby button:not(#solo-btn){background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:18px;font-weight:700;padding:14px 50px;cursor:pointer;margin-top:14px}
 
 
 #ecran-fin{display:none;position:fixed;inset:0;background:linear-gradient(135deg,#1a2a1a,#0d1a0d);z-index:45;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:auto}
