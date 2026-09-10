@@ -435,16 +435,16 @@ function calculeBotCmd(p, bot) {
   bot._tick = (bot._tick || 0) + 1;
   const t = bot._tick;
 
-  let mx = 0, my = 0, angle = bot.angle, tire = false, recharger = false;
+  let tire = false, recharger = false;
   if (bot.munitions === 0 && bot.rechargement <= 0) recharger = true;
 
-  // Phase lobby : errance libre à pleine vitesse, sans logique de combat
+  // Phase lobby : errance libre à pleine vitesse
   if (p.phaseLobby) {
     if (t % 150 === 1) bot._wanderAngle = Math.random() * Math.PI * 2;
     const wa = bot._wanderAngle || 0;
-    mx = Math.cos(wa); my = Math.sin(wa);
-    angle = lerpAngle(bot.angle, wa, 3 * DT);
-    return { seq: bot.lastSeq + 1, mx, my, angle, tire: false, recharger: false, dt: DT };
+    bot._tmx = Math.cos(wa); bot._tmy = Math.sin(wa);
+    const angle = lerpAngle(bot.angle, wa, 3 * DT);
+    return { seq: bot.lastSeq + 1, mx: bot._tmx, my: bot._tmy, angle, tire: false, recharger: false, dt: DT };
   }
 
   // Ennemi le plus proche
@@ -459,80 +459,90 @@ function calculeBotCmd(p, bot) {
   const inZone = !p.demarree || (dz < p.zone.r * 0.90);
   const inBush = estDansBuilsson(p, bot);
 
-  // Délai de réaction : ~0.3s avant de tirer
+  // Délai de réaction court (10 ticks ≈ 0.17s) puis tire toujours
   bot._vueEnnemi = nearest ? (bot._vueEnnemi || 0) + 1 : 0;
-  const peutTirer = bot._vueEnnemi > 18;
+  const peutTirer = bot._vueEnnemi > 42;
 
-  // Priorité 1 : fuir la zone
+  // Cibles de mouvement (interpolées pour fluidité)
+  let tmx = 0, tmy = 0, angle = bot.angle;
+
   if (!inZone) {
+    // Priorité 1 : fuir la zone
     const dx = p.zone.x - bot.x, dy = p.zone.y - bot.y;
     const d = Math.hypot(dx, dy);
-    mx = dx / d; my = dy / d;
+    tmx = dx / d; tmy = dy / d;
     angle = Math.atan2(dy, dx);
 
   } else if (nearest) {
     const dx = nearest.x - bot.x, dy = nearest.y - bot.y;
-    // Visée imprécise : grand spread, sans prédiction
-    const spread = 0.22 + 0.12 * (1 - bot.pv / PV_MAX);
+    // Visée directe (sans prédiction) + spread élevé
+    const spread = 0.28 + 0.14 * (1 - bot.pv / PV_MAX);
     const aimAngle = Math.atan2(dy, dx) + (Math.random() - 0.5) * spread;
 
     if (bot.pv < PV_MAX * 0.32 && !inBush) {
-      // Priorité 2 : PV critique → fuite vers buisson
+      // Priorité 2 : PV critique
       const b = buissonRefuge(p, bot, nearest);
       if (b) {
         const bdx = b.x - bot.x, bdy = b.y - bot.y;
         const bd = Math.hypot(bdx, bdy);
-        if (bd > 20) { mx = bdx / bd; my = bdy / bd; }
+        if (bd > 20) { tmx = bdx / bd; tmy = bdy / bd; }
       } else {
-        mx = -dx / nearestDist; my = -dy / nearestDist;
+        tmx = -dx / nearestDist; tmy = -dy / nearestDist;
       }
       angle = aimAngle;
-      if (peutTirer && nearestDist < 250 && bot.munitions > 0 && bot.rechargement <= 0
-          && Math.random() < 0.4) tire = true;
+      // Tire toujours quand en fuite, juste moins souvent (tick pair)
+      if (peutTirer && nearestDist < 500 && bot.munitions > 0 && bot.rechargement <= 0
+          && t % 3 === 0) tire = true;
 
     } else if (inBush && bot.pv < PV_MAX * 0.65) {
-      // Priorité 3 : embuscade dans le buisson
+      // Priorité 3 : embuscade
       angle = aimAngle;
-      if (peutTirer && nearestDist < 340 && bot.munitions > 0 && bot.rechargement <= 0
-          && Math.random() < 0.6) tire = true;
-      if (nearestDist < 120) { mx = -dx / nearestDist; my = -dy / nearestDist; }
+      if (peutTirer && nearestDist < 400 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
+      if (nearestDist < 120) { tmx = -dx / nearestDist; tmy = -dy / nearestDist; }
 
     } else {
-      // Priorité 4 : combat à distance raisonnable
+      // Priorité 4 : combat — tir systématique, mauvaise visée
       const IDEAL = 420;
       if (nearestDist > IDEAL + 120) {
-        mx = dx / nearestDist; my = dy / nearestDist;
+        tmx = dx / nearestDist; tmy = dy / nearestDist;
       } else if (nearestDist < IDEAL - 120) {
-        mx = -dx / nearestDist * 0.5; my = -dy / nearestDist * 0.5;
+        tmx = -dx / nearestDist * 0.5; tmy = -dy / nearestDist * 0.5;
       }
-      // Strafing modéré
       const perpX = -dy / nearestDist, perpY = dx / nearestDist;
       const sd = Math.sin(t * 0.03 + (bot._wanderAngle || 0)) > 0 ? 1 : -1;
-      mx += perpX * sd * 0.35; my += perpY * sd * 0.35;
+      tmx += perpX * sd * 0.35; tmy += perpY * sd * 0.35;
       angle = aimAngle;
-      if (peutTirer && nearestDist < 440 && bot.munitions > 0 && bot.rechargement <= 0
-          && Math.random() < 0.7) tire = true;
+      // Tire TOUJOURS quand en portée (mauvaise visée compense)
+      if (peutTirer && nearestDist < 600 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
     }
 
   } else {
-    // Priorité 5 : errance large vers le centre
+    // Priorité 5 : errance
     const tzx = p.zone.x - bot.x, tzy = p.zone.y - bot.y;
     const tzd = Math.hypot(tzx, tzy);
     if (t % 180 === 1) bot._wanderAngle = Math.random() * Math.PI * 2;
     const wa = bot._wanderAngle || 0;
     if (tzd > 500) {
-      mx = tzx / tzd * 0.8 + Math.cos(wa) * 0.2;
-      my = tzy / tzd * 0.8 + Math.sin(wa) * 0.2;
+      tmx = tzx / tzd * 0.8 + Math.cos(wa) * 0.2;
+      tmy = tzy / tzd * 0.8 + Math.sin(wa) * 0.2;
     } else {
-      mx = Math.cos(wa); my = Math.sin(wa);
+      tmx = Math.cos(wa); tmy = Math.sin(wa);
     }
-    angle = Math.atan2(my, mx);
+    angle = Math.atan2(tmy, tmx);
   }
 
-  const n = Math.hypot(mx, my);
-  if (n > 0.01) { mx /= n; my /= n; }
+  // Normaliser la cible
+  const tn = Math.hypot(tmx, tmy);
+  if (tn > 0.01) { tmx /= tn; tmy /= tn; }
+
+  // Interpolation du mouvement pour fluidité (lerp 18% par tick)
+  bot._tmx = (bot._tmx || 0) * 0.82 + tmx * 0.18;
+  bot._tmy = (bot._tmy || 0) * 0.82 + tmy * 0.18;
+
+  // Rotation d'angle douce
   angle = lerpAngle(bot.angle, angle, 4 * DT);
-  return { seq: bot.lastSeq + 1, mx, my, angle, tire, recharger, dt: DT };
+
+  return { seq: bot.lastSeq + 1, mx: bot._tmx, my: bot._tmy, angle, tire, recharger, dt: DT };
 }
 function spawnBot(partie, nom) {
   const pid = 'bot_' + Math.random().toString(36).slice(2, 7);
