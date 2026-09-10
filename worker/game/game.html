@@ -8,7 +8,7 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif}
 canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
-#auth{position:fixed;inset:0;background:url('bg_auth.png') center/cover no-repeat;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff}
+#auth{position:fixed;inset:0;background:url('/game/bg_auth.png') center/cover no-repeat;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff}
 #auth-card{background:rgba(10,8,28,0.82);border:2px solid rgba(140,80,255,0.45);border-radius:22px;padding:30px 36px;width:320px;display:flex;flex-direction:column;align-items:center;gap:0;backdrop-filter:blur(8px)}
 #auth h1{font-size:22px;font-weight:900;margin:0 0 18px;color:#c084fc;letter-spacing:2px;text-transform:uppercase;text-shadow:0 0 18px rgba(168,85,247,.7)}
 #auth .tabs{display:flex;margin-bottom:14px;border-radius:10px;overflow:hidden;border:1px solid rgba(140,80,255,0.35);width:100%}
@@ -23,7 +23,7 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #auth .errmsg{color:#f87171;font-size:12px;min-height:16px;margin:6px 0 0;text-align:center;width:100%}
 #auth .deco{font-size:11px;color:rgba(200,180,255,.4);margin-top:14px;cursor:pointer;text-decoration:underline}
 #auth .deco:hover{color:rgba(200,180,255,.8)}
-#lobby{position:fixed;inset:0;background:url('bg_lobby.png') center/cover no-repeat;z-index:50;color:#fff;overflow:hidden}
+#lobby{position:fixed;inset:0;background:url('/game/bg_lobby.png') center/cover no-repeat;z-index:50;color:#fff;overflow:hidden}
 #solo-btn{background:#8cc152;border:none;border-radius:16px;color:#1a2a1a;font-size:22px;font-weight:900;padding:20px 80px;cursor:pointer;margin:20px 0;letter-spacing:1px;transition:transform .1s,opacity .15s}
 #solo-btn:hover{transform:scale(1.04)}
 #amis-toggle{font-size:13px;color:rgba(255,255,255,.5);cursor:pointer;margin-top:8px;user-select:none;text-decoration:underline}
@@ -66,7 +66,6 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <body>
 <div id="auth">
   <div id="auth-card">
-    <h1>Gougueule</h1>
     <div class="tabs" style="width:100%">
       <div class="tab active" onclick="authTab('login')">Se connecter</div>
       <div class="tab" onclick="authTab('register')">Créer un compte</div>
@@ -90,7 +89,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
   <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:16px">
     <!-- Bouton Solo image -->
     <button id="solo-btn" onclick="joinSolo()" style="background:none;border:none;padding:0;cursor:pointer;transition:transform .1s;filter:drop-shadow(0 6px 12px rgba(0,0,0,.5))" onmousedown="this.style.transform='translateY(4px) scale(.97)'" onmouseup="this.style.transform=''" onmouseleave="this.style.transform=''">
-      <img src="bouton.png" alt="Solo" style="width:200px;height:200px;display:block">
+      <img src="/game/bouton.png" alt="Solo" style="width:200px;height:200px;display:block">
     </button>
 
     <!-- Amis (section repliable) -->
