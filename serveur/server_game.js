@@ -35,9 +35,9 @@ const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
 
-const DT = 1 / 60;
-const TICK_MS = 1000 / 60;
-const SNAP_TOUS_LES = 2;
+const DT = 1 / 30; // 30 Hz : charge CPU réduite de moitié
+const TICK_MS = 1000 / 30;
+const SNAP_TOUS_LES = 1; // snap chaque tick (= 30 Hz)
 const DT_MAX_INPUT = 0.05;
 
 // ─────────────── RNG deterministe ─────────────────────────────────
@@ -103,8 +103,10 @@ function creePartie() {
   const rng = creeRng((Math.random() * 1e9) | 0);
   const obs = genereDecor(rng);
   obs.forEach(o => { o._lt = o.type; });
+  const arbres = obs.filter(o => o.type === 'arbre');
   return {
-    rng, obs, t: 0, tick: 0, fini: false, vainqueur: null,
+    rng, obs, arbres, // arbres : liste pré-filtrée pour deplaceSolo
+    t: 0, tick: 0, fini: false, vainqueur: null,
     demarree: false, nbMax: 0, balleId: 0,
     zone: { x: MONDE / 2, y: MONDE / 2, r: ZONE_R0 },
     balles: [], agents: {}, kills: [], evts: [],
@@ -130,12 +132,13 @@ function borne(a) {
   a.y = Math.min(MONDE - R_JOUEUR, Math.max(R_JOUEUR, a.y));
 }
 
-function deplaceSolo(a, dx, dy, obs) {
+function deplaceSolo(a, dx, dy, obs, maxIter = 3) {
   a.x += dx; a.y += dy; borne(a);
-  for (let it = 0; it < 3; it++) {
+  // obs doit déjà être la liste des arbres (pré-filtrée)
+  for (let it = 0; it < maxIter; it++) {
     let hit = false;
     for (const o of obs) {
-      if (o.type !== 'arbre') continue;
+      // pas de filtre type ici (obs = arbres uniquement)
       const nx = a.x - o.x, ny = a.y - o.y;
       const d = Math.hypot(nx, ny), min = o.r + R_JOUEUR;
       if (d < min) {
@@ -173,7 +176,8 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   const n = Math.hypot(mx, my);
   if (n > 1) { mx /= n; my /= n; }
 
-  deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.obs);
+  // Bots : 1 itération de collision (précision réduite mais 3× plus rapide)
+  deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
   if (mouvSeulement) { a.lastSeq = cmd.seq; return; }
@@ -241,9 +245,10 @@ function pas(p) {
     }
   }
 
-  // Cache buissons en PREMIER (avant toute utilisation)
-  if (!p._buissons || p.tick % 300 === 0) {
+  // Caches (buissons + arbres) mis à jour periodi quement ou si souche apparaît
+  if (!p._buissons || p.tick % 150 === 0) {
     p._buissons = p.obs.filter(o => o.type === 'buisson');
+    p.arbres    = p.obs.filter(o => o.type === 'arbre');
   }
 
   // Suivi de vitesse + précalcul _inBush en une seule passe
@@ -303,8 +308,7 @@ function pas(p) {
     if (b.reste <= 0) { p.balles.splice(k, 1); continue; }
     const nx = b.x + dx, ny = b.y + dy;
     let mort = false;
-    for (const o of p.obs) {
-      if (o.type !== 'arbre') continue;
+    for (const o of (p.arbres || p.obs)) {
       if (Math.hypot(o.x - nx, o.y - ny) < o.r + R_BALLE) {
         o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
         if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; }
@@ -534,8 +538,8 @@ function calculeBotCmd(p, bot, arr) {
   if (tn > 0.01) { tmx /= tn; tmy /= tn; }
 
   // Interpolation du mouvement (fluidité)
-  bot._tmx = (bot._tmx || 0) * 0.82 + tmx * 0.18;
-  bot._tmy = (bot._tmy || 0) * 0.82 + tmy * 0.18;
+  bot._tmx = (bot._tmx || 0) * 0.70 + tmx * 0.30; // adapté 30 Hz
+  bot._tmy = (bot._tmy || 0) * 0.70 + tmy * 0.30;
 
   angle = lerpAngle(bot.angle, angle, 4 * DT);
   return { seq: bot.lastSeq + 1, mx: bot._tmx, my: bot._tmy, angle, tire, recharger, dt: DT };
@@ -777,7 +781,7 @@ function boucleServeur() {
   try {
     const maintenant = Date.now();
     let tours = 0;
-    while (prochain <= maintenant && tours < 5) {
+    while (prochain <= maintenant && tours < 2) {
       for (const [roomId, room] of Object.entries(rooms)) {
         // Détecter les connexions mortes
         try {
@@ -889,11 +893,14 @@ function envoieSnapshot(room) {
       revele: a.revele, slot: a.slot, inv: a.inv };
   }
   base.agents = agents;
+  // Sérialiser UNE FOIS puis injecter l'ack par joueur (string replace = O(1))
+  base.ack = 0;
+  const snapStr = JSON.stringify(base);
   for (const [id, pl] of Object.entries(room.players)) {
     if (pl.ws.readyState !== WebSocket.OPEN) continue;
     const a = p.agents[id];
-    base.ack = a ? a.lastSeq : 0;
-    try { pl.ws.send(JSON.stringify(base)); } catch {}
+    const ack = a ? a.lastSeq : 0;
+    try { pl.ws.send(ack === 0 ? snapStr : snapStr.replace('"ack":0', '"ack":' + ack)); } catch {}
   }
   p.kills = []; p.evts = [];
 }
