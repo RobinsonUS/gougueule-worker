@@ -460,8 +460,7 @@ function calculeBotCmd(p, bot, arr) {
     if (nearestDist > IDEAL + 80) { tmx = dx / nearestDist; tmy = dy / nearestDist; }
     else if (nearestDist < IDEAL - 80) { tmx = -dx / nearestDist * 0.5; tmy = -dy / nearestDist * 0.5; }
     angle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.30;
-    bot._vu = (bot._vu || 0) + 1;
-    if (bot._vu > 42 && nearestDist < 520 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
+    if (nearestDist < 520 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
 
   } else {
     // 3. Errance
@@ -521,8 +520,9 @@ function demarrePartie(room, gid) {
     if (!a.vivant) continue;
     const pos = placer(p.rng, p.obs);
     a.x = pos.x; a.y = pos.y; a.pv = PV_MAX;
-    a.inv = [null, 'fusil', null, null, null, null]; // donner l'arme
+    a.inv = [null, 'fusil', null, null, null, null];
     a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
+    if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._dernCmd = null; a._tick = 0; }
   }
 }
 
