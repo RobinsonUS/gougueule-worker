@@ -241,17 +241,31 @@ function pas(p) {
     }
   }
 
-  // Suivi de vitesse (pour visée prédictive des bots)
+  // Suivi de vitesse + précalcul buisson (une seule passe)
   for (const a of arr) {
     a._vx = (a.x - (a._px ?? a.x)) / DT;
     a._vy = (a.y - (a._py ?? a.y)) / DT;
     a._px = a.x; a._py = a.y;
+    // _inBush précalculé ici pour éviter N boucles d'obstacles dans le bot AI
+    a._inBush = false;
+    for (const o of p._buissons) {
+      if (Math.hypot(o.x - a.x, o.y - a.y) < o.r * 0.75) { a._inBush = true; break; }
+    }
   }
 
-  // Calculer les commandes des bots avant de les exécuter
+  // Cache de la liste des buissons (mis à jour toutes les 5s ou si absent)
+  if (!p._buissons || p.tick % 300 === 0) {
+    p._buissons = p.obs.filter(o => o.type === 'buisson');
+  }
+
+  // Bot AI toutes les 3 ticks — la commande est réutilisée entre les ticks
+  // (le mouvement reste fluide car appliqueCommande reçoit une commande valide)
   for (const a of arr) {
     if (a.estBot && a.vivant) {
-      a.file = [calculeBotCmd(p, a)];
+      if (p.tick % 3 === 0) {
+        a._dernCmd = calculeBotCmd(p, a, arr);
+      }
+      if (a._dernCmd) a.file = [{ ...a._dernCmd, seq: a.lastSeq + 1, dt: DT }];
     }
   }
 
@@ -431,25 +445,25 @@ function lerpAngle(a, b, maxTurn) {
   return a + d;
 }
 
-function calculeBotCmd(p, bot) {
+function calculeBotCmd(p, bot, arr) {
   bot._tick = (bot._tick || 0) + 1;
   const t = bot._tick;
 
   let tire = false, recharger = false;
   if (bot.munitions === 0 && bot.rechargement <= 0) recharger = true;
 
-  // Phase lobby : errance libre à pleine vitesse
+  // Phase lobby : errance libre
   if (p.phaseLobby) {
     if (t % 150 === 1) bot._wanderAngle = Math.random() * Math.PI * 2;
     const wa = bot._wanderAngle || 0;
     bot._tmx = Math.cos(wa); bot._tmy = Math.sin(wa);
-    const angle = lerpAngle(bot.angle, wa, 3 * DT);
-    return { seq: bot.lastSeq + 1, mx: bot._tmx, my: bot._tmy, angle, tire: false, recharger: false, dt: DT };
+    return { seq: bot.lastSeq + 1, mx: bot._tmx, my: bot._tmy,
+             angle: lerpAngle(bot.angle, wa, 3 * DT), tire: false, recharger: false, dt: DT };
   }
 
-  // Ennemi le plus proche
+  // Ennemi le plus proche (arr fourni, pas de Object.values inutile)
   let nearest = null, nearestDist = Infinity;
-  for (const a of Object.values(p.agents)) {
+  for (const a of arr) {
     if (a.id === bot.id || !a.vivant) continue;
     const d = Math.hypot(a.x - bot.x, a.y - bot.y);
     if (d < nearestDist) { nearestDist = d; nearest = a; }
@@ -457,17 +471,14 @@ function calculeBotCmd(p, bot) {
 
   const dz = Math.hypot(bot.x - p.zone.x, bot.y - p.zone.y);
   const inZone = !p.demarree || (dz < p.zone.r * 0.90);
-  const inBush = estDansBuilsson(p, bot);
+  const inBush = bot._inBush; // précalculé dans pas()
 
-  // Délai de réaction court (10 ticks ≈ 0.17s) puis tire toujours
   bot._vueEnnemi = nearest ? (bot._vueEnnemi || 0) + 1 : 0;
   const peutTirer = bot._vueEnnemi > 42;
 
-  // Cibles de mouvement (interpolées pour fluidité)
   let tmx = 0, tmy = 0, angle = bot.angle;
 
   if (!inZone) {
-    // Priorité 1 : fuir la zone
     const dx = p.zone.x - bot.x, dy = p.zone.y - bot.y;
     const d = Math.hypot(dx, dy);
     tmx = dx / d; tmy = dy / d;
@@ -475,73 +486,58 @@ function calculeBotCmd(p, bot) {
 
   } else if (nearest) {
     const dx = nearest.x - bot.x, dy = nearest.y - bot.y;
-    // Visée directe (sans prédiction) + spread élevé
     const spread = 0.28 + 0.14 * (1 - bot.pv / PV_MAX);
     const aimAngle = Math.atan2(dy, dx) + (Math.random() - 0.5) * spread;
 
     if (bot.pv < PV_MAX * 0.32 && !inBush) {
-      // Priorité 2 : PV critique
+      // PV critique : fuite
       const b = buissonRefuge(p, bot, nearest);
       if (b) {
         const bdx = b.x - bot.x, bdy = b.y - bot.y;
         const bd = Math.hypot(bdx, bdy);
         if (bd > 20) { tmx = bdx / bd; tmy = bdy / bd; }
-      } else {
-        tmx = -dx / nearestDist; tmy = -dy / nearestDist;
-      }
+      } else { tmx = -dx / nearestDist; tmy = -dy / nearestDist; }
       angle = aimAngle;
-      // Tire toujours quand en fuite, juste moins souvent (tick pair)
       if (peutTirer && nearestDist < 500 && bot.munitions > 0 && bot.rechargement <= 0
           && t % 3 === 0) tire = true;
 
     } else if (inBush && bot.pv < PV_MAX * 0.65) {
-      // Priorité 3 : embuscade
+      // Embuscade
       angle = aimAngle;
       if (peutTirer && nearestDist < 400 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
       if (nearestDist < 120) { tmx = -dx / nearestDist; tmy = -dy / nearestDist; }
 
     } else {
-      // Priorité 4 : combat — tir systématique, mauvaise visée
+      // Combat
       const IDEAL = 420;
-      if (nearestDist > IDEAL + 120) {
-        tmx = dx / nearestDist; tmy = dy / nearestDist;
-      } else if (nearestDist < IDEAL - 120) {
-        tmx = -dx / nearestDist * 0.5; tmy = -dy / nearestDist * 0.5;
-      }
+      if (nearestDist > IDEAL + 120) { tmx = dx / nearestDist; tmy = dy / nearestDist; }
+      else if (nearestDist < IDEAL - 120) { tmx = -dx / nearestDist * 0.5; tmy = -dy / nearestDist * 0.5; }
       const perpX = -dy / nearestDist, perpY = dx / nearestDist;
       const sd = Math.sin(t * 0.03 + (bot._wanderAngle || 0)) > 0 ? 1 : -1;
       tmx += perpX * sd * 0.35; tmy += perpY * sd * 0.35;
       angle = aimAngle;
-      // Tire TOUJOURS quand en portée (mauvaise visée compense)
       if (peutTirer && nearestDist < 600 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
     }
 
   } else {
-    // Priorité 5 : errance
+    // Errance
     const tzx = p.zone.x - bot.x, tzy = p.zone.y - bot.y;
     const tzd = Math.hypot(tzx, tzy);
     if (t % 180 === 1) bot._wanderAngle = Math.random() * Math.PI * 2;
     const wa = bot._wanderAngle || 0;
-    if (tzd > 500) {
-      tmx = tzx / tzd * 0.8 + Math.cos(wa) * 0.2;
-      tmy = tzy / tzd * 0.8 + Math.sin(wa) * 0.2;
-    } else {
-      tmx = Math.cos(wa); tmy = Math.sin(wa);
-    }
+    if (tzd > 500) { tmx = tzx / tzd * 0.8 + Math.cos(wa) * 0.2; tmy = tzy / tzd * 0.8 + Math.sin(wa) * 0.2; }
+    else { tmx = Math.cos(wa); tmy = Math.sin(wa); }
     angle = Math.atan2(tmy, tmx);
   }
 
-  // Normaliser la cible
   const tn = Math.hypot(tmx, tmy);
   if (tn > 0.01) { tmx /= tn; tmy /= tn; }
 
-  // Interpolation du mouvement pour fluidité (lerp 18% par tick)
+  // Interpolation du mouvement (fluidité)
   bot._tmx = (bot._tmx || 0) * 0.82 + tmx * 0.18;
   bot._tmy = (bot._tmy || 0) * 0.82 + tmy * 0.18;
 
-  // Rotation d'angle douce
   angle = lerpAngle(bot.angle, angle, 4 * DT);
-
   return { seq: bot.lastSeq + 1, mx: bot._tmx, my: bot._tmy, angle, tire, recharger, dt: DT };
 }
 function spawnBot(partie, nom) {
