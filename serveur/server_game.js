@@ -241,21 +241,20 @@ function pas(p) {
     }
   }
 
-  // Suivi de vitesse + précalcul buisson (une seule passe)
+  // Cache buissons en PREMIER (avant toute utilisation)
+  if (!p._buissons || p.tick % 300 === 0) {
+    p._buissons = p.obs.filter(o => o.type === 'buisson');
+  }
+
+  // Suivi de vitesse + précalcul _inBush en une seule passe
   for (const a of arr) {
     a._vx = (a.x - (a._px ?? a.x)) / DT;
     a._vy = (a.y - (a._py ?? a.y)) / DT;
     a._px = a.x; a._py = a.y;
-    // _inBush précalculé ici pour éviter N boucles d'obstacles dans le bot AI
     a._inBush = false;
     for (const o of p._buissons) {
       if (Math.hypot(o.x - a.x, o.y - a.y) < o.r * 0.75) { a._inBush = true; break; }
     }
-  }
-
-  // Cache de la liste des buissons (mis à jour toutes les 5s ou si absent)
-  if (!p._buissons || p.tick % 300 === 0) {
-    p._buissons = p.obs.filter(o => o.type === 'buisson');
   }
 
   // Bot AI toutes les 3 ticks — la commande est réutilisée entre les ticks
@@ -426,8 +425,9 @@ function estDansBuilsson(p, a) {
 
 function buissonRefuge(p, bot, ennemi) {
   let best = null, bestScore = -Infinity;
-  for (const o of p.obs) {
-    if (o.type !== 'buisson') continue;
+  // Utilise le cache si disponible (initialisé dans pas())
+  const liste = p._buissons || p.obs.filter(o => o.type === 'buisson');
+  for (const o of liste) {
     const dBot = Math.hypot(o.x - bot.x, o.y - bot.y);
     if (dBot > 900) continue;
     const dEnn = ennemi ? Math.hypot(o.x - ennemi.x, o.y - ennemi.y) : 1000;
