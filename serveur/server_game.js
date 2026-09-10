@@ -34,6 +34,7 @@ const N_ARBRES = 26, N_BUISSONS = 32;
 const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
+const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
 
 const DT = 1 / 30; // 30 Hz : charge CPU réduite de moitié
 const TICK_MS = 1000 / 30;
@@ -121,6 +122,7 @@ function ajouteJoueur(partie, pid, name, avecArme = true) {
     pv: PV_MAX, angle: 0, recharge: 0, vivant: true,
     secousse: 0, touche: 0, tirTimer: 0, recul: 0, revele: 0,
     munitions: CHARGEUR, rechargement: 0, dureeRechargeMax: 0, slot: 0,
+    poingTimer: 0, punchSide: 0,
     inv: avecArme ? [null, 'fusil', null, null, null, null] : [null, null, null, null, null, null],
     ticZone: 0, lastSeq: 0, file: [], rtt: 120,
   };
@@ -215,6 +217,33 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
     p.evts.push({ e: 'tir', id: a.id, x: a.x, y: a.y, ang: a.angle });
     if (a.munitions <= 0) { a.rechargement = RECHARGE_DUREE; a.dureeRechargeMax = RECHARGE_DUREE; }
   }
+
+  // Coup de poing (slot vide)
+  if (cmd.poing && !mouvSeulement && a.poingTimer <= 0) {
+    a.poingTimer = MELEE_CD;
+    a.punchSide = 1 - a.punchSide;
+    a.revele = 0.35;
+    const liveArr = Object.values(p.agents);
+    let closest = null, closestD = Infinity;
+    for (const c of liveArr) {
+      if (!c.vivant || c.id === a.id) continue;
+      const ex = c.x - a.x, ey = c.y - a.y;
+      const dist = Math.hypot(ex, ey);
+      if (dist < MELEE_PORTEE) {
+        const dot = (ex * Math.cos(a.angle) + ey * Math.sin(a.angle)) / dist;
+        if (dot > 0.2 && dist < closestD) { closestD = dist; closest = c; }
+      }
+    }
+    if (closest) {
+      closest.pv -= MELEE_DEGATS;
+      closest.secousse = 0.20; closest.touche = 0.30; closest.revele = 0.35;
+      if (closest.pv <= 0) {
+        closest.pv = 0; closest.vivant = false;
+        p.kills.push({ killer: a.name, victim: closest.name });
+      }
+    }
+    p.evts.push({ e: 'poing', id: a.id, ang: a.angle, side: a.punchSide });
+  }
   a.lastSeq = cmd.seq;
 }
 
@@ -239,6 +268,7 @@ function pas(p) {
     if (a.tirTimer > 0) a.tirTimer = Math.max(0, a.tirTimer - DT);
     if (a.recul > 0)    a.recul    = Math.max(0, a.recul - DT);
     if (a.revele > 0)   a.revele   = Math.max(0, a.revele - DT);
+    if (a.poingTimer > 0) a.poingTimer = Math.max(0, a.poingTimer - DT);
     if (a.rechargement > 0) {
       a.rechargement -= DT;
       if (a.rechargement <= 0) { a.munitions = CHARGEUR; a.dureeRechargeMax = 0; }
@@ -460,7 +490,8 @@ function calculeBotCmd(p, bot, arr) {
     if (nearestDist > IDEAL + 80) { tmx = dx / nearestDist; tmy = dy / nearestDist; }
     else if (nearestDist < IDEAL - 80) { tmx = -dx / nearestDist * 0.5; tmy = -dy / nearestDist * 0.5; }
     angle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.30;
-    if (nearestDist < 520 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
+    bot._vu = (bot._vu || 0) + 1;
+    if (bot._vu > 42 && nearestDist < 520 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
 
   } else {
     // 3. Errance
@@ -520,9 +551,8 @@ function demarrePartie(room, gid) {
     if (!a.vivant) continue;
     const pos = placer(p.rng, p.obs);
     a.x = pos.x; a.y = pos.y; a.pv = PV_MAX;
-    a.inv = [null, 'fusil', null, null, null, null];
+    a.inv = [null, 'fusil', null, null, null, null]; // donner l'arme
     a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
-    if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._dernCmd = null; a._tick = 0; }
   }
 }
 
@@ -830,7 +860,8 @@ function envoieSnapshot(room) {
     agents[id] = { id: a.id, name: a.name, x: a.x, y: a.y, angle: a.angle, pv: a.pv, vivant: a.vivant,
       munitions: a.munitions, rechargement: a.rechargement, dureeRechargeMax: a.dureeRechargeMax,
       secousse: a.secousse, touche: a.touche, tirTimer: a.tirTimer, recul: a.recul,
-      revele: a.revele, slot: a.slot, inv: a.inv };
+      revele: a.revele, slot: a.slot, inv: a.inv,
+      poingTimer: a.poingTimer, punchSide: a.punchSide };
   }
   base.agents = agents;
   // Sérialiser UNE FOIS puis injecter l'ack par joueur (string replace = O(1))
