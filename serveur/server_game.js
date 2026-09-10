@@ -241,6 +241,20 @@ function pas(p) {
     }
   }
 
+  // Suivi de vitesse (pour visée prédictive des bots)
+  for (const a of arr) {
+    a._vx = (a.x - (a._px ?? a.x)) / DT;
+    a._vy = (a.y - (a._py ?? a.y)) / DT;
+    a._px = a.x; a._py = a.y;
+  }
+
+  // Calculer les commandes des bots avant de les exécuter
+  for (const a of arr) {
+    if (a.estBot && a.vivant) {
+      a.file = [calculeBotCmd(p, a)];
+    }
+  }
+
   for (const a of arr) {
     if (!a.vivant) { a.file.length = 0; continue; }
     const mouvSeulement = p.fini || (p.phaseLobby === true);
@@ -384,6 +398,156 @@ function diffuseAttente(room, gid) {
 }
 
 // Diffuser l'état lobby (nombre de joueurs + countdown) à tous les joueurs solo
+
+// ─────────────── Intelligence Artificielle des Bots ──────────────
+const BOT_NOMS = ['Zero', 'Neo', 'Hex', 'Vex', 'Kira'];
+
+function estDansBuilsson(p, a) {
+  for (const o of p.obs) {
+    if (o.type !== 'buisson') continue;
+    if (Math.hypot(o.x - a.x, o.y - a.y) < o.r * 0.75) return true;
+  }
+  return false;
+}
+
+function buissonRefuge(p, bot, ennemi) {
+  let best = null, bestScore = -Infinity;
+  for (const o of p.obs) {
+    if (o.type !== 'buisson') continue;
+    const dBot = Math.hypot(o.x - bot.x, o.y - bot.y);
+    if (dBot > 900) continue;
+    const dEnn = ennemi ? Math.hypot(o.x - ennemi.x, o.y - ennemi.y) : 1000;
+    const score = Math.min(dEnn, 800) - dBot * 1.4;
+    if (score > bestScore) { bestScore = score; best = o; }
+  }
+  return best;
+}
+
+function lerpAngle(a, b, maxTurn) {
+  let d = b - a;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  if (Math.abs(d) > maxTurn) d = Math.sign(d) * maxTurn;
+  return a + d;
+}
+
+function calculeBotCmd(p, bot) {
+  bot._tick = (bot._tick || 0) + 1;
+  const t = bot._tick;
+
+  // Ennemi le plus proche
+  let nearest = null, nearestDist = Infinity;
+  for (const a of Object.values(p.agents)) {
+    if (a.id === bot.id || !a.vivant) continue;
+    const d = Math.hypot(a.x - bot.x, a.y - bot.y);
+    if (d < nearestDist) { nearestDist = d; nearest = a; }
+  }
+
+  let mx = 0, my = 0, angle = bot.angle, tire = false, recharger = false;
+  if (bot.munitions === 0 && bot.rechargement <= 0) recharger = true;
+
+  // Sécurité zone (marge 8%)
+  const dz = Math.hypot(bot.x - p.zone.x, bot.y - p.zone.y);
+  const inZone = !p.demarree || (dz < p.zone.r * 0.92);
+  const inBush = estDansBuilsson(p, bot);
+
+  // ── Priorité 1 : fuir la zone ─────────────────────────────────
+  if (!inZone) {
+    const dx = p.zone.x - bot.x, dy = p.zone.y - bot.y;
+    const d = Math.hypot(dx, dy);
+    mx = dx / d; my = dy / d;
+    if (nearest && nearestDist < 360 && bot.munitions > 0 && bot.rechargement <= 0) {
+      const lx = nearest.x + (nearest._vx || 0) * (nearestDist / V_BALLE);
+      const ly = nearest.y + (nearest._vy || 0) * (nearestDist / V_BALLE);
+      angle = Math.atan2(ly - bot.y, lx - bot.x);
+      tire = true;
+    } else {
+      angle = Math.atan2(dy, dx);
+    }
+
+  } else if (nearest) {
+    const dx = nearest.x - bot.x, dy = nearest.y - bot.y;
+    const leadT = nearestDist / V_BALLE;
+    const predX = nearest.x + (nearest._vx || 0) * leadT;
+    const predY = nearest.y + (nearest._vy || 0) * leadT;
+    const aimBase = Math.atan2(predY - bot.y, predX - bot.x);
+    // Légère imperfection de visée (diminue avec la santé perdue)
+    const spread = 0.05 + 0.08 * (1 - bot.pv / PV_MAX);
+    const aimAngle = aimBase + (Math.random() - 0.5) * spread;
+
+    if (bot.pv < PV_MAX * 0.28 && !inBush) {
+      // ── Priorité 2 : PV critique → buisson ou fuite ────────────
+      const b = buissonRefuge(p, bot, nearest);
+      if (b) {
+        const bdx = b.x - bot.x, bdy = b.y - bot.y;
+        const bd = Math.hypot(bdx, bdy);
+        if (bd > 15) { mx = bdx / bd; my = bdy / bd; }
+      } else {
+        mx = -dx / nearestDist; my = -dy / nearestDist;
+      }
+      angle = aimAngle;
+      if (nearestDist < 290 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
+
+    } else if (inBush && bot.pv < PV_MAX * 0.6) {
+      // ── Priorité 3 : dans le buisson, santé moyenne → embuscade ─
+      angle = aimAngle;
+      if (nearestDist < 380 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
+      // Sortir si l'ennemi rush
+      if (nearestDist < 110) { mx = -dx / nearestDist; my = -dy / nearestDist; }
+
+    } else {
+      // ── Priorité 4 : combat normal ───────────────────────────────
+      const IDEAL = 330;
+      if (nearestDist > IDEAL + 90) {
+        mx = dx / nearestDist; my = dy / nearestDist;
+      } else if (nearestDist < IDEAL - 90) {
+        mx = -dx / nearestDist * 0.65; my = -dy / nearestDist * 0.65;
+      }
+      // Strafing oscillant
+      const perpX = -dy / nearestDist, perpY = dx / nearestDist;
+      const sd = Math.sin(t * 0.038 + (bot._wanderAngle || 0)) > 0 ? 1 : -1;
+      mx += perpX * sd * 0.52; my += perpY * sd * 0.52;
+      angle = aimAngle;
+      if (nearestDist < 570 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
+    }
+
+  } else {
+    // ── Priorité 5 : errance vers le centre de zone ───────────────
+    const tzx = p.zone.x - bot.x, tzy = p.zone.y - bot.y;
+    const tzd = Math.hypot(tzx, tzy);
+    if (t % 100 === 0) bot._wanderAngle = Math.random() * Math.PI * 2;
+    const wa = bot._wanderAngle || 0;
+    if (tzd > 450 && p.demarree) {
+      mx = tzx / tzd * 0.65 + Math.cos(wa) * 0.35;
+      my = tzy / tzd * 0.65 + Math.sin(wa) * 0.35;
+    } else {
+      mx = Math.cos(wa); my = Math.sin(wa);
+    }
+    angle = Math.atan2(my, mx);
+  }
+
+  // Bruit de mouvement léger
+  mx += (Math.random() - 0.5) * 0.14;
+  my += (Math.random() - 0.5) * 0.14;
+  const n = Math.hypot(mx, my);
+  if (n > 1) { mx /= n; my /= n; }
+
+  // Rotation d'angle douce (5 rad/s max)
+  angle = lerpAngle(bot.angle, angle, 5 * DT);
+
+  return { seq: bot.lastSeq + 1, mx, my, angle, tire, recharger, dt: DT };
+}
+
+function spawnBot(partie, nom) {
+  const pid = 'bot_' + Math.random().toString(36).slice(2, 7);
+  ajouteJoueur(partie, pid, nom, false); // pas d'arme en lobby
+  const a = partie.agents[pid];
+  a.estBot = true;
+  a._tick = 0;
+  a._wanderAngle = Math.random() * Math.PI * 2;
+  return pid;
+}
+
 function diffuseLobby(room, gid) {
   if (!room || room.etat !== 'lobby') return;
   const nb = Object.keys(room.players).length;
@@ -629,10 +793,34 @@ function boucleServeur() {
         if (room.etat === 'lobby' && room.mode === 'solo' && room.partie) {
           try {
             const nb = Object.keys(room.players).length;
-            if (nb >= 2 && !room.countdownStart) { room.countdownStart = Date.now(); diffuseLobby(room, roomId); }
-            else if (nb < 2 && room.countdownStart) { room.countdownStart = null; diffuseLobby(room, roomId); }
-            if (room.countdownStart && (Date.now() - room.countdownStart) >= 10000) {
-              demarrePartie(room, roomId);
+            if (nb >= 2 && !room.countdownStart) {
+              room.countdownStart = Date.now();
+              room.botsSpawnes = 0;
+              diffuseLobby(room, roomId);
+            } else if (nb < 2 && room.countdownStart) {
+              // Countdown annulé : retirer les bots
+              room.countdownStart = null;
+              if (room.partie) {
+                for (const pid of Object.keys(room.partie.agents)) {
+                  if (room.partie.agents[pid].estBot) {
+                    delete room.partie.agents[pid];
+                  }
+                }
+                room.partie.nbMax = Object.keys(room.partie.agents).length;
+              }
+              room.botsSpawnes = 0;
+              diffuseLobby(room, roomId);
+            }
+            if (room.countdownStart) {
+              const elapsed = (Date.now() - room.countdownStart) / 1000;
+              // Spawn 1 bot par seconde : bot 1 à t=0s, bot 5 à t=4s
+              const botsVoulus = Math.min(5, Math.floor(elapsed) + 1);
+              room.botsSpawnes = room.botsSpawnes || 0;
+              while (room.botsSpawnes < botsVoulus) {
+                spawnBot(room.partie, BOT_NOMS[room.botsSpawnes]);
+                room.botsSpawnes++;
+              }
+              if (elapsed >= 10) demarrePartie(room, roomId);
             }
             pas(room.partie);
             if (room.partie.tick % SNAP_TOUS_LES === 0) envoieSnapshot(room);
