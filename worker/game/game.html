@@ -23,8 +23,11 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #auth .errmsg{color:#f87171;font-size:12px;min-height:16px;margin:6px 0 0;text-align:center;width:100%}
 #auth .deco{font-size:11px;color:rgba(200,180,255,.4);margin-top:14px;cursor:pointer;text-decoration:underline}
 #auth .deco:hover{color:rgba(200,180,255,.8)}
-#solo-btn{display:inline-block;cursor:pointer;filter:drop-shadow(0 8px 16px rgba(0,0,0,0.7));transition:filter .1s,transform .1s;user-select:none}
 #lobby{position:fixed;inset:0;background:url('/game/bg_lobby.png') center/cover no-repeat;z-index:50;color:#fff;overflow:hidden}
+#solo-btn{background:none;border:none;padding:0;cursor:pointer;
+  filter:drop-shadow(0 10px 0 rgba(0,0,0,0.65));
+  transition:filter .06s,transform .06s}
+#solo-btn:active{filter:drop-shadow(0 0 0 transparent) brightness(0.82);transform:translateY(7px) scale(0.97)}
 #amis-toggle{font-size:13px;color:rgba(255,255,255,.5);cursor:pointer;margin-top:8px;user-select:none;text-decoration:underline}
 #amis-toggle:hover{color:rgba(255,255,255,.8)}
 #amis-section{display:none;flex-direction:column;align-items:center;margin-top:10px;width:100%}
@@ -32,7 +35,7 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #lobby input{background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:10px;color:#fff;font-size:16px;padding:12px 20px;width:260px;text-align:center;margin:6px 0;outline:none}
 #lobby input::placeholder{color:#888}
 #lobby input:focus{border-color:#8cc152;box-shadow:0 0 0 2px rgba(140,193,82,0.2)}
-#lobby button:not(#solo-btn){background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:18px;font-weight:700;padding:14px 50px;cursor:pointer;margin-top:14px}
+#lobby button{background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:18px;font-weight:700;padding:14px 50px;cursor:pointer;margin-top:14px}
 
 
 #ecran-fin{display:none;position:fixed;inset:0;background:linear-gradient(135deg,#1a2a1a,#0d1a0d);z-index:45;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:auto}
@@ -95,9 +98,9 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
   <!-- Centre : bouton Solo + amis -->
   <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:16px">
     <!-- Bouton Solo image -->
-    <div id="solo-btn" onclick="joinSolo()">
-      <img src="/game/bouton.png" alt="Solo" style="width:500px;height:500px;display:block;pointer-events:none">
-    </div>
+    <button id="solo-btn" onclick="joinSolo()">
+      <img src="/game/bouton.png" alt="Solo" style="width:500px;height:500px;display:block">
+    </button>
 
     <!-- Amis (section repliable) -->
     <div id="amis-toggle" onclick="toggleAmis()" style="display:none">▶ Jouer avec des amis</div>
@@ -134,6 +137,8 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <canvas id="jeu" tabindex="0"></canvas>
 <script>
 var SERVER = '${serverUrl}';
+const SPRITES = {};
+['head','arm','hand'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // ============ monde ============
 const MONDE = 3200;
 const CELL  = 50;
@@ -544,119 +549,81 @@ function rectOriente(x0, y0, x1, y1, larg) {
   ctx.closePath();
 }
 
-function dessineOmbrePerso(x, y, angle, secousse, arme, recul) {
-  const R = R_JOUEUR;
-  const s = secousse || 0;
-  const dx = s > 0 ? Math.sin(s * 190) * R * 0.09 * (s / 0.16) : 0;
-  const dy = s > 0 ? Math.cos(s * 220) * R * 0.05 * (s / 0.16) : 0;
 
-  const rec = recul || 0;
-  const reculDist = rec > 0 ? (rec / 0.08) * 8 : 0;
-  const rx = Math.cos(angle) * reculDist;
-  const ry = Math.sin(angle) * reculDist;
-
-  const posX = x + dx - rx;
-  const posY = y + dy - ry;
-
+function drawBras(x0,y0,x1,y1,w){
+  var sp=SPRITES.arm; if(!sp||!sp.complete)return;
+  var dx=x1-x0,dy=y1-y0,len=Math.hypot(dx,dy); if(len<0.5)return;
+  ctx.save();ctx.translate((x0+x1)/2,(y0+y1)/2);ctx.rotate(Math.atan2(dy,dx)+Math.PI/2);
+  ctx.drawImage(sp,-w/2,-len/2,w,len);ctx.restore();
+}
+function drawMain(x,y,r){
+  var sp=SPRITES.hand; if(!sp||!sp.complete)return;
+  ctx.drawImage(sp,x-r,y-r,r*2,r*2);
+}
+function drawTete(R){
+  var sp=SPRITES.head; if(!sp||!sp.complete)return;
+  ctx.drawImage(sp,-R,-R,R*2,R*2);
+}
+function dessineOmbrePerso(x,y,angle,secousse,arme,recul){
+  const R=R_JOUEUR;
+  const s=secousse||0;
+  const ox=s>0?Math.sin(s*190)*R*0.09*(s/0.16):0;
+  const oy=s>0?Math.cos(s*220)*R*0.05*(s/0.16):0;
+  const rec=recul||0,rd=rec>0?(rec/0.08)*8:0;
+  const px=x+ox-Math.cos(angle)*rd, py=y+oy-Math.sin(angle)*rd;
   ctx.save();
-  ctx.translate(posX, posY);
-
-  ctx.fillStyle = C.ombre;
-  ctx.beginPath();
-  ctx.arc(0, 0, R * 1.25, 0, Math.PI * 2);
-  ctx.arc(0, 0, R, 0, Math.PI * 2, true);
-  ctx.fill();
-
-  if (arme) {
-    ctx.rotate(angle + Math.PI / 2);
-    dessineOmbreArme(R);
-  }
-
+  ctx.fillStyle=C.ombre;
+  ctx.beginPath();ctx.ellipse(px+4,py+6,R*1.35,R*1.10,0,0,Math.PI*2);ctx.fill();
+  if(arme){ctx.save();ctx.translate(px,py);ctx.rotate(angle+Math.PI/2);dessineOmbreArme(R);ctx.restore();}
   ctx.restore();
 }
 
-function dessinePerso(x, y, angle, coul, secousse, touche, arme, recul) {
-  const R = R_JOUEUR;
-  const noir = C.traitP;
-  const rm = R * 0.42;
-  const ep = R * 0.24;
-  const largBras = rm * 2 * 0.75;
-
-  const s = secousse || 0;
-  const dx = s > 0 ? Math.sin(s * 190) * R * 0.09 * (s / 0.16) : 0;
-  const dy = s > 0 ? Math.cos(s * 220) * R * 0.05 * (s / 0.16) : 0;
-
-  const rec = recul || 0;
-  const reculDist = rec > 0 ? (rec / 0.08) * 8 : 0;
-  const rx = Math.cos(angle) * reculDist;
-  const ry = Math.sin(angle) * reculDist;
-
-  const posX = x + dx - rx;
-  const posY = y + dy - ry;
-
+function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punchSide){
+  const R=R_JOUEUR;
+  const s=secousse||0;
+  const ox=s>0?Math.sin(s*190)*R*0.09*(s/0.16):0;
+  const oy=s>0?Math.cos(s*220)*R*0.05*(s/0.16):0;
+  const rec=recul||0,rd=rec>0?(rec/0.08)*8:0;
+  const posX=x+ox-Math.cos(angle)*rd, posY=y+oy-Math.sin(angle)*rd;
   ctx.save();
-  ctx.translate(posX, posY);
-
-  const t = touche || 0;
-  if (t > 0) {
-    const a = t / 0.30;
-    const g = ctx.createRadialGradient(0, 0, R * 0.8, 0, 0, R * 1.9);
-    g.addColorStop(0, 'rgba(230,60,50,' + (0.42 * a).toFixed(3) + ')');
-    g.addColorStop(1, 'rgba(230,60,50,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(0, 0, R * 1.9, 0, Math.PI * 2);
-    ctx.fill();
+  const t=touche||0;
+  if(t>0){
+    const a=t/0.30;
+    const gr=ctx.createRadialGradient(posX,posY,R*0.8,posX,posY,R*1.9);
+    gr.addColorStop(0,'rgba(230,60,50,'+(0.42*a).toFixed(3)+')');
+    gr.addColorStop(1,'rgba(230,60,50,0)');
+    ctx.fillStyle=gr;ctx.beginPath();ctx.arc(posX,posY,R*1.9,0,Math.PI*2);ctx.fill();
   }
-
-  ctx.rotate(angle + Math.PI / 2);
-
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = ep;
-  ctx.strokeStyle = noir;
-
-  if (!arme) {
-    for (const c of [-1, 1]) {
-      ctx.beginPath();
-      ctx.arc(c * R * 0.66, -R * 0.62, R * 0.46, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = C.main;
-      ctx.fill();
-    }
-  } else {
-    const mg = { x: -R * 0.14, y: -R * 1.62 };
-    const att = { x: -R * 0.04, y: -R * 0.30 };
-
-    ctx.beginPath();
-    ctx.arc(R * 0.42, -R * 1.00, rm, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fillStyle = C.main;
-    ctx.fill();
-
-    rectOriente(att.x, att.y, mg.x, mg.y, largBras);
-    ctx.stroke();
-    ctx.fillStyle = C.bras;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(mg.x, mg.y, rm, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fillStyle = C.main;
-    ctx.fill();
-
+  ctx.translate(posX,posY);
+  ctx.rotate(angle+Math.PI/2);
+  const pT=punchTimer||0, pS=punchSide||0;
+  var pE=0;
+  if(pT>0) pE=pT>0.25?(0.5-pT)/0.25:pT/0.25;
+  const AW=R*0.38, HR=R*0.40;
+  if(arme){
+    drawBras(-R*0.20,-R*0.05,-R*0.35,-R*1.62,AW);
+    drawBras( R*0.20,-R*0.05, R*0.35,-R*1.30,AW);
+    drawMain(-R*0.35,-R*1.62,HR); drawMain(R*0.35,-R*1.30,HR);
     dessineArme(R);
+  }else if(pT>0){
+    const ps=pS===0?-1:1;
+    drawBras(-ps*R*0.42,R*0.12,-ps*R*0.65,R*0.38,AW);
+    drawMain(-ps*R*0.65,R*0.38,HR);
+    const pAx1=ps*R*0.65*(1-pE)+ps*R*0.52*pE;
+    const pAy1=R*0.38*(1-pE)-R*2.10*pE;
+    const pAx0=ps*R*0.42*(1-pE)+ps*R*0.15*pE;
+    const pAy0=R*0.12*(1-pE)-R*0.10*pE;
+    drawBras(pAx0,pAy0,pAx1,pAy1,AW);
+    drawMain(pAx1,pAy1,HR);
+  }else{
+    drawBras(-R*0.42,R*0.12,-R*0.65,R*0.38,AW);
+    drawBras( R*0.42,R*0.12, R*0.65,R*0.38,AW);
+    drawMain(-R*0.65,R*0.38,HR); drawMain(R*0.65,R*0.38,HR);
   }
-
-  ctx.beginPath();
-  ctx.arc(0, 0, R, 0, Math.PI * 2);
-  ctx.fillStyle = coul;
-  ctx.fill();
-  ctx.lineWidth = R * 0.21;
-  ctx.strokeStyle = noir;
-  ctx.stroke();
-
+  drawTete(R);
   ctx.restore();
 }
+
 
 // Jauge de rechargement, posee au sol sous le joueur
 function dessineSphereChargement(j) {
@@ -710,7 +677,7 @@ function dessineSphereChargement(j) {
 }
 
 function dessineJoueur(p, j, coul, alpha, decoupe, gch, hau, demiL, demiH, arme,
-                       textureSeule = false) {
+                       textureSeule, punchTimer, punchSide) {
   const direct = (alpha >= 1);
   const memeCtx = ctx;
   let px = 0;
@@ -734,7 +701,7 @@ function dessineJoueur(p, j, coul, alpha, decoupe, gch, hau, demiL, demiH, arme,
   }
 
   if (textureSeule) {
-    dessinePerso(j.x, j.y, j.angle, coul, j.secousse, j.touche, arme, j.recul);
+    dessinePerso(j.x, j.y, j.angle, coul, j.secousse, j.touche, arme, j.recul, punchTimer||0, punchSide||0);
   } else {
     dessineOmbrePerso(j.x, j.y, j.angle, j.secousse, arme, j.recul);
   }
@@ -1268,7 +1235,7 @@ function dessine(p, moi, viseur, drag) {
       if (!j.vivant || !!j._dessus !== dessus) continue;
       const coul = (j.id === moi) ? C.perso : C.persoEnn;
       const av = (j.alphaVis !== undefined) ? j.alphaVis : 1;
-      dessineJoueur(p, j, coul, av, j._decoupe, gch, hau, demiL, demiH, j._arme, texture);
+      dessineJoueur(p, j, coul, av, j._decoupe, gch, hau, demiL, demiH, j._arme, texture, j.poingTimer||0, j.punchSide||0);
     }
   };
 
@@ -1903,6 +1870,11 @@ function appliqueLoc(a, cmd) {
   }
   if (a.tirTimer > 0) a.tirTimer = Math.max(0, a.tirTimer - dt);
   if (a.recul > 0)    a.recul    = Math.max(0, a.recul - dt);
+  if ((a.poingTimer||0) > 0) a.poingTimer = Math.max(0, a.poingTimer - dt);
+  if (cmd.poing && (a.poingTimer||0) <= 0) {
+    a.poingTimer = 0.5;
+    a.punchSide = 1 - (a.punchSide||0);
+  }
 }
 
 // ═══ Reconciliation : on repart de l'etat serveur et on rejoue l'inedit ═══
@@ -2028,6 +2000,8 @@ function etatAffiche() {
     m.dureeRechargeMax = moi.dureeRechargeMax;
     m.tirTimer = moi.tirTimer;
     m.recul = moi.recul;
+    m.poingTimer = moi.poingTimer || 0;
+    m.punchSide  = moi.punchSide  || 0;
     vue.agents[pid] = m;
   }
   return vue;
@@ -2302,9 +2276,13 @@ function produitCommande(dt) {
 
   viseeAngle = angle; viseeActive = tire;
 
+  // Coup de poing si slot vide/mains et shooting
+  var poing = false;
+  if (!_phaseLobby && !itemEnMain && shooting && (moi.poingTimer||0) <= 0) poing = true;
+
   seq++;
   var cmd = { seq: seq, mx: mouvement.mx, my: mouvement.my,
-              angle: angle, tire: tire, recharger: !!keys['r'],
+              angle: angle, tire: tire, poing: poing, recharger: !!keys['r'],
               dt: Math.min(0.05, dt) };
 
   appliqueLoc(moi, cmd);        // effet immediat a l'ecran
@@ -2612,18 +2590,6 @@ window.addEventListener('load', function () {
   requestAnimationFrame(boucle);
 });
 
-
-// Solo btn effect
-(function(){
-  var sb=document.getElementById('solo-btn');
-  function press(){sb.style.filter='drop-shadow(0 3px 6px rgba(0,0,0,0.5)) brightness(0.82)';sb.style.transform='scale(0.95)';}
-  function release(){sb.style.filter='';sb.style.transform='';}
-  sb.addEventListener('touchstart',press,{passive:true});
-  sb.addEventListener('touchend',release,{passive:true});
-  sb.addEventListener('mousedown',press);
-  sb.addEventListener('mouseup',release);
-  sb.addEventListener('mouseleave',release);
-})();
 </script>
 </body>
 </html>
