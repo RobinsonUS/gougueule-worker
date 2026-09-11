@@ -218,28 +218,44 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
     if (a.munitions <= 0) { a.rechargement = RECHARGE_DUREE; a.dureeRechargeMax = RECHARGE_DUREE; }
   }
 
-  // Coup de poing (slot vide)
-  if (cmd.poing && !mouvSeulement && a.poingTimer <= 0) {
+  // Coup de poing (slot vide) — autorisé dans lobby, dégâts arbres toujours, joueurs hors lobby
+  if (cmd.poing && a.poingTimer <= 0) {
     a.poingTimer = MELEE_CD;
     a.punchSide = 1 - a.punchSide;
     a.revele = 0.35;
-    const liveArr = Object.values(p.agents);
-    let closest = null, closestD = Infinity;
-    for (const c of liveArr) {
-      if (!c.vivant || c.id === a.id) continue;
-      const ex = c.x - a.x, ey = c.y - a.y;
+    // Dégâts aux arbres (même en lobby)
+    for (const o of p.obs) {
+      if (o.type !== 'arbre') continue;
+      const ex = o.x - a.x, ey = o.y - a.y;
       const dist = Math.hypot(ex, ey);
-      if (dist < MELEE_PORTEE) {
+      if (dist < MELEE_PORTEE + o.r * 0.5) {
         const dot = (ex * Math.cos(a.angle) + ey * Math.sin(a.angle)) / dist;
-        if (dot > 0.2 && dist < closestD) { closestD = dist; closest = c; }
+        if (dot > 0.1) {
+          o.pv -= MELEE_DEGATS; o.secousse = 0.22;
+          if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; }
+        }
       }
     }
-    if (closest) {
-      closest.pv -= MELEE_DEGATS;
-      closest.secousse = 0.20; closest.touche = 0.30; closest.revele = 0.35;
-      if (closest.pv <= 0) {
-        closest.pv = 0; closest.vivant = false;
-        p.kills.push({ killer: a.name, victim: closest.name });
+    // Dégâts aux joueurs (hors lobby)
+    if (!mouvSeulement) {
+      const liveArr = Object.values(p.agents);
+      let closest = null, closestD = Infinity;
+      for (const c of liveArr) {
+        if (!c.vivant || c.id === a.id) continue;
+        const ex = c.x - a.x, ey = c.y - a.y;
+        const dist = Math.hypot(ex, ey);
+        if (dist < MELEE_PORTEE) {
+          const dot = (ex * Math.cos(a.angle) + ey * Math.sin(a.angle)) / dist;
+          if (dot > 0.2 && dist < closestD) { closestD = dist; closest = c; }
+        }
+      }
+      if (closest) {
+        closest.pv -= MELEE_DEGATS;
+        closest.secousse = 0.20; closest.touche = 0.30; closest.revele = 0.35;
+        if (closest.pv <= 0) {
+          closest.pv = 0; closest.vivant = false;
+          p.kills.push({ killer: a.name, victim: closest.name });
+        }
       }
     }
     p.evts.push({ e: 'poing', id: a.id, ang: a.angle, side: a.punchSide });
@@ -337,7 +353,7 @@ function pas(p) {
     for (const o of (p.arbres || p.obs)) {
       if (Math.hypot(o.x - nx, o.y - ny) < o.r + R_BALLE) {
         o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
-        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; }
+        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; }
         mort = true; break;
       }
     }
@@ -554,6 +570,9 @@ function demarrePartie(room, gid) {
     a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
     if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._tick = 0; a._dernCmd = null; }
   }
+  // Restaurer les arbres
+  p.obs.forEach(o => { if(o._lt==='arbre'){o.pv=PV_ARBRE;o.type='arbre';o.secousse=0;} });
+  p.arbres = null;
 }
 
 // ─── Connexion ─────────────────────────────────────────────────────
