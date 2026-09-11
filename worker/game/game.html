@@ -35,7 +35,7 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #lobby input{background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:10px;color:#fff;font-size:16px;padding:12px 20px;width:260px;text-align:center;margin:6px 0;outline:none}
 #lobby input::placeholder{color:#888}
 #lobby input:focus{border-color:#8cc152;box-shadow:0 0 0 2px rgba(140,193,82,0.2)}
-#lobby button{background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:18px;font-weight:700;padding:14px 50px;cursor:pointer;margin-top:14px}
+#lobby button:not(#solo-btn){background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:18px;font-weight:700;padding:14px 50px;cursor:pointer;margin-top:14px}
 
 
 #ecran-fin{display:none;position:fixed;inset:0;background:linear-gradient(135deg,#1a2a1a,#0d1a0d);z-index:45;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:auto}
@@ -551,17 +551,17 @@ function rectOriente(x0, y0, x1, y1, larg) {
 
 
 function drawBras(x0,y0,x1,y1,w){
-  var sp=SPRITES.arm; if(!sp||!sp.complete)return;
+  var sp=SPRITES.arm; if(!sp||!sp.complete||!sp.naturalWidth)return;
   var dx=x1-x0,dy=y1-y0,len=Math.hypot(dx,dy); if(len<0.5)return;
   ctx.save();ctx.translate((x0+x1)/2,(y0+y1)/2);ctx.rotate(Math.atan2(dy,dx)+Math.PI/2);
   ctx.drawImage(sp,-w/2,-len/2,w,len);ctx.restore();
 }
 function drawMain(x,y,r){
-  var sp=SPRITES.hand; if(!sp||!sp.complete)return;
+  var sp=SPRITES.hand; if(!sp||!sp.complete||!sp.naturalWidth)return;
   ctx.drawImage(sp,x-r,y-r,r*2,r*2);
 }
 function drawTete(R){
-  var sp=SPRITES.head; if(!sp||!sp.complete)return;
+  var sp=SPRITES.head; if(!sp||!sp.complete||!sp.naturalWidth)return;
   ctx.drawImage(sp,-R,-R,R*2,R*2);
 }
 function dessineOmbrePerso(x,y,angle,secousse,arme,recul){
