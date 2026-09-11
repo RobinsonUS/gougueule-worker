@@ -182,24 +182,289 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
-  // Poing dans le lobby : arbres uniquement
+  // Poing : arbres (lobby + jeu) + joueurs (hors lobby) — UN seul bloc
   if (cmd.poing && a.poingTimer <= 0 && !p.fini) {
     a.poingTimer = MELEE_CD;
     a.punchSide = 1 - a.punchSide;
     a.revele = 0.35;
+    // Dégâts arbres (toujours)
     for (const o of p.obs) {
       if (o.type !== 'arbre') continue;
       const _ex=o.x-a.x, _ey=o.y-a.y, _d=Math.hypot(_ex,_ey);
-      if (_d < MELEE_PORTEE + o.r * 0.7) {
-        const _dot=(_ex*Math.cos(a.angle)+_ey*Math.sin(a.angle))/_d;
-        if (_dot > 0.05) {
-          o.pv -= MELEE_DEGATS; o.secousse = 0.22;
-          if (o.pv <= 0) { o.pv=0; o.type='souche'; o.secousse=0; p.arbres=null; }
-        }
+      if (_d < MELEE_PORTEE + o.r) {  // cone large, pas de filtre directionnel
+        o.pv -= MELEE_DEGATS; o.secousse = 0.22;
+        if (o.pv <= 0) { o.pv=0; o.type='souche'; o.secousse=0; p.arbres=null; }
       }
     }
-    if (!mouvSeulement)
-      p.evts.push({ e: 'poing', id: a.id, ang: a.angle, side: a.punchSide });
+    if (!mouvSeulement) {
+      // Dégâts joueurs hors lobby
+      let closest=null, closestD=Infinity;
+      for (const c of Object.values(p.agents)) {
+        if (!c.vivant||c.id===a.id) continue;
+        const ex=c.x-a.x,ey=c.y-a.y,dist=Math.hypot(ex,ey);
+        if (dist<MELEE_PORTEE) {
+          const dot=(ex*Math.cos(a.angle)+ey*Math.sin(a.angle))/dist;
+          if (dot>0.2&&dist<closestD){closestD=dist;closest=c;}
+        }
+      }
+      if (closest) {
+        closest.pv-=MELEE_DEGATS;closest.secousse=0.20;closest.touche=0.30;closest.revele=0.35;
+        if (closest.pv<=0){closest.pv=0;closest.vivant=false;p.kills.push({killer:a.name,victim:closest.name});}
+      }
+      p.evts.push({ e:'poing', id:a.id, ang:a.angle, side:a.punchSide });
+    }
+  }
+  if (mouvSeulement) { a.lastSeq = cmd.seq; return; }
+
+  if (cmd.recharger && a.rechargement <= 0 && a.munitions < CHARGEUR) {
+    a.rechargement = RECHARGE_DUREE; a.dureeRechargeMax = RECHARGE_DUREE;
+  }
+
+  a.recharge -= dt;
+  const armeEnMain = a.slot > 0 && a.inv && a.inv[a.slot];
+  if (cmd.tire && armeEnMain && a.recharge <= 0 && a.rechargement <= 0 && a.munitions > 0) {
+    a.recharge = CADENCE; a.tirTimer = 0.35; a.revele = 0.35; a.recul = 0.08;
+    a.munitions--;
+    const at = a.angle + (p.rng() - 0.5) * DISPERSION;
+    const bx = a.x + Math.cos(a.angle) * CANON_L;
+    const by = a.y + Math.sin(a.angle) * CANON_L;
+    const liveArr = Object.values(p.agents);
+    let spawnHit = false;
+    for (const c of liveArr) {
+      if (!c.vivant || c.id === a.id) continue;
+      if (Math.hypot(c.x - bx, c.y - by) < R_JOUEUR + R_BALLE) {
+        const dg = p.rng() < 0.5 ? 10 : 11;
+        c.pv -= dg; c.secousse = 0.16; c.touche = 0.30; c.revele = 0.35;
+        if (c.pv <= 0) { c.pv = 0; c.vivant = false; p.kills.push({ killer: a.name, victim: c.name }); }
+        spawnHit = true; break;
+      }
+    }
+    if (!spawnHit) {
+      p.balles.push({
+        id: ++p.balleId, x: bx, y: by,
+        vx: Math.cos(at) * V_BALLE, vy: Math.sin(at) * V_BALLE,
+        ang: at, reste: PORTEE, par: a.id,
+      });
+    }
+    p.evts.push({ e: 'tir', id: a.id, x: a.x, y: a.y, ang: a.angle });
+    if (a.munitions <= 0) { a.rechargement = RECHARGE_DUREE; a.dureeRechargeMax = RECHARGE_DUREE; }
+  }
+
+═══════════════════════════════════════════════════════════════════
+//  Serveur autoritatif  —  simulation 60 Hz, snapshots 30 Hz
+//  Netcode : file d'inputs numerotes + reconciliation client
+// ═══════════════════════════════════════════════════════════════════
+const WebSocket = require('ws');
+const http = require('http');
+const { createHmac, timingSafeEqual } = require('crypto');
+
+// ─────────────── JWT (sans dépendance externe) ─────────────────────
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) console.warn('[WARN] JWT_SECRET non défini — aucun joueur ne pourra se connecter !');
+
+function verifyJWT(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const data = `${parts[0]}.${parts[1]}`;
+    const sig  = Buffer.from(parts[2].replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    const expected = createHmac('sha256', JWT_SECRET).update(data).digest();
+    if (sig.length !== expected.length || !timingSafeEqual(sig, expected)) return null;
+    const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+    if (payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch { return null; }
+}
+
+// ─────────────── Constantes (identiques au client) ─────────────────
+const MONDE = 3200, CELL = 50;
+const R_JOUEUR = CELL * 0.60, VITESSE = 320, PV_MAX = 100;
+const CANON_L = R_JOUEUR * 3.05, CADENCE = 0.12, V_BALLE = 1500;
+const DISPERSION = 0.10, PORTEE = 800;
+const R_BALLE = R_JOUEUR * 0.17;
+const N_ARBRES = 26, N_BUISSONS = 32;
+const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
+const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
+const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
+const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
+
+const DT = 1 / 30; // 30 Hz : charge CPU réduite de moitié
+const TICK_MS = 1000 / 30;
+const SNAP_TOUS_LES = 1; // snap chaque tick (= 30 Hz)
+const DT_MAX_INPUT = 0.05;
+
+// ─────────────── RNG deterministe ─────────────────────────────────
+function creeRng(graine) {
+  let a = graine | 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ─────────────── Decor ────────────────────────────────────────────
+function genereDecor(rng) {
+  const obs = [];
+  const marge = 160, libre = MONDE - 2 * marge;
+  const poser = (n, r, type) => {
+    let essais = 0, poses = 0;
+    while (poses < n && essais < n * 100) {
+      essais++;
+      const x = marge + rng() * libre, y = marge + rng() * libre;
+      let ok = true;
+      for (const o of obs) if (Math.hypot(o.x - x, o.y - y) < o.r + r + 24) { ok = false; break; }
+      if (Math.hypot(x - MONDE / 2, y - MONDE / 2) < 280) ok = false;
+      if (ok) {
+        obs.push({
+          x, y, r, type, pv: PV_ARBRE, secousse: 0,
+          lobes: 9 + ((rng() * 3) | 0), phase: rng() * Math.PI * 2, teinte: (rng() * 4) | 0,
+          taches: [
+            { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
+            { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
+            { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
+          ],
+        });
+        poses++;
+      }
+    }
+  };
+  poser(N_ARBRES, R_ARBRE, 'arbre');
+  poser(N_BUISSONS, R_BUISSON, 'buisson');
+  return obs;
+}
+
+function uid() { return Math.random().toString(36).slice(2, 11); }
+
+function placer(rng, obs) {
+  for (let i = 0; i < 300; i++) {
+    const ang = rng() * Math.PI * 2, dist = 200 + rng() * 1200;
+    const x = MONDE / 2 + Math.cos(ang) * dist, y = MONDE / 2 + Math.sin(ang) * dist;
+    if (x < 150 || x > MONDE - 150 || y < 150 || y > MONDE - 150) continue;
+    let ok = true;
+    for (const o of obs) {
+      if (o.type !== 'arbre') continue;
+      if (Math.hypot(o.x - x, o.y - y) < o.r + R_JOUEUR + 20) { ok = false; break; }
+    }
+    if (ok) return { x, y };
+  }
+  return { x: MONDE / 2, y: MONDE / 2 };
+}
+
+function creePartie() {
+  const rng = creeRng((Math.random() * 1e9) | 0);
+  const obs = genereDecor(rng);
+  obs.forEach(o => { o._lt = o.type; });
+  const arbres = obs.filter(o => o.type === 'arbre');
+  return {
+    rng, obs, arbres, // arbres : liste pré-filtrée pour deplaceSolo
+    t: 0, tick: 0, fini: false, vainqueur: null,
+    demarree: false, nbMax: 0, balleId: 0,
+    zone: { x: MONDE / 2, y: MONDE / 2, r: ZONE_R0 },
+    balles: [], agents: {}, kills: [], evts: [],
+  };
+}
+
+function ajouteJoueur(partie, pid, name, avecArme = true) {
+  partie.nbMax++;
+  const pos = placer(partie.rng, partie.obs);
+  partie.agents[pid] = {
+    id: pid, name, x: pos.x, y: pos.y,
+    pv: PV_MAX, angle: 0, recharge: 0, vivant: true,
+    secousse: 0, touche: 0, tirTimer: 0, recul: 0, revele: 0,
+    munitions: CHARGEUR, rechargement: 0, dureeRechargeMax: 0, slot: 0,
+    poingTimer: 0, punchSide: 0,
+    inv: avecArme ? [null, 'fusil', null, null, null, null] : [null, null, null, null, null, null],
+    ticZone: 0, lastSeq: 0, file: [], rtt: 120,
+  };
+}
+
+// ─────────────── Deplacement ───────────────────────────────────────
+function borne(a) {
+  a.x = Math.min(MONDE - R_JOUEUR, Math.max(R_JOUEUR, a.x));
+  a.y = Math.min(MONDE - R_JOUEUR, Math.max(R_JOUEUR, a.y));
+}
+
+function deplaceSolo(a, dx, dy, obs, maxIter = 3) {
+  a.x += dx; a.y += dy; borne(a);
+  // obs doit déjà être la liste des arbres (pré-filtrée)
+  for (let it = 0; it < maxIter; it++) {
+    let hit = false;
+    for (const o of obs) {
+      // pas de filtre type ici (obs = arbres uniquement)
+      const nx = a.x - o.x, ny = a.y - o.y;
+      const d = Math.hypot(nx, ny), min = o.r + R_JOUEUR;
+      if (d < min) {
+        hit = true;
+        if (d < 1e-6) { a.x += min; continue; }
+        a.x += nx / d * (min - d); a.y += ny / d * (min - d);
+      }
+    }
+    if (!hit) break;
+  }
+  borne(a);
+}
+
+function separeJoueurs(arr) {
+  for (const a of arr) {
+    if (!a.vivant) continue;
+    for (const b of arr) {
+      if (b === a || !b.vivant) continue;
+      const nx = a.x - b.x, ny = a.y - b.y;
+      const d = Math.hypot(nx, ny), min = R_JOUEUR * 2;
+      if (d < min && d > 1e-6) {
+        const p = (min - d) * 0.5;
+        a.x += nx / d * p; a.y += ny / d * p;
+        b.x -= nx / d * p; b.y -= ny / d * p;
+        borne(a); borne(b);
+      }
+    }
+  }
+}
+
+// ─────────────── Commande d'un joueur ─────────────────────────────
+function appliqueCommande(p, a, cmd, mouvSeulement = false) {
+  let dt = Math.min(DT_MAX_INPUT, Math.max(0, cmd.dt || DT));
+  let mx = cmd.mx || 0, my = cmd.my || 0;
+  const n = Math.hypot(mx, my);
+  if (n > 1) { mx /= n; my /= n; }
+
+  // Bots : 1 itération de collision (précision réduite mais 3× plus rapide)
+  deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3);
+  if (typeof cmd.angle === 'number') a.angle = cmd.angle;
+
+  // Poing : arbres (lobby + jeu) + joueurs (hors lobby) — UN seul bloc
+  if (cmd.poing && a.poingTimer <= 0 && !p.fini) {
+    a.poingTimer = MELEE_CD;
+    a.punchSide = 1 - a.punchSide;
+    a.revele = 0.35;
+    // Dégâts arbres (toujours)
+    for (const o of p.obs) {
+      if (o.type !== 'arbre') continue;
+      const _ex=o.x-a.x, _ey=o.y-a.y, _d=Math.hypot(_ex,_ey);
+      if (_d < MELEE_PORTEE + o.r) {  // cone large, pas de filtre directionnel
+        o.pv -= MELEE_DEGATS; o.secousse = 0.22;
+        if (o.pv <= 0) { o.pv=0; o.type='souche'; o.secousse=0; p.arbres=null; }
+      }
+    }
+    if (!mouvSeulement) {
+      // Dégâts joueurs hors lobby
+      let closest=null, closestD=Infinity;
+      for (const c of Object.values(p.agents)) {
+        if (!c.vivant||c.id===a.id) continue;
+        const ex=c.x-a.x,ey=c.y-a.y,dist=Math.hypot(ex,ey);
+        if (dist<MELEE_PORTEE) {
+          const dot=(ex*Math.cos(a.angle)+ey*Math.sin(a.angle))/dist;
+          if (dot>0.2&&dist<closestD){closestD=dist;closest=c;}
+        }
+      }
+      if (closest) {
+        closest.pv-=MELEE_DEGATS;closest.secousse=0.20;closest.touche=0.30;closest.revele=0.35;
+        if (closest.pv<=0){closest.pv=0;closest.vivant=false;p.kills.push({killer:a.name,victim:closest.name});}
+      }
+      p.evts.push({ e:'poing', id:a.id, ang:a.angle, side:a.punchSide });
+    }
   }
   if (mouvSeulement) { a.lastSeq = cmd.seq; return; }
 
