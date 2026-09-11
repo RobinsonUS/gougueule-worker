@@ -138,7 +138,15 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','weapon_XM8','slotXM8','MediumProjectile'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+// weapon_XM8 : supprimer le fond blanc
+(function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
+  var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
+  var otx=oc.getContext('2d');otx.drawImage(raw,0,0);
+  var d=otx.getImageData(0,0,oc.width,oc.height);
+  for(var i=0;i<d.data.length;i+=4){if(d.data[i]>230&&d.data[i+1]>230&&d.data[i+2]>230)d.data[i+3]=0;}
+  otx.putImageData(d,0,0);SPRITES.weapon_XM8=oc;
+};raw.src='/game/weapon_XM8.png';})();
 // ============ monde ============
 const MONDE = 3200;
 const CELL  = 50;
@@ -455,10 +463,12 @@ function dessineBalle(b) {
   ctx.fill();
 
   const bsp = SPRITES.MediumProjectile;
-  if (bsp && bsp.complete && bsp.naturalWidth) {
+  if (bsp && (bsp.complete||bsp.width) && (bsp.naturalWidth||bsp.width)) {
     ctx.save();
     ctx.rotate(Math.PI / 2);
-    ctx.drawImage(bsp, -W, -L, W*2, L+W);
+    // Source crop : contenu utile de MediumProjectile.png (cols 2-37, rows 1-92)
+    const bW=R_JOUEUR*0.28, bL=R_JOUEUR*0.78;
+    ctx.drawImage(bsp, 2, 1, 35, 91, -bW, -bL, bW*2, bL*2);
     ctx.restore();
   } else {
     ctx.lineJoin = 'round';
@@ -545,17 +555,44 @@ function drawTete(R){
   var sp=SPRITES.head; if(!sp||!sp.complete||!sp.naturalWidth)return;
   ctx.drawImage(sp,-R,-R,R*2,R*2);
 }
-function dessineOmbrePerso(x,y,angle,secousse,arme,recul){
+function dessineOmbrePerso(x,y,angle,secousse,arme,recul,punchTimer,punchSide){
   const R=R_JOUEUR;
   const s=secousse||0;
   const ox=s>0?Math.sin(s*190)*R*0.09*(s/0.16):0;
   const oy=s>0?Math.cos(s*220)*R*0.05*(s/0.16):0;
   const rec=recul||0,rd=rec>0?(rec/0.08)*8:0;
-  const px=x+ox-Math.cos(angle)*rd, py=y+oy-Math.sin(angle)*rd;
+  const px=x+ox-Math.cos(angle)*rd+5, py=y+oy-Math.sin(angle)*rd+7;
   ctx.save();
+  ctx.translate(px,py);
+  ctx.rotate(angle+Math.PI/2);
   ctx.fillStyle=C.ombre;
-  ctx.beginPath();ctx.ellipse(px+4,py+6,R*1.35,R*1.10,0,0,Math.PI*2);ctx.fill();
-  if(arme){ctx.save();ctx.translate(px,py);ctx.rotate(angle+Math.PI/2);dessineOmbreArme(R);ctx.restore();}
+  ctx.globalAlpha=0.45;
+  const AW=R*0.55,HR=R*0.40;
+  function boOmbre(x0,y0,x1,y1,w){
+    var dx=x1-x0,dy=y1-y0,len=Math.hypot(dx,dy);if(len<0.5)return;
+    ctx.save();ctx.translate((x0+x1)/2,(y0+y1)/2);ctx.rotate(Math.atan2(dy,dx));
+    ctx.beginPath();ctx.ellipse(0,0,len/2+w*0.25,w/2+w*0.25,0,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+  function moOmbre(x,y,r){ctx.beginPath();ctx.arc(x,y,r*1.15,0,Math.PI*2);ctx.fill();}
+  const pT=punchTimer||0,pS=punchSide||0;
+  var pE=0;if(pT>0)pE=pT>0.25?(0.5-pT)/0.25:pT/0.25;
+  if(arme){
+    boOmbre(-R*0.30,R*0.15,R*0.28,-R*1.48,AW);boOmbre(R*0.18,R*0.10,R*0.52,-R*1.18,AW);
+    moOmbre(R*0.28,-R*1.48,HR);moOmbre(R*0.52,-R*1.18,HR);
+    ctx.save();ctx.rotate(-Math.PI/2);ctx.fillRect(R*0.82,-R*0.27,R*2.23,R*0.73);ctx.restore();
+  }else if(pT>0){
+    const ps=pS===0?-1:1;
+    boOmbre(-ps*R*0.42,-R*0.30,-ps*R*0.66,-R*0.62,AW);moOmbre(-ps*R*0.66,-R*0.62,HR);
+    const pAx1=ps*R*0.66*(1-pE)+ps*R*0.52*pE;const pAy1=-R*0.62*(1-pE)-R*2.10*pE;
+    const pAx0=ps*R*0.42*(1-pE)+ps*R*0.15*pE;const pAy0=-R*0.30*(1-pE)-R*0.08*pE;
+    boOmbre(pAx0,pAy0,pAx1,pAy1,AW);moOmbre(pAx1,pAy1,HR);
+  }else{
+    boOmbre(-R*0.42,-R*0.30,-R*0.66,-R*0.62,AW);boOmbre(R*0.42,-R*0.30,R*0.66,-R*0.62,AW);
+    moOmbre(-R*0.66,-R*0.62,HR);moOmbre(R*0.66,-R*0.62,HR);
+  }
+  ctx.beginPath();ctx.arc(0,0,R*0.96,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=1;
   ctx.restore();
 }
 
@@ -580,7 +617,7 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   const pT=punchTimer||0, pS=punchSide||0;
   var pE=0;
   if(pT>0) pE=pT>0.25?(0.5-pT)/0.25:pT/0.25;
-  const AW=R*0.38, HR=R*0.40;
+  const AW=R*0.55, HR=R*0.40;
   if(arme){
     drawBras(-R*0.30, R*0.15, R*0.28,-R*1.48,AW);
     drawBras( R*0.18, R*0.10, R*0.52,-R*1.18,AW);
@@ -588,12 +625,14 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
     dessineArme(R);
   }else if(pT>0){
     const ps=pS===0?-1:1;
-    drawBras(-ps*R*0.42,R*0.12,-ps*R*0.65,R*0.38,AW);
-    drawMain(-ps*R*0.65,R*0.38,HR);
-    const pAx1=ps*R*0.65*(1-pE)+ps*R*0.52*pE;
-    const pAy1=R*0.38*(1-pE)-R*2.10*pE;
+    // Bras repos : positions idle correctes
+    drawBras(-ps*R*0.42,-R*0.30,-ps*R*0.66,-R*0.62,AW);
+    drawMain(-ps*R*0.66,-R*0.62,HR);
+    // Bras frappeur : interpole depuis idle vers étendu
+    const pAx1=ps*R*0.66*(1-pE)+ps*R*0.52*pE;
+    const pAy1=-R*0.62*(1-pE)-R*2.10*pE;
     const pAx0=ps*R*0.42*(1-pE)+ps*R*0.15*pE;
-    const pAy0=R*0.12*(1-pE)-R*0.10*pE;
+    const pAy0=-R*0.30*(1-pE)-R*0.08*pE;
     drawBras(pAx0,pAy0,pAx1,pAy1,AW);
     drawMain(pAx1,pAy1,HR);
   }else{
@@ -684,7 +723,7 @@ function dessineJoueur(p, j, coul, alpha, decoupe, gch, hau, demiL, demiH, arme,
   if (textureSeule) {
     dessinePerso(j.x, j.y, j.angle, coul, j.secousse, j.touche, arme, j.recul, punchTimer||0, punchSide||0);
   } else {
-    dessineOmbrePerso(j.x, j.y, j.angle, j.secousse, arme, j.recul);
+    dessineOmbrePerso(j.x, j.y, j.angle, j.secousse, arme, j.recul, punchTimer||0, punchSide||0);
   }
 
   ctx.restore();
@@ -2257,9 +2296,9 @@ function produitCommande(dt) {
 
   viseeAngle = angle; viseeActive = tire;
 
-  // Coup de poing si slot vide/mains et shooting
+  // Poing : desktop=clic, mobile=joyD. Autorisé aussi en lobby (arbres seulement)
   var poing = false;
-  if (!_phaseLobby && !itemEnMain && shooting && (moi.poingTimer||0) <= 0) poing = true;
+  if (!itemEnMain && !enPause && (isMobile ? joyD.actif : shooting) && (moi.poingTimer||0) <= 0) poing = true;
 
   seq++;
   var cmd = { seq: seq, mx: mouvement.mx, my: mouvement.my,
