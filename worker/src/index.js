@@ -6,9 +6,12 @@ import gameHtml from '../game/game.html';
 import bgAuth  from '../game/bg_auth.png';
 import bgLobby from '../game/bg_lobby.png';
 import bouton  from '../game/bouton.png';
-import arm     from '../game/arm.png';
-import hand    from '../game/hand.png';
-import head    from '../game/head.png';
+import arm          from '../game/arm.png';
+import hand         from '../game/hand.png';
+import head         from '../game/head.png';
+import weapon_XM8   from '../game/weapon_XM8.png';
+import slotXM8      from '../game/slotXM8.png';
+import bullet       from '../game/MediumProjectile.png';
 import {
   signJWT, verifyJWT, hashPassword, hashAdminKey,
   randomSalt, generateSessionToken, jsonOk, jsonErr
@@ -148,9 +151,12 @@ export default {
       '/game/bg_auth.png':  bgAuth,
       '/game/bg_lobby.png': bgLobby,
       '/game/bouton.png':   bouton,
-      '/game/arm.png':    arm,
-      '/game/hand.png':   hand,
-      '/game/head.png':   head,
+      '/game/arm.png':          arm,
+      '/game/hand.png':         hand,
+      '/game/head.png':         head,
+      '/game/weapon_XM8.png':   weapon_XM8,
+      '/game/slotXM8.png':      slotXM8,
+      '/game/MediumProjectile.png': bullet,
     };
     if (imgRoutes[url.pathname]) {
       return new Response(imgRoutes[url.pathname], {
