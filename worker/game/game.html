@@ -570,11 +570,17 @@ function dessineOmbrePerso(x,y,angle,secousse,arme,recul){
   const ox=s>0?Math.sin(s*190)*R*0.09*(s/0.16):0;
   const oy=s>0?Math.cos(s*220)*R*0.05*(s/0.16):0;
   const rec=recul||0,rd=rec>0?(rec/0.08)*8:0;
-  const px=x+ox-Math.cos(angle)*rd, py=y+oy-Math.sin(angle)*rd;
+  const posX=x+ox-Math.cos(angle)*rd, posY=y+oy-Math.sin(angle)*rd;
   ctx.save();
+  ctx.translate(posX,posY);
+  ctx.rotate(angle+Math.PI/2);
   ctx.fillStyle=C.ombre;
-  ctx.beginPath();ctx.ellipse(px+4,py+6,R*1.35,R*1.10,0,0,Math.PI*2);ctx.fill();
-  if(arme){ctx.save();ctx.translate(px,py);ctx.rotate(angle+Math.PI/2);dessineOmbreArme(R);ctx.restore();}
+  // Anneau qui suit le contour du perso (inspiré BattleAI)
+  ctx.beginPath();
+  ctx.arc(0,0,R*1.30,0,Math.PI*2);
+  ctx.arc(0,0,R*0.72,0,Math.PI*2,true);
+  ctx.fill();
+  if(arme) dessineOmbreArme(R);
   ctx.restore();
 }
 
@@ -601,24 +607,33 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   if(pT>0) pE=pT>0.25?(0.5-pT)/0.25:pT/0.25;
   const AW=R*0.38, HR=R*0.40;
   if(arme){
-    drawBras(-R*0.20,-R*0.05,-R*0.35,-R*1.62,AW);
-    drawBras( R*0.20,-R*0.05, R*0.35,-R*1.30,AW);
-    drawMain(-R*0.35,-R*1.62,HR); drawMain(R*0.35,-R*1.30,HR);
+    // Bras gauche : diagonal depuis derrière-gauche vers avant-bas
+    drawBras(-R*0.30, R*0.15, R*0.28,-R*1.48,AW);
+    // Bras droit : depuis avant-droite
+    drawBras( R*0.18, R*0.10, R*0.52,-R*1.18,AW);
+    // Mains sous l'arme
+    drawMain(R*0.28,-R*1.48,HR);
+    drawMain(R*0.52,-R*1.18,HR);
     dessineArme(R);
   }else if(pT>0){
+    // Coup de poing : bras frappeur interpole de idle vers étendu
     const ps=pS===0?-1:1;
-    drawBras(-ps*R*0.42,R*0.12,-ps*R*0.65,R*0.38,AW);
-    drawMain(-ps*R*0.65,R*0.38,HR);
-    const pAx1=ps*R*0.65*(1-pE)+ps*R*0.52*pE;
-    const pAy1=R*0.38*(1-pE)-R*2.10*pE;
-    const pAx0=ps*R*0.42*(1-pE)+ps*R*0.15*pE;
-    const pAy0=R*0.12*(1-pE)-R*0.10*pE;
+    // Bras repos
+    drawBras(-ps*R*0.42,-R*0.30,-ps*R*0.66,-R*0.62,AW);
+    drawMain(-ps*R*0.66,-R*0.62,HR);
+    // Bras frappeur
+    const pAx0= ps*R*0.42*(1-pE)+ps*R*0.15*pE;
+    const pAy0=-R*0.30*(1-pE)-R*0.08*pE;
+    const pAx1= ps*R*0.66*(1-pE)+ps*R*0.52*pE;
+    const pAy1=-R*0.62*(1-pE)-R*2.10*pE;
     drawBras(pAx0,pAy0,pAx1,pAy1,AW);
     drawMain(pAx1,pAy1,HR);
   }else{
-    drawBras(-R*0.42,R*0.12,-R*0.65,R*0.38,AW);
-    drawBras( R*0.42,R*0.12, R*0.65,R*0.38,AW);
-    drawMain(-R*0.65,R*0.38,HR); drawMain(R*0.65,R*0.38,HR);
+    // Idle : mains à l'extérieur de la tête (±0.66R,-0.62R = dist 0.905R)
+    drawBras(-R*0.40,-R*0.30,-R*0.66,-R*0.62,AW);
+    drawBras( R*0.40,-R*0.30, R*0.66,-R*0.62,AW);
+    drawMain(-R*0.66,-R*0.62,HR);
+    drawMain( R*0.66,-R*0.62,HR);
   }
   drawTete(R);
   ctx.restore();
@@ -1885,7 +1900,8 @@ function reconcilie(snap) {
     moi = { x: s.x, y: s.y, angle: s.angle, recharge: 0,
             munitions: s.munitions, rechargement: s.rechargement,
             dureeRechargeMax: s.dureeRechargeMax, tirTimer: s.tirTimer, recul: s.recul,
-            slot: s.slot || 1, inv: s.inv || [null, 'fusil', null, null, null, null] };
+            slot: s.slot || 1, inv: s.inv || [null, 'fusil', null, null, null, null],
+            poingTimer: 0, punchSide: 0 };
     return;
   }
 
