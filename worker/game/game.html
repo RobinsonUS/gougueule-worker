@@ -467,7 +467,7 @@ function dessineBalle(b) {
     ctx.save();
     ctx.rotate(Math.PI / 2);
     // Source crop : contenu utile de MediumProjectile.png (cols 2-37, rows 1-92)
-    const bW=R_JOUEUR*0.28, bL=R_JOUEUR*0.78;
+    const bW=R_JOUEUR*0.13, bL=R_JOUEUR*0.36;
     ctx.drawImage(bsp, 2, 1, 35, 91, -bW, -bL, bW*2, bL*2);
     ctx.restore();
   } else {
@@ -509,7 +509,7 @@ function segment(y0, y1, l0, l1, r, coul, ep) {
 
 function dessineArme(R) {
   const sp = SPRITES.weapon_XM8;
-  if (!sp || !sp.complete || !sp.naturalWidth) return;
+  if (!sp) return;
   ctx.save();
   ctx.rotate(-Math.PI / 2);
   // Contenu weapon_XM8.png : cols 378-1419, rows 293-571
@@ -555,44 +555,17 @@ function drawTete(R){
   var sp=SPRITES.head; if(!sp||!sp.complete||!sp.naturalWidth)return;
   ctx.drawImage(sp,-R,-R,R*2,R*2);
 }
-function dessineOmbrePerso(x,y,angle,secousse,arme,recul,punchTimer,punchSide){
+function dessineOmbrePerso(x,y,angle,secousse,arme,recul){
   const R=R_JOUEUR;
   const s=secousse||0;
   const ox=s>0?Math.sin(s*190)*R*0.09*(s/0.16):0;
   const oy=s>0?Math.cos(s*220)*R*0.05*(s/0.16):0;
   const rec=recul||0,rd=rec>0?(rec/0.08)*8:0;
-  const px=x+ox-Math.cos(angle)*rd+5, py=y+oy-Math.sin(angle)*rd+7;
+  const px=x+ox-Math.cos(angle)*rd, py=y+oy-Math.sin(angle)*rd;
   ctx.save();
-  ctx.translate(px,py);
-  ctx.rotate(angle+Math.PI/2);
   ctx.fillStyle=C.ombre;
-  ctx.globalAlpha=0.45;
-  const AW=R*0.55,HR=R*0.40;
-  function boOmbre(x0,y0,x1,y1,w){
-    var dx=x1-x0,dy=y1-y0,len=Math.hypot(dx,dy);if(len<0.5)return;
-    ctx.save();ctx.translate((x0+x1)/2,(y0+y1)/2);ctx.rotate(Math.atan2(dy,dx));
-    ctx.beginPath();ctx.ellipse(0,0,len/2+w*0.25,w/2+w*0.25,0,0,Math.PI*2);ctx.fill();
-    ctx.restore();
-  }
-  function moOmbre(x,y,r){ctx.beginPath();ctx.arc(x,y,r*1.15,0,Math.PI*2);ctx.fill();}
-  const pT=punchTimer||0,pS=punchSide||0;
-  var pE=0;if(pT>0)pE=pT>0.25?(0.5-pT)/0.25:pT/0.25;
-  if(arme){
-    boOmbre(-R*0.30,R*0.15,R*0.28,-R*1.48,AW);boOmbre(R*0.18,R*0.10,R*0.52,-R*1.18,AW);
-    moOmbre(R*0.28,-R*1.48,HR);moOmbre(R*0.52,-R*1.18,HR);
-    ctx.save();ctx.rotate(-Math.PI/2);ctx.fillRect(R*0.82,-R*0.27,R*2.23,R*0.73);ctx.restore();
-  }else if(pT>0){
-    const ps=pS===0?-1:1;
-    boOmbre(-ps*R*0.42,-R*0.30,-ps*R*0.66,-R*0.62,AW);moOmbre(-ps*R*0.66,-R*0.62,HR);
-    const pAx1=ps*R*0.66*(1-pE)+ps*R*0.52*pE;const pAy1=-R*0.62*(1-pE)-R*2.10*pE;
-    const pAx0=ps*R*0.42*(1-pE)+ps*R*0.15*pE;const pAy0=-R*0.30*(1-pE)-R*0.08*pE;
-    boOmbre(pAx0,pAy0,pAx1,pAy1,AW);moOmbre(pAx1,pAy1,HR);
-  }else{
-    boOmbre(-R*0.42,-R*0.30,-R*0.66,-R*0.62,AW);boOmbre(R*0.42,-R*0.30,R*0.66,-R*0.62,AW);
-    moOmbre(-R*0.66,-R*0.62,HR);moOmbre(R*0.66,-R*0.62,HR);
-  }
-  ctx.beginPath();ctx.arc(0,0,R*0.96,0,Math.PI*2);ctx.fill();
-  ctx.globalAlpha=1;
+  ctx.beginPath();ctx.ellipse(px+4,py+6,R*1.35,R*1.10,0,0,Math.PI*2);ctx.fill();
+  if(arme){ctx.save();ctx.translate(px,py);ctx.rotate(angle+Math.PI/2);dessineOmbreArme(R);ctx.restore();}
   ctx.restore();
 }
 
@@ -617,11 +590,11 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   const pT=punchTimer||0, pS=punchSide||0;
   var pE=0;
   if(pT>0) pE=pT>0.25?(0.5-pT)/0.25:pT/0.25;
-  const AW=R*0.55, HR=R*0.40;
+  const AW=R*0.45, HR=R*0.40;
   if(arme){
-    drawBras(-R*0.30, R*0.15, R*0.28,-R*1.48,AW);
-    drawBras( R*0.18, R*0.10, R*0.52,-R*1.18,AW);
-    drawMain(R*0.28,-R*1.48,HR); drawMain(R*0.52,-R*1.18,HR);
+    drawBras(-R*0.25, R*0.12, R*0.22,-R*0.92,AW);
+    drawBras( R*0.15, R*0.08, R*0.42,-R*1.12,AW);
+    drawMain(R*0.22,-R*0.92,HR); drawMain(R*0.42,-R*1.12,HR);
     dessineArme(R);
   }else if(pT>0){
     const ps=pS===0?-1:1;
@@ -629,10 +602,19 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
     drawBras(-ps*R*0.42,-R*0.30,-ps*R*0.66,-R*0.62,AW);
     drawMain(-ps*R*0.66,-R*0.62,HR);
     // Bras frappeur : interpole depuis idle vers étendu
-    const pAx1=ps*R*0.66*(1-pE)+ps*R*0.52*pE;
-    const pAy1=-R*0.62*(1-pE)-R*2.10*pE;
-    const pAx0=ps*R*0.42*(1-pE)+ps*R*0.15*pE;
-    const pAy0=-R*0.30*(1-pE)-R*0.08*pE;
+    // Phase 1 : extension (pE 0→1), Phase 2 : repli vers centre (pE 1→0)
+    var extX=ps*R*0.52, extY=-R*2.10;
+    var ctrX=ps*R*0.10, ctrY=-R*0.85; // position "centre" repli
+    var pAx1,pAy1,pAx0,pAy0;
+    if(pTimer>0.25){
+      // Extension depuis idle
+      pAx1=ps*R*0.66*(1-pE)+extX*pE; pAy1=-R*0.62*(1-pE)+extY*pE;
+      pAx0=ps*R*0.42*(1-pE)+ps*R*0.15*pE; pAy0=-R*0.30*(1-pE)-R*0.08*pE;
+    }else{
+      // Repli vers le centre (arc)
+      pAx1=extX*pE+ctrX*(1-pE); pAy1=extY*pE+ctrY*(1-pE);
+      pAx0=ps*R*0.15*pE+ps*R*0.05*(1-pE); pAy0=-R*0.08*pE-R*0.20*(1-pE);
+    }
     drawBras(pAx0,pAy0,pAx1,pAy1,AW);
     drawMain(pAx1,pAy1,HR);
   }else{
@@ -1265,7 +1247,7 @@ function dessine(p, moi, viseur, drag) {
   // jauges de rechargement : posees au sol, hors du calque des
   // personnages, sinon elles seraient tronquees par ses bords
   for (const j of agentsArr)
-    if (j.vivant) dessineSphereChargement(j);
+    if (j.vivant && j.id === pid) dessineSphereChargement(j);
 
   // ---- particules ----
   for (const q of p.particules) {
@@ -1892,7 +1874,7 @@ function appliqueLoc(a, cmd) {
   if (a.recul > 0)    a.recul    = Math.max(0, a.recul - dt);
   if ((a.poingTimer||0) > 0) a.poingTimer = Math.max(0, a.poingTimer - dt);
   if (cmd.poing && (a.poingTimer||0) <= 0) {
-    a.poingTimer = 0.5;
+    a.poingTimer = 0.8;
     a.punchSide = 1 - (a.punchSide||0);
   }
 }
