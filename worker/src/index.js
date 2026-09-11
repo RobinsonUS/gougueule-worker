@@ -6,6 +6,9 @@ import gameHtml from '../game/game.html';
 import bgAuth  from '../game/bg_auth.png';
 import bgLobby from '../game/bg_lobby.png';
 import bouton  from '../game/bouton.png';
+import arm     from '../game/arm.png';
+import hand    from '../game/hand.png';
+import head    from '../game/head.png';
 import {
   signJWT, verifyJWT, hashPassword, hashAdminKey,
   randomSalt, generateSessionToken, jsonOk, jsonErr
@@ -145,6 +148,9 @@ export default {
       '/game/bg_auth.png':  bgAuth,
       '/game/bg_lobby.png': bgLobby,
       '/game/bouton.png':   bouton,
+      '/game/arm.png':    arm,
+      '/game/hand.png':   hand,
+      '/game/head.png':   head,
     };
     if (imgRoutes[url.pathname]) {
       return new Response(imgRoutes[url.pathname], {
