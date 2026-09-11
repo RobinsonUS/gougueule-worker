@@ -34,7 +34,7 @@ const N_ARBRES = 26, N_BUISSONS = 32;
 const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
-const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
+const MELEE_PORTEE = R_JOUEUR * 5.0, MELEE_DEGATS = 18, MELEE_CD = 0.8;
 
 const DT = 1 / 30; // 30 Hz : charge CPU réduite de moitié
 const TICK_MS = 1000 / 30;
@@ -182,6 +182,26 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
+  // Poing dans le lobby : autorisé pour les arbres uniquement
+  if (cmd.poing && a.poingTimer <= 0 && !p.fini) {
+    a.poingTimer = MELEE_CD;
+    a.punchSide = 1 - a.punchSide;
+    a.revele = 0.35;
+    for (const o of p.obs) {
+      if (o.type !== 'arbre') continue;
+      const ex = o.x - a.x, ey = o.y - a.y;
+      const dist = Math.hypot(ex, ey);
+      if (dist < MELEE_PORTEE + o.r * 0.7) {
+        const dot = (ex*Math.cos(a.angle)+ey*Math.sin(a.angle))/dist;
+        if (dot > 0.05) {
+          o.pv -= MELEE_DEGATS; o.secousse = 0.22;
+          if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; }
+        }
+      }
+    }
+    if (mouvSeulement) { a.lastSeq = cmd.seq; return; }
+    p.evts.push({ e: 'poing', id: a.id, ang: a.angle, side: a.punchSide });
+  }
   if (mouvSeulement) { a.lastSeq = cmd.seq; return; }
 
   if (cmd.recharger && a.rechargement <= 0 && a.munitions < CHARGEUR) {
@@ -218,44 +238,28 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
     if (a.munitions <= 0) { a.rechargement = RECHARGE_DUREE; a.dureeRechargeMax = RECHARGE_DUREE; }
   }
 
-  // Coup de poing (slot vide) — autorisé dans lobby, dégâts arbres toujours, joueurs hors lobby
-  if (cmd.poing && a.poingTimer <= 0) {
+  // Coup de poing (slot vide)
+  if (cmd.poing && !mouvSeulement && a.poingTimer <= 0) {
     a.poingTimer = MELEE_CD;
     a.punchSide = 1 - a.punchSide;
     a.revele = 0.35;
-    // Dégâts aux arbres (même en lobby)
-    for (const o of p.obs) {
-      if (o.type !== 'arbre') continue;
-      const ex = o.x - a.x, ey = o.y - a.y;
+    const liveArr = Object.values(p.agents);
+    let closest = null, closestD = Infinity;
+    for (const c of liveArr) {
+      if (!c.vivant || c.id === a.id) continue;
+      const ex = c.x - a.x, ey = c.y - a.y;
       const dist = Math.hypot(ex, ey);
-      if (dist < MELEE_PORTEE + o.r * 0.5) {
+      if (dist < MELEE_PORTEE) {
         const dot = (ex * Math.cos(a.angle) + ey * Math.sin(a.angle)) / dist;
-        if (dot > 0.1) {
-          o.pv -= MELEE_DEGATS; o.secousse = 0.22;
-          if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; }
-        }
+        if (dot > 0.2 && dist < closestD) { closestD = dist; closest = c; }
       }
     }
-    // Dégâts aux joueurs (hors lobby)
-    if (!mouvSeulement) {
-      const liveArr = Object.values(p.agents);
-      let closest = null, closestD = Infinity;
-      for (const c of liveArr) {
-        if (!c.vivant || c.id === a.id) continue;
-        const ex = c.x - a.x, ey = c.y - a.y;
-        const dist = Math.hypot(ex, ey);
-        if (dist < MELEE_PORTEE) {
-          const dot = (ex * Math.cos(a.angle) + ey * Math.sin(a.angle)) / dist;
-          if (dot > 0.2 && dist < closestD) { closestD = dist; closest = c; }
-        }
-      }
-      if (closest) {
-        closest.pv -= MELEE_DEGATS;
-        closest.secousse = 0.20; closest.touche = 0.30; closest.revele = 0.35;
-        if (closest.pv <= 0) {
-          closest.pv = 0; closest.vivant = false;
-          p.kills.push({ killer: a.name, victim: closest.name });
-        }
+    if (closest) {
+      closest.pv -= MELEE_DEGATS;
+      closest.secousse = 0.20; closest.touche = 0.30; closest.revele = 0.35;
+      if (closest.pv <= 0) {
+        closest.pv = 0; closest.vivant = false;
+        p.kills.push({ killer: a.name, victim: closest.name });
       }
     }
     p.evts.push({ e: 'poing', id: a.id, ang: a.angle, side: a.punchSide });
@@ -353,7 +357,7 @@ function pas(p) {
     for (const o of (p.arbres || p.obs)) {
       if (Math.hypot(o.x - nx, o.y - ny) < o.r + R_BALLE) {
         o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
-        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; }
+        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; }
         mort = true; break;
       }
     }
@@ -570,9 +574,6 @@ function demarrePartie(room, gid) {
     a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
     if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._tick = 0; a._dernCmd = null; }
   }
-  // Restaurer les arbres
-  p.obs.forEach(o => { if(o._lt==='arbre'){o.pv=PV_ARBRE;o.type='arbre';o.secousse=0;} });
-  p.arbres = null;
 }
 
 // ─── Connexion ─────────────────────────────────────────────────────
