@@ -469,7 +469,7 @@ function dessineBalle(b) {
     ctx.save();
     ctx.rotate(Math.PI / 2);
     // Source crop : contenu utile de MediumProjectile.png (cols 2-37, rows 1-92)
-    const bW=R_JOUEUR*0.13, bL=R_JOUEUR*0.36;
+    const bW=R_JOUEUR*0.17, bL=R_JOUEUR*0.46;
     ctx.drawImage(bsp, 2, 1, 35, 91, -bW, -bL, bW*2, bL*2);
     ctx.restore();
   } else {
@@ -603,24 +603,24 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   const t=touche||0;
   if(t>0){
     const a=t/0.30;
-    const gr=ctx.createRadialGradient(posX,posY,R*0.8,posX,posY,R*1.9);
-    gr.addColorStop(0,'rgba(230,60,50,'+(0.42*a).toFixed(3)+')');
-    gr.addColorStop(1,'rgba(230,60,50,0)');
-    ctx.fillStyle=gr;ctx.beginPath();ctx.arc(posX,posY,R*1.9,0,Math.PI*2);ctx.fill();
+    const gr=ctx.createRadialGradient(posX,posY,R*0.6,posX,posY,R*2.0);
+    gr.addColorStop(0,'rgba(255,140,0,'+(0.75*a).toFixed(3)+')');
+    gr.addColorStop(0.5,'rgba(255,80,0,'+(0.40*a).toFixed(3)+')');
+    gr.addColorStop(1,'rgba(255,60,0,0)');
+    ctx.fillStyle=gr;ctx.beginPath();ctx.arc(posX,posY,R*2.0,0,Math.PI*2);ctx.fill();
   }
   ctx.translate(posX,posY);
   ctx.rotate(angle+Math.PI/2);
   const pT=punchTimer||0, pS=punchSide||0;
-  // Légère rotation du corps dans le sens du coup (se remet au retour)
-  if(pT>0&&pE>0){ ctx.rotate((pS===0?1:-1)*pE*0.14); }
   var pE=0;
-  // Animation: premiers 0.2s du cooldown 0.5s (pT de 0.5→0.3)
-  if(pT > 0.30){
-    const el = 0.50 - pT; // 0 → 0.20
-    pE = el < 0.10 ? el/0.10 : 1-(el-0.10)/0.10;
+  // Animation 0.2s sur les 0.2 premières secondes du cooldown 0.5s
+  const _cool=0.50, _anim=0.20, _half=0.10;
+  if(pT > _cool - _anim){ // pT > 0.30 : en animation
+    const elapsed = _cool - pT; // 0 → 0.20
+    pE = elapsed < _half ? elapsed/_half : 1 - (elapsed-_half)/_half;
     pE = Math.max(0,Math.min(1,pE));
   }
-  const AW=R*0.65, HR=R*0.42;
+  const AW=R*0.55, HR=R*0.40;
   if(arme){
     drawBras(-R*0.30, R*0.15, R*0.28,-R*1.48,AW);
     drawBras( R*0.18, R*0.10, R*0.52,-R*1.18,AW);
@@ -637,14 +637,14 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
     const t=pE,t2=t*t,t1=(1-t),t12=t1*t1;
     // Main frappeur : P0 idle → P1 extérieur → P2 avant
     const hx0=ps*R*0.66,hy0=-R*0.62; // idle
-    const hx1=ps*R*0.90,hy1=-R*0.95; // controle extérieur (réduit)
-    const hx2=-ps*R*0.08,hy2=-R*1.65; // final (réduit, dépasse centre)
+    const hx1=ps*R*1.10,hy1=-R*1.10; // controle extérieur
+    const hx2=-ps*R*0.15,hy2=-R*1.95; // final : dépasse le centre
     const pAx1=t12*hx0+2*t1*t*hx1+t2*hx2;
     const pAy1=t12*hy0+2*t1*t*hy1+t2*hy2;
     // Épaule frappeur
     const sx0=ps*R*0.42,sy0=-R*0.30;
-    const sx1=ps*R*0.58,sy1=-R*0.50;
-    const sx2=ps*R*0.08,sy2=-R*0.05;
+    const sx1=ps*R*0.70,sy1=-R*0.70;
+    const sx2=ps*R*0.12,sy2=-R*0.10;
     const pAx0=t12*sx0+2*t1*t*sx1+t2*sx2;
     const pAy0=t12*sy0+2*t1*t*sy1+t2*sy2;
     drawBras(pAx0,pAy0,pAx1,pAy1,AW);
@@ -1263,6 +1263,24 @@ function dessine(p, moi, viseur, drag) {
     j._arme = !!(j.inv && j.inv[j.slot]);
   }
 
+  // ---- Détection mort/coup pour effets ----
+  const _dtE = window._lastDt || 0.016;
+  const agArrAll = Object.values(p.agents);
+  for (const j of agArrAll) {
+    if (!j.vivant && !_deathFades[j.id]) {
+      _deathFades[j.id] = { t: 0.8, x: j.x, y: j.y, angle: j.angle,
+        coul: (j.id === moi) ? C.perso : C.persoEnn };
+      genDeathParticules(j.x, j.y);
+    }
+    if (j.vivant && (j.touche||0) > 0.25 && (_prevTouche[j.id]||0) <= 0.25)
+      genHitParticules(j.x, j.y);
+    _prevTouche[j.id] = j.touche||0;
+  }
+  for (const _di in _deathFades) {
+    _deathFades[_di].t -= _dtE;
+    if (_deathFades[_di].t <= 0) delete _deathFades[_di];
+  }
+
   // ---- joueurs caches par la vegetation : sous le feuillage ----
   const pose = (dessus, texture) => {
     for (const j of agentsArr) {
@@ -1275,6 +1293,16 @@ function dessine(p, moi, viseur, drag) {
 
   pose(false, false);
   pose(false, true);
+
+  // ---- Fondu joueurs morts (0.8s) ----
+  for (const _di in _deathFades) {
+    const _df = _deathFades[_di];
+    const _al = Math.max(0, Math.min(1, _df.t / 0.8));
+    ctx.save(); ctx.globalAlpha = _al;
+    dessineOmbrePerso(_df.x, _df.y, _df.angle, 0, false, 0);
+    dessinePerso(_df.x, _df.y, _df.angle, _df.coul, 0, 0, false, 0, 0, 0);
+    ctx.globalAlpha = 1; ctx.restore();
+  }
 
   // jauges de rechargement : posees au sol, hors du calque des
   // personnages, sinon elles seraient tronquees par ses bords
@@ -1332,8 +1360,8 @@ function dessine(p, moi, viseur, drag) {
       ctx.fill();
 
     } else {
-      disque(q.x, q.y + q.r * 0.5, q.r, C.eclatOmb);
-      disque(q.x, q.y, q.r, C.eclat);
+      disque(q.x, q.y + q.r * 0.5, q.r * 0.7, q.coulOmb || C.eclatOmb);
+      disque(q.x, q.y, q.r, q.coul || C.eclat);
     }
 
     ctx.restore();
@@ -1453,6 +1481,8 @@ function ajouteKill(kills) {}
 
 // =================== Particules locales ===================
 var localParticules = [];
+var _deathFades = {};
+var _prevTouche = {};
 var invDrag = null; // { depuis, x, y, objet } pendant un drag d'inventaire
 
 function contenuSlotMoi(i) {
@@ -1570,6 +1600,23 @@ function genTreeDebris(o) {
   }
 }
 
+function genHitParticules(x, y) {
+  for (var q = 0; q < 6; q++) {
+    var an = Math.random()*Math.PI*2, vi = 60+Math.random()*170;
+    localParticules.push({ x:x, y:y, vx:Math.cos(an)*vi, vy:Math.sin(an)*vi,
+      r:2+Math.random()*4, vie:0.18+Math.random()*0.18, vieMax:0.36,
+      coul:'#ff8800', coulOmb:'#cc4400' });
+  }
+}
+function genDeathParticules(x, y) {
+  for (var q = 0; q < 14; q++) {
+    var an = Math.random()*Math.PI*2, vi = 40+Math.random()*130, dd = Math.random()*18;
+    localParticules.push({ x:x+Math.cos(an)*dd, y:y+Math.sin(an)*dd,
+      vx:Math.cos(an)*vi, vy:Math.sin(an)*vi,
+      r:3+Math.random()*5, vie:0.30+Math.random()*0.50, vieMax:0.80,
+      coul:'#999999', coulOmb:'#444444' });
+  }
+}
 function majParticulesLocales(dt) {
   for (var i = localParticules.length-1; i >= 0; i--) {
     var q = localParticules[i];
@@ -1904,13 +1951,10 @@ function appliqueLoc(a, cmd) {
   }
   if (a.tirTimer > 0) a.tirTimer = Math.max(0, a.tirTimer - dt);
   if (a.recul > 0)    a.recul    = Math.max(0, a.recul - dt);
-  // Poing : seulement hors rejeu (sinon la réconciliation multi-décrémente)
-  if (!cmd._rejeu) {
-    if ((a.poingTimer||0) > 0) a.poingTimer = Math.max(0, a.poingTimer - dt);
-    if (cmd.poing && (a.poingTimer||0) <= 0) {
-      a.poingTimer = 0.5;
-      a.punchSide = 1 - (a.punchSide||0);
-    }
+  if ((a.poingTimer||0) > 0) a.poingTimer = Math.max(0, a.poingTimer - dt);
+  if (cmd.poing && (a.poingTimer||0) < 0.02) {
+    a.poingTimer = 0.5;
+    a.punchSide = 1 - (a.punchSide||0);
   }
 }
 
@@ -2315,7 +2359,7 @@ function produitCommande(dt) {
 
   // Poing : desktop=clic, mobile=joyD. Autorisé aussi en lobby (arbres seulement)
   var poing = false;
-  if (!itemEnMain && !enPause && (isMobile ? joyD.actif : shooting) && (moi.poingTimer||0) <= 0) poing = true;
+  if (!itemEnMain && !enPause && (isMobile ? joyD.actif : shooting) && (moi.poingTimer||0) < 0.02) poing = true;
 
   seq++;
   var cmd = { seq: seq, mx: mouvement.mx, my: mouvement.my,
@@ -2591,6 +2635,7 @@ function boucle(maintenant) {
 
   if (etatJeu === 'lobby' || etatJeu === 'connecting' || etatJeu === 'attente') return;
 
+  window._lastDt = dt;
   produitCommande(dt);
 
   // l'ecart de reconciliation se resorbe vite mais sans a-coup
