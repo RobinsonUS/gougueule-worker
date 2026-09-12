@@ -611,15 +611,16 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   ctx.translate(posX,posY);
   ctx.rotate(angle+Math.PI/2);
   const pT=punchTimer||0, pS=punchSide||0;
+  // Légère rotation du corps dans le sens du coup (se remet au retour)
+  if(pT>0&&pE>0){ ctx.rotate((pS===0?1:-1)*pE*0.14); }
   var pE=0;
-  // Animation 0.2s sur les 0.2 premières secondes du cooldown 0.5s
-  const _cool=0.50, _anim=0.20, _half=0.10;
-  if(pT > _cool - _anim){ // pT > 0.30 : en animation
-    const elapsed = _cool - pT; // 0 → 0.20
-    pE = elapsed < _half ? elapsed/_half : 1 - (elapsed-_half)/_half;
+  // Animation: premiers 0.2s du cooldown 0.5s (pT de 0.5→0.3)
+  if(pT > 0.30){
+    const el = 0.50 - pT; // 0 → 0.20
+    pE = el < 0.10 ? el/0.10 : 1-(el-0.10)/0.10;
     pE = Math.max(0,Math.min(1,pE));
   }
-  const AW=R*0.55, HR=R*0.40;
+  const AW=R*0.65, HR=R*0.42;
   if(arme){
     drawBras(-R*0.30, R*0.15, R*0.28,-R*1.48,AW);
     drawBras( R*0.18, R*0.10, R*0.52,-R*1.18,AW);
@@ -636,14 +637,14 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
     const t=pE,t2=t*t,t1=(1-t),t12=t1*t1;
     // Main frappeur : P0 idle → P1 extérieur → P2 avant
     const hx0=ps*R*0.66,hy0=-R*0.62; // idle
-    const hx1=ps*R*1.10,hy1=-R*1.10; // controle extérieur
-    const hx2=-ps*R*0.15,hy2=-R*1.95; // final : dépasse le centre
+    const hx1=ps*R*0.90,hy1=-R*0.95; // controle extérieur (réduit)
+    const hx2=-ps*R*0.08,hy2=-R*1.65; // final (réduit, dépasse centre)
     const pAx1=t12*hx0+2*t1*t*hx1+t2*hx2;
     const pAy1=t12*hy0+2*t1*t*hy1+t2*hy2;
     // Épaule frappeur
     const sx0=ps*R*0.42,sy0=-R*0.30;
-    const sx1=ps*R*0.70,sy1=-R*0.70;
-    const sx2=ps*R*0.12,sy2=-R*0.10;
+    const sx1=ps*R*0.58,sy1=-R*0.50;
+    const sx2=ps*R*0.08,sy2=-R*0.05;
     const pAx0=t12*sx0+2*t1*t*sx1+t2*sx2;
     const pAy0=t12*sy0+2*t1*t*sy1+t2*sy2;
     drawBras(pAx0,pAy0,pAx1,pAy1,AW);
@@ -1903,10 +1904,13 @@ function appliqueLoc(a, cmd) {
   }
   if (a.tirTimer > 0) a.tirTimer = Math.max(0, a.tirTimer - dt);
   if (a.recul > 0)    a.recul    = Math.max(0, a.recul - dt);
-  if ((a.poingTimer||0) > 0) a.poingTimer = Math.max(0, a.poingTimer - dt);
-  if (cmd.poing && (a.poingTimer||0) <= 0) {
-    a.poingTimer = 0.5;
-    a.punchSide = 1 - (a.punchSide||0);
+  // Poing : seulement hors rejeu (sinon la réconciliation multi-décrémente)
+  if (!cmd._rejeu) {
+    if ((a.poingTimer||0) > 0) a.poingTimer = Math.max(0, a.poingTimer - dt);
+    if (cmd.poing && (a.poingTimer||0) <= 0) {
+      a.poingTimer = 0.5;
+      a.punchSide = 1 - (a.punchSide||0);
+    }
   }
 }
 
