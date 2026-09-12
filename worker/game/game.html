@@ -613,10 +613,10 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   ctx.rotate(angle+Math.PI/2);
   const pT=punchTimer||0, pS=punchSide||0;
   var pE=0;
-  // Animation 0.2s sur les 0.2 premières secondes du cooldown 0.5s
-  const _cool=0.50, _anim=0.20, _half=0.10;
+  // Animation 0.3s sur les 0.3 premières secondes du cooldown 0.6s
+  const _cool=0.60, _anim=0.30, _half=0.15;
   if(pT > _cool - _anim){ // pT > 0.30 : en animation
-    const elapsed = _cool - pT; // 0 → 0.20
+    const elapsed = _cool - pT; // 0 → 0.30
     pE = elapsed < _half ? elapsed/_half : 1 - (elapsed-_half)/_half;
     pE = Math.max(0,Math.min(1,pE));
   }
@@ -1269,7 +1269,7 @@ function dessine(p, moi, viseur, drag) {
   for (const j of agArrAll) {
     if (!j.vivant && !_deathDone.has(j.id)) {
       _deathDone.add(j.id);
-      _deathFades[j.id] = { t:0.35, x:j.x, y:j.y, angle:j.angle,
+      _deathFades[j.id] = { t:0.25, x:j.x, y:j.y, angle:j.angle,
         coul:(j.id===moi)?C.perso:C.persoEnn,
         arme:!!(j.inv&&j.inv[j.slot]), pT:j.poingTimer||0, pS:j.punchSide||0 };
       genDeathParticules(j.x, j.y);
@@ -1299,7 +1299,7 @@ function dessine(p, moi, viseur, drag) {
   // ---- Fondu joueurs morts (0.35s) ----
   for(const _di in _deathFades){
     const _df=_deathFades[_di];
-    const _al=Math.max(0,Math.min(1,_df.t/0.35));
+    const _al=Math.max(0,Math.min(1,_df.t/0.25));
     if(_al<=0)continue;
     ctx.save();ctx.globalAlpha=_al;
     dessineOmbrePerso(_df.x,_df.y,_df.angle,0,_df.arme,0);
@@ -1962,7 +1962,7 @@ function appliqueLoc(a, cmd) {
   if (a.recul > 0)    a.recul    = Math.max(0, a.recul - dt);
   if ((a.poingTimer||0) > 0) a.poingTimer = Math.max(0, a.poingTimer - dt);
   if (cmd.poing && (a.poingTimer||0) < 0.02) {
-    a.poingTimer = 0.5;
+    a.poingTimer = 0.6;
     a.punchSide = 1 - (a.punchSide||0);
   }
 }
