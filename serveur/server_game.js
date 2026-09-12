@@ -183,8 +183,8 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
   if (cmd.poing && a._pCd < 0.02) {
-    a._pCd = 0.25;       // cooldown court robuste au lag
-    a.poingTimer = 0.50;  // animation pleine pour tous les écrans
+    a._pCd = 0.35;       // cooldown court robuste au lag
+    a.poingTimer = 0.60;  // animation pleine pour tous les écrans
     a.punchSide = 1 - a.punchSide;
     a.revele = 0.35;
     // Dégâts aux arbres (même en lobby)
