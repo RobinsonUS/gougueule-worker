@@ -34,7 +34,7 @@ const N_ARBRES = 26, N_BUISSONS = 32;
 const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
-const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.6;
+const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
 
 const DT = 1 / 30; // 30 Hz : charge CPU réduite de moitié
 const TICK_MS = 1000 / 30;
@@ -182,43 +182,6 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
-  if (mouvSeulement) { a.lastSeq = cmd.seq; return; }
-
-  if (cmd.recharger && a.rechargement <= 0 && a.munitions < CHARGEUR) {
-    a.rechargement = RECHARGE_DUREE; a.dureeRechargeMax = RECHARGE_DUREE;
-  }
-
-  a.recharge -= dt;
-  const armeEnMain = a.slot > 0 && a.inv && a.inv[a.slot];
-  if (cmd.tire && armeEnMain && a.recharge <= 0 && a.rechargement <= 0 && a.munitions > 0) {
-    a.recharge = CADENCE; a.tirTimer = 0.35; a.revele = 0.35; a.recul = 0.08;
-    a.munitions--;
-    const at = a.angle + (p.rng() - 0.5) * DISPERSION;
-    const bx = a.x + Math.cos(a.angle) * CANON_L;
-    const by = a.y + Math.sin(a.angle) * CANON_L;
-    const liveArr = Object.values(p.agents);
-    let spawnHit = false;
-    for (const c of liveArr) {
-      if (!c.vivant || c.id === a.id) continue;
-      if (Math.hypot(c.x - bx, c.y - by) < R_JOUEUR + R_BALLE) {
-        const dg = p.rng() < 0.5 ? 10 : 11;
-        c.pv -= dg; c.secousse = 0.16; c.touche = 0.30; c.revele = 0.35;
-        if (c.pv <= 0) { c.pv = 0; c.vivant = false; p.kills.push({ killer: a.name, victim: c.name }); }
-        spawnHit = true; break;
-      }
-    }
-    if (!spawnHit) {
-      p.balles.push({
-        id: ++p.balleId, x: bx, y: by,
-        vx: Math.cos(at) * V_BALLE, vy: Math.sin(at) * V_BALLE,
-        ang: at, reste: PORTEE, par: a.id,
-      });
-    }
-    p.evts.push({ e: 'tir', id: a.id, x: a.x, y: a.y, ang: a.angle });
-    if (a.munitions <= 0) { a.rechargement = RECHARGE_DUREE; a.dureeRechargeMax = RECHARGE_DUREE; }
-  }
-
-  // Coup de poing (slot vide) — autorisé dans lobby, dégâts arbres toujours, joueurs hors lobby
   if (cmd.poing && a.poingTimer <= 0) {
     a.poingTimer = MELEE_CD;
     a.punchSide = 1 - a.punchSide;
@@ -260,6 +223,43 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
     }
     p.evts.push({ e: 'poing', id: a.id, ang: a.angle, side: a.punchSide });
   }
+  if (mouvSeulement) { a.lastSeq = cmd.seq; return; }
+
+  if (cmd.recharger && a.rechargement <= 0 && a.munitions < CHARGEUR) {
+    a.rechargement = RECHARGE_DUREE; a.dureeRechargeMax = RECHARGE_DUREE;
+  }
+
+  a.recharge -= dt;
+  const armeEnMain = a.slot > 0 && a.inv && a.inv[a.slot];
+  if (cmd.tire && armeEnMain && a.recharge <= 0 && a.rechargement <= 0 && a.munitions > 0) {
+    a.recharge = CADENCE; a.tirTimer = 0.35; a.revele = 0.35; a.recul = 0.08;
+    a.munitions--;
+    const at = a.angle + (p.rng() - 0.5) * DISPERSION;
+    const bx = a.x + Math.cos(a.angle) * CANON_L;
+    const by = a.y + Math.sin(a.angle) * CANON_L;
+    const liveArr = Object.values(p.agents);
+    let spawnHit = false;
+    for (const c of liveArr) {
+      if (!c.vivant || c.id === a.id) continue;
+      if (Math.hypot(c.x - bx, c.y - by) < R_JOUEUR + R_BALLE) {
+        const dg = p.rng() < 0.5 ? 10 : 11;
+        c.pv -= dg; c.secousse = 0.16; c.touche = 0.30; c.revele = 0.35;
+        if (c.pv <= 0) { c.pv = 0; c.vivant = false; p.kills.push({ killer: a.name, victim: c.name }); }
+        spawnHit = true; break;
+      }
+    }
+    if (!spawnHit) {
+      p.balles.push({
+        id: ++p.balleId, x: bx, y: by,
+        vx: Math.cos(at) * V_BALLE, vy: Math.sin(at) * V_BALLE,
+        ang: at, reste: PORTEE, par: a.id,
+      });
+    }
+    p.evts.push({ e: 'tir', id: a.id, x: a.x, y: a.y, ang: a.angle });
+    if (a.munitions <= 0) { a.rechargement = RECHARGE_DUREE; a.dureeRechargeMax = RECHARGE_DUREE; }
+  }
+
+  // Coup de poing (slot vide) — autorisé dans lobby, dégâts arbres toujours, joueurs hors lobby
   a.lastSeq = cmd.seq;
 }
 
