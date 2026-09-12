@@ -603,11 +603,11 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   const t=touche||0;
   if(t>0){
     const a=t/0.30;
-    const gr=ctx.createRadialGradient(posX,posY,R*0.6,posX,posY,R*2.0);
+    const gr=ctx.createRadialGradient(posX,posY,R*0.7,posX,posY,R*1.7);
     gr.addColorStop(0,'rgba(255,140,0,'+(0.75*a).toFixed(3)+')');
     gr.addColorStop(0.5,'rgba(255,80,0,'+(0.40*a).toFixed(3)+')');
     gr.addColorStop(1,'rgba(255,60,0,0)');
-    ctx.fillStyle=gr;ctx.beginPath();ctx.arc(posX,posY,R*2.0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=gr;ctx.beginPath();ctx.arc(posX,posY,R*1.7,0,Math.PI*2);ctx.fill();
   }
   ctx.translate(posX,posY);
   ctx.rotate(angle+Math.PI/2);
@@ -1269,7 +1269,7 @@ function dessine(p, moi, viseur, drag) {
   for (const j of agArrAll) {
     if (!j.vivant && !_deathDone.has(j.id)) {
       _deathDone.add(j.id);
-      _deathFades[j.id] = { t:0.50, x:j.x, y:j.y, angle:j.angle,
+      _deathFades[j.id] = { t:0.35, x:j.x, y:j.y, angle:j.angle,
         coul:(j.id===moi)?C.perso:C.persoEnn,
         arme:!!(j.inv&&j.inv[j.slot]), pT:j.poingTimer||0, pS:j.punchSide||0 };
       genDeathParticules(j.x, j.y);
@@ -1296,22 +1296,14 @@ function dessine(p, moi, viseur, drag) {
   pose(false, false);
   pose(false, true);
 
-  // ---- Fondu joueurs morts (0.5s, offscreen = pas de transparence interne) ----
-  if(!window._dCvs)window._dCvs=document.createElement('canvas');
-  if(window._dCvs.width!==LARG||window._dCvs.height!==HAUT){window._dCvs.width=LARG;window._dCvs.height=HAUT;}
+  // ---- Fondu joueurs morts (0.35s) ----
   for(const _di in _deathFades){
     const _df=_deathFades[_di];
-    const _al=Math.max(0,Math.min(1,_df.t/0.50));
+    const _al=Math.max(0,Math.min(1,_df.t/0.35));
     if(_al<=0)continue;
-    var _dc=window._dCvs.getContext('2d');
-    _dc.clearRect(0,0,LARG,HAUT);
-    var _oc=ctx;ctx=_dc;
-    repereMonde();
+    ctx.save();ctx.globalAlpha=_al;
     dessineOmbrePerso(_df.x,_df.y,_df.angle,0,_df.arme,0);
     dessinePerso(_df.x,_df.y,_df.angle,_df.coul,0,0,_df.arme,_df.pT||0,_df.pS||0);
-    ctx=_oc;
-    ctx.save();ctx.setTransform(1,0,0,1,0,0);
-    ctx.globalAlpha=_al;ctx.drawImage(window._dCvs,0,0);
     ctx.globalAlpha=1;ctx.restore();
   }
 
