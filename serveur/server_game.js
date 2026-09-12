@@ -34,7 +34,7 @@ const N_ARBRES = 26, N_BUISSONS = 32;
 const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
-const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.25;
+const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
 
 const DT = 1 / 30; // 30 Hz : charge CPU réduite de moitié
 const TICK_MS = 1000 / 30;
@@ -182,7 +182,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
-  if (cmd.poing && a.poingTimer < 0.02) {
+  if (cmd.poing && a.poingTimer < 0.10) {
     a.poingTimer = MELEE_CD;
     a.punchSide = 1 - a.punchSide;
     a.revele = 0.35;
