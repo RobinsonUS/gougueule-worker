@@ -182,7 +182,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
-  if (cmd.poing && a.poingTimer <= 0) {
+  if (cmd.poing && a.poingTimer < 0.02) {
     a.poingTimer = MELEE_CD;
     a.punchSide = 1 - a.punchSide;
     a.revele = 0.35;
