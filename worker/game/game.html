@@ -516,7 +516,7 @@ function dessineArme(R) {
   ctx.rotate(-Math.PI / 2);
   // Contenu weapon_XM8.png : cols 378-1419, rows 293-571
   // grip=0.82R, suppresseur=3.05R, haut=-0.27R, bas=+0.46R (dans repère screen+angle)
-  ctx.drawImage(sp, 378, 293, 1041, 278, R*0.82, -R*0.27, R*2.23, R*0.73);
+  ctx.drawImage(sp, 378, 293, 1041, 278, R*0.82, -R*0.365, R*2.23, R*0.73);
   ctx.restore();
 }
 
@@ -527,7 +527,7 @@ function dessineOmbreArme(R) {
   ctx.fillStyle = C.ombre;
   ctx.globalAlpha = 0.55;
   ctx.beginPath();
-  ctx.rect(R*0.82, -R*0.27, R*2.23, R*0.73);
+  ctx.rect(R*0.82, -R*0.365, R*2.23, R*0.73);
   ctx.fill();
   ctx.globalAlpha = 1;
   ctx.restore();
@@ -612,9 +612,11 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   ctx.rotate(angle+Math.PI/2);
   const pT=punchTimer||0, pS=punchSide||0;
   var pE=0;
-  if(pT>0){
-    const _dur=0.60, _mid=0.30; // timer 0.6s
-    pE = pT>_mid ? (_dur-pT)/_mid : pT/_mid;
+  // Animation 0.2s sur les 0.2 premières secondes du cooldown 0.5s
+  const _cool=0.50, _anim=0.20, _half=0.10;
+  if(pT > _cool - _anim){ // pT > 0.30 : en animation
+    const elapsed = _cool - pT; // 0 → 0.20
+    pE = elapsed < _half ? elapsed/_half : 1 - (elapsed-_half)/_half;
     pE = Math.max(0,Math.min(1,pE));
   }
   const AW=R*0.55, HR=R*0.40;
@@ -1903,7 +1905,7 @@ function appliqueLoc(a, cmd) {
   if (a.recul > 0)    a.recul    = Math.max(0, a.recul - dt);
   if ((a.poingTimer||0) > 0) a.poingTimer = Math.max(0, a.poingTimer - dt);
   if (cmd.poing && (a.poingTimer||0) <= 0) {
-    a.poingTimer = 0.6;
+    a.poingTimer = 0.5;
     a.punchSide = 1 - (a.punchSide||0);
   }
 }
