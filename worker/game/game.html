@@ -604,8 +604,8 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   if(t>0){
     const a=t/0.30;
     const gr=ctx.createRadialGradient(posX,posY,R*0.6,posX,posY,R*2.0);
-    gr.addColorStop(0,'rgba(255,140,0,'+(0.50*a).toFixed(3)+')');
-    gr.addColorStop(0.5,'rgba(255,80,0,'+(0.22*a).toFixed(3)+')');
+    gr.addColorStop(0,'rgba(255,140,0,'+(0.75*a).toFixed(3)+')');
+    gr.addColorStop(0.5,'rgba(255,80,0,'+(0.40*a).toFixed(3)+')');
     gr.addColorStop(1,'rgba(255,60,0,0)');
     ctx.fillStyle=gr;ctx.beginPath();ctx.arc(posX,posY,R*2.0,0,Math.PI*2);ctx.fill();
   }
@@ -1269,8 +1269,9 @@ function dessine(p, moi, viseur, drag) {
   for (const j of agArrAll) {
     if (!j.vivant && !_deathDone.has(j.id)) {
       _deathDone.add(j.id);
-      _deathFades[j.id] = { t: 0.8, x: j.x, y: j.y, angle: j.angle,
-        coul: (j.id === moi) ? C.perso : C.persoEnn };
+      _deathFades[j.id] = { t:0.50, x:j.x, y:j.y, angle:j.angle,
+        coul:(j.id===moi)?C.perso:C.persoEnn,
+        arme:!!(j.inv&&j.inv[j.slot]), pT:j.poingTimer||0, pS:j.punchSide||0 };
       genDeathParticules(j.x, j.y);
     }
     if (j.vivant && (j.touche||0) > 0.25 && (_prevTouche[j.id]||0) <= 0.25)
@@ -1295,14 +1296,23 @@ function dessine(p, moi, viseur, drag) {
   pose(false, false);
   pose(false, true);
 
-  // ---- Fondu joueurs morts (0.8s) ----
-  for (const _di in _deathFades) {
-    const _df = _deathFades[_di];
-    const _al = Math.max(0, Math.min(1, _df.t / 0.8));
-    ctx.save(); ctx.globalAlpha = _al;
-    dessineOmbrePerso(_df.x, _df.y, _df.angle, 0, false, 0);
-    dessinePerso(_df.x, _df.y, _df.angle, _df.coul, 0, 0, false, 0, 0, 0);
-    ctx.globalAlpha = 1; ctx.restore();
+  // ---- Fondu joueurs morts (0.5s, offscreen = pas de transparence interne) ----
+  if(!window._dCvs)window._dCvs=document.createElement('canvas');
+  if(window._dCvs.width!==LARG||window._dCvs.height!==HAUT){window._dCvs.width=LARG;window._dCvs.height=HAUT;}
+  for(const _di in _deathFades){
+    const _df=_deathFades[_di];
+    const _al=Math.max(0,Math.min(1,_df.t/0.50));
+    if(_al<=0)continue;
+    var _dc=window._dCvs.getContext('2d');
+    _dc.clearRect(0,0,LARG,HAUT);
+    var _oc=ctx;ctx=_dc;
+    repereMonde();
+    dessineOmbrePerso(_df.x,_df.y,_df.angle,0,_df.arme,0);
+    dessinePerso(_df.x,_df.y,_df.angle,_df.coul,0,0,_df.arme,_df.pT||0,_df.pS||0);
+    ctx=_oc;
+    ctx.save();ctx.setTransform(1,0,0,1,0,0);
+    ctx.globalAlpha=_al;ctx.drawImage(window._dCvs,0,0);
+    ctx.globalAlpha=1;ctx.restore();
   }
 
   // jauges de rechargement : posees au sol, hors du calque des
@@ -1361,8 +1371,12 @@ function dessine(p, moi, viseur, drag) {
       ctx.fill();
 
     } else {
+      const _qa = q._aMax!==undefined ? Math.min(q._aMax, alphaVal) : alphaVal;
+      ctx.globalAlpha = _qa * 0.55;
       disque(q.x, q.y + q.r * 0.5, q.r * 0.7, q.coulOmb || C.eclatOmb);
+      ctx.globalAlpha = _qa;
       disque(q.x, q.y, q.r, q.coul || C.eclat);
+      ctx.globalAlpha = alphaVal;
     }
 
     ctx.restore();
@@ -1603,24 +1617,21 @@ function genTreeDebris(o) {
 }
 
 function genHitParticules(x, y) {
-  var R = R_JOUEUR;
-  for (var q = 0; q < 7; q++) {
-    var an = Math.random()*Math.PI*2, vi = 80+Math.random()*140;
-    // Spawn sur le bord du joueur, va vers l'extérieur
-    localParticules.push({
-      x: x+Math.cos(an)*R*0.85, y: y+Math.sin(an)*R*0.85,
-      vx: Math.cos(an)*vi, vy: Math.sin(an)*vi,
-      r: 2+Math.random()*3.5, vie: 0.20+Math.random()*0.18, vieMax: 0.38,
-      coul:'#ff8c00', coulOmb:'#cc5500' });
+  for (var q = 0; q < 6; q++) {
+    var an = Math.random()*Math.PI*2, vi = 60+Math.random()*170;
+    localParticules.push({ x:x, y:y, vx:Math.cos(an)*vi, vy:Math.sin(an)*vi,
+      r:2+Math.random()*4, vie:0.18+Math.random()*0.18, vieMax:0.36,
+      coul:'#ff8800', coulOmb:'#cc4400' });
   }
 }
 function genDeathParticules(x, y) {
-  for (var q = 0; q < 14; q++) {
-    var an = Math.random()*Math.PI*2, vi = 40+Math.random()*130, dd = Math.random()*18;
+  var R = R_JOUEUR;
+  for (var q = 0; q < 24; q++) {
+    var an = Math.random()*Math.PI*2, vi = 25+Math.random()*100, dd = Math.random()*R*0.65;
     localParticules.push({ x:x+Math.cos(an)*dd, y:y+Math.sin(an)*dd,
       vx:Math.cos(an)*vi, vy:Math.sin(an)*vi,
-      r:3+Math.random()*5, vie:0.30+Math.random()*0.50, vieMax:0.80,
-      coul:'#999999', coulOmb:'#444444' });
+      r:0.8+Math.random()*2, vie:0.15+Math.random()*0.35, vieMax:0.80,
+      coul:'#aaaaaa', coulOmb:'#555555', _aMax:0.38 });
   }
 }
 function majParticulesLocales(dt) {
@@ -1957,12 +1968,10 @@ function appliqueLoc(a, cmd) {
   }
   if (a.tirTimer > 0) a.tirTimer = Math.max(0, a.tirTimer - dt);
   if (a.recul > 0)    a.recul    = Math.max(0, a.recul - dt);
-  if (!cmd._rejeu) {
-    if ((a.poingTimer||0) > 0) a.poingTimer = Math.max(0, a.poingTimer - dt);
-    if (cmd.poing && (a.poingTimer||0) < 0.02) {
-      a.poingTimer = 0.5;
-      a.punchSide = 1 - (a.punchSide||0);
-    }
+  if ((a.poingTimer||0) > 0) a.poingTimer = Math.max(0, a.poingTimer - dt);
+  if (cmd.poing && (a.poingTimer||0) < 0.02) {
+    a.poingTimer = 0.5;
+    a.punchSide = 1 - (a.punchSide||0);
   }
 }
 
