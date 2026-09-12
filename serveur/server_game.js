@@ -41,6 +41,29 @@ const TICK_MS = 1000 / 30;
 const SNAP_TOUS_LES = 1; // snap chaque tick (= 30 Hz)
 const DT_MAX_INPUT = 0.05;
 
+
+// ─────────────── Grille spatiale (bullets vs arbres) ──────────────
+// Réduit collision O(balles×arbres) → O(balles×~4 arbres voisins)
+const GRID_CELL_SZ = 220; // légèrement plus grand que R_ARBRE*1.3
+
+function buildGrid(arbres) {
+  const g = new Map();
+  for (const o of arbres) {
+    const cx = Math.floor(o.x / GRID_CELL_SZ);
+    const cy = Math.floor(o.y / GRID_CELL_SZ);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      const k = (cx + dx) * 10000 + (cy + dy);
+      let c = g.get(k); if (!c) { c = []; g.set(k, c); }
+      c.push(o);
+    }
+  }
+  return g;
+}
+function queryGrid(g, x, y) {
+  const k = Math.floor(x / GRID_CELL_SZ) * 10000 + Math.floor(y / GRID_CELL_SZ);
+  return g.get(k) || [];
+}
+
 // ─────────────── RNG deterministe ─────────────────────────────────
 function creeRng(graine) {
   let a = graine | 0;
@@ -296,6 +319,7 @@ function pas(p) {
   // Cache arbres (mis à jour si une souche apparaît, max toutes les 5s)
   if (!p.arbres || p.tick % 150 === 0) {
     p.arbres = p.obs.filter(o => o.type === 'arbre');
+    p.arbresGrid = buildGrid(p.arbres);
   }
 
   // Suivi de vitesse + précalcul _inBush en une seule passe
@@ -350,12 +374,16 @@ function pas(p) {
     const dx = b.vx * DT, dy = b.vy * DT;
     b.reste -= Math.hypot(dx, dy);
     if (b.reste <= 0) { p.balles.splice(k, 1); continue; }
-    const nx = b.x + dx, ny = b.y + dy;
+    // Supprimer si hors map
+    const nx2 = b.x + dx, ny2 = b.y + dy;
+    if (nx2 < 0 || nx2 > MONDE || ny2 < 0 || ny2 > MONDE) { p.balles.splice(k, 1); continue; }
+    const nx = nx2, ny = ny2;
     let mort = false;
-    for (const o of (p.arbres || p.obs)) {
+    for (const o of (p.arbresGrid ? queryGrid(p.arbresGrid, nx, ny) : (p.arbres || p.obs))) {
+      if (o.type !== 'arbre') continue;
       if (Math.hypot(o.x - nx, o.y - ny) < o.r + R_BALLE) {
         o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
-        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; }
+        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; p.arbresGrid = null; }
         mort = true; break;
       }
     }
