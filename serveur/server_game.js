@@ -25,22 +25,22 @@ function verifyJWT(token) {
 }
 
 // ─────────────── Constantes (identiques au client) ─────────────────
-// Maps fixes : lobby (petite) et jeu (grande)
 const CELL = 50;
+// ── Map fixe LOBBY (petite, toujours identique) ────────────────────
 const CFG_LOBBY = {
   MONDE: 3200, SEED: 314159,
   N_ARBRES: 26, N_BUISSONS: 32,
   ZONE_R0: 1900, ZONE_ATTENTE: 12,
-  marge: 160, spawn_dist_max: 1200, spawn_dist_min: 200
+  SPAWN_MIN: 200, SPAWN_MAX: 1200, MARGE: 160,
 };
+// ── Map fixe JEU (4× plus grande, toujours identique) ──────────────
 const CFG_JEU = {
   MONDE: 6400, SEED: 271828,
   N_ARBRES: 90, N_BUISSONS: 110,
   ZONE_R0: 3800, ZONE_ATTENTE: 20,
-  marge: 280, spawn_dist_max: 2600, spawn_dist_min: 400
+  SPAWN_MIN: 400, SPAWN_MAX: 2600, MARGE: 280,
 };
-// Garder MONDE comme alias pratique (lobby par défaut pour compatibilité)
-const MONDE = CFG_LOBBY.MONDE;
+const MONDE = CFG_LOBBY.MONDE; // alias pour les constantes dérivées
 const R_JOUEUR = CELL * 0.60, VITESSE = 320, PV_MAX = 100;
 const CANON_L = R_JOUEUR * 3.05, CADENCE = 0.12, V_BALLE = 1500;
 const DISPERSION = 0.10, PORTEE = 800;
@@ -69,17 +69,17 @@ function creeRng(graine) {
 
 // ─────────────── Decor ────────────────────────────────────────────
 function genereDecor(rng, cfg) {
-  const { MONDE: M, N_ARBRES, N_BUISSONS, marge } = cfg;
+  const M = cfg.MONDE, nm = cfg.MARGE;
   const obs = [];
-  const libre = M - 2 * marge;
+  const marge = nm, libre = M - 2 * nm;
   const poser = (n, r, type) => {
     let essais = 0, poses = 0;
     while (poses < n && essais < n * 100) {
       essais++;
-      const x = marge + rng() * libre, y = marge + rng() * libre;
+      const x = nm + rng() * libre, y = nm + rng() * libre;
       let ok = true;
       for (const o of obs) if (Math.hypot(o.x - x, o.y - y) < o.r + r + 24) { ok = false; break; }
-      if (Math.hypot(x - M / 2, y - M / 2) < 350) ok = false;
+      if (Math.hypot(x - M / 2, y - M / 2) < M * 0.088) ok = false;
       if (ok) {
         obs.push({
           x, y, r, type, pv: PV_ARBRE, secousse: 0,
@@ -94,8 +94,8 @@ function genereDecor(rng, cfg) {
       }
     }
   };
-  poser(N_ARBRES, R_ARBRE, 'arbre');
-  poser(N_BUISSONS, R_BUISSON, 'buisson');
+  poser(cfg.N_ARBRES, R_ARBRE, 'arbre');
+  poser(cfg.N_BUISSONS, R_BUISSON, 'buisson');
   return obs;
 }
 
@@ -103,10 +103,9 @@ function uid() { return Math.random().toString(36).slice(2, 11); }
 
 function placer(rng, obs, cfg) {
   const M = cfg ? cfg.MONDE : MONDE;
-  const dMin = cfg ? cfg.spawn_dist_min : 200;
-  const dMax = cfg ? cfg.spawn_dist_max : 1200;
+  const sMin = cfg ? cfg.SPAWN_MIN : 200, sMax = cfg ? cfg.SPAWN_MAX : 1200;
   for (let i = 0; i < 300; i++) {
-    const ang = rng() * Math.PI * 2, dist = dMin + rng() * dMax;
+    const ang = rng() * Math.PI * 2, dist = sMin + rng() * sMax;
     const x = M / 2 + Math.cos(ang) * dist, y = M / 2 + Math.sin(ang) * dist;
     if (x < 150 || x > M - 150 || y < 150 || y > M - 150) continue;
     let ok = true;
@@ -121,12 +120,13 @@ function placer(rng, obs, cfg) {
 
 function creePartie(mode = 'jeu') {
   const cfg = mode === 'lobby' ? CFG_LOBBY : CFG_JEU;
-  const rng = creeRng(cfg.SEED);
+  const rng = creeRng(cfg.SEED); // seed fixe = map toujours identique
   const obs = genereDecor(rng, cfg);
   obs.forEach(o => { o._lt = o.type; });
   const arbres = obs.filter(o => o.type === 'arbre');
   return {
-    rng, obs, arbres, cfg, // cfg = config de la map
+    rng, obs, arbres, cfg,
+    monde: cfg.MONDE, zoneR0: cfg.ZONE_R0, zoneAttente: cfg.ZONE_ATTENTE,
     t: 0, tick: 0, fini: false, vainqueur: null,
     demarree: false, nbMax: 0, balleId: 0,
     zone: { x: cfg.MONDE / 2, y: cfg.MONDE / 2, r: cfg.ZONE_R0 },
@@ -157,11 +157,9 @@ function borne(a, M) {
 
 function deplaceSolo(a, dx, dy, obs, maxIter = 3, M = MONDE) {
   a.x += dx; a.y += dy; borne(a, M);
-  // obs doit déjà être la liste des arbres (pré-filtrée)
   for (let it = 0; it < maxIter; it++) {
     let hit = false;
     for (const o of obs) {
-      // pas de filtre type ici (obs = arbres uniquement)
       const nx = a.x - o.x, ny = a.y - o.y;
       const d = Math.hypot(nx, ny), min = o.r + R_JOUEUR;
       if (d < min) {
@@ -176,6 +174,7 @@ function deplaceSolo(a, dx, dy, obs, maxIter = 3, M = MONDE) {
 }
 
 function separeJoueurs(arr, M) {
+  M = M || MONDE;
   for (const a of arr) {
     if (!a.vivant) continue;
     for (const b of arr) {
@@ -183,9 +182,9 @@ function separeJoueurs(arr, M) {
       const nx = a.x - b.x, ny = a.y - b.y;
       const d = Math.hypot(nx, ny), min = R_JOUEUR * 2;
       if (d < min && d > 1e-6) {
-        const p = (min - d) * 0.5;
-        a.x += nx / d * p; a.y += ny / d * p;
-        b.x -= nx / d * p; b.y -= ny / d * p;
+        const p2 = (min - d) * 0.5;
+        a.x += nx / d * p2; a.y += ny / d * p2;
+        b.x -= nx / d * p2; b.y -= ny / d * p2;
         borne(a, M); borne(b, M);
       }
     }
@@ -200,7 +199,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   if (n > 1) { mx /= n; my /= n; }
 
   // Bots : 1 itération de collision (précision réduite mais 3× plus rapide)
-  deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3, (p.cfg||CFG_LOBBY).MONDE);
+  deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3, p.monde);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
   if (cmd.poing && a._pCd < 0.02) {
@@ -294,12 +293,11 @@ function pas(p) {
     if (p.demarree) p.t += DT;
   }
 
-  const _cfg = p.cfg || CFG_LOBBY;
-  const _M = _cfg.MONDE;
-  const t = p.t - _cfg.ZONE_ATTENTE;
+  const _pM = p.monde || MONDE, _pZR0 = p.zoneR0 || ZONE_R0, _pZA = p.zoneAttente || ZONE_ATTENTE;
+  const t = p.t - _pZA;
   p.zone.r = (!p.demarree || t <= 0)
-    ? _cfg.ZONE_R0
-    : _cfg.ZONE_R0 + (ZONE_R1 - _cfg.ZONE_R0) * Math.min(1, t / ZONE_DUREE);
+    ? _pZR0
+    : _pZR0 + (ZONE_R1 - _pZR0) * Math.min(1, t / ZONE_DUREE);
 
   for (const o of p.obs) if (o.secousse > 0) o.secousse = Math.max(0, o.secousse - DT);
   for (const a of arr) {
@@ -354,7 +352,7 @@ function pas(p) {
       }
     }
   }
-  separeJoueurs(arr, _M);
+  separeJoueurs(arr, _pM);
 
   if (p.fini) return;
 
@@ -578,35 +576,47 @@ function diffuseLobby(room, gid) {
   }
 }
 
-// Lancer la partie solo après le countdown
+// Lancer la partie : NOUVELLE partie jeu + init envoyé aux clients
 function demarrePartie(room, gid) {
-  const p = room.partie;
-  p.phaseLobby = false;
-  p.demarree = true;
-  room.etat = 'en_cours';
+  if (gid === soloRoomId) soloRoomId = null;
   room.countdownStart = null;
-  if (gid === soloRoomId) soloRoomId = null; // libérer pour les prochains
-  // Téléporter + équiper chaque joueur vivant
-  for (const a of Object.values(p.agents)) {
-    if (!a.vivant) continue;
-    const pos = placer(p.rng, p.obs, p.cfg);
-    a.x = pos.x; a.y = pos.y; a.pv = PV_MAX;
-    a.inv = [null, 'fusil', null, null, null, null];
-    a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
-    if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._tick = 0; a._dernCmd = null; }
+  room.etat = 'en_cours';
+
+  // Créer une nouvelle partie avec la grande map de jeu fixe
+  const jeu = creePartie('jeu');
+  jeu.phaseLobby = false;
+  jeu.demarree = true;
+
+  // Transférer joueurs humains + bots depuis la partie lobby
+  for (const [plPid, pl] of Object.entries(room.players)) {
+    ajouteJoueur(jeu, plPid, pl.name);
   }
-  // Restaurer les arbres et la zone (grande map)
-  p.obs.forEach(o => { if(o._lt==='arbre'){o.pv=PV_ARBRE;o.type='arbre';o.secousse=0;} });
-  p.arbres = null; p.arbresGrid = null;
-  // Remplacer le décor par celui de la map de jeu
-  const jeuCfg = CFG_JEU;
-  const jeuRng = creeRng(jeuCfg.SEED);
-  const jeuObs = genereDecor(jeuRng, jeuCfg);
-  jeuObs.forEach(o => { o._lt = o.type; });
-  p.obs = jeuObs;
-  p.cfg = jeuCfg;
-  p.zone = { x: jeuCfg.MONDE / 2, y: jeuCfg.MONDE / 2, r: jeuCfg.ZONE_R0 };
-  p.rng = jeuRng;
+  for (const [pid, agent] of Object.entries(room.partie.agents)) {
+    if (!agent.estBot) continue;
+    ajouteJoueur(jeu, pid, agent.name);
+    const ba = jeu.agents[pid];
+    ba.estBot = true; ba._tick = 0; ba._smx = 0; ba._smy = 0;
+  }
+
+  room.partie = jeu;
+
+  // Envoyer un nouveau init avec le décor de la grande map
+  const jeuCfg = { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT,
+    ZONE_DUREE, ZONE_DEGATS, ZONE_R1,
+    MONDE: jeu.monde, ZONE_R0: jeu.zoneR0, ZONE_ATTENTE: jeu.zoneAttente };
+  for (const [plPid, pl] of Object.entries(room.players)) {
+    if (pl.ws.readyState !== WebSocket.OPEN) continue;
+    const a = jeu.agents[plPid];
+    try {
+      pl.ws.send(JSON.stringify({
+        type: 'init', playerId: plPid, gameId: gid,
+        map: jeu.monde, spawn: { x: a.x, y: a.y }, st: Date.now(),
+        cfg: jeuCfg,
+        decor: jeu.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type,
+          pv: o.pv, lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches })),
+      }));
+    } catch {}
+  }
 }
 
 // ─── Connexion ─────────────────────────────────────────────────────
@@ -714,7 +724,10 @@ wss.on('connection', (ws) => {
             ws.send(JSON.stringify({
               type: 'init', playerId: pid, gameId: gid, map: MONDE,
               spawn: { x: a.x, y: a.y }, st: Date.now(),
-              cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT, ZONE_DUREE, ZONE_DEGATS, ZONE_R1, ...rooms[gid].partie.cfg, ZONE_ATTENTE: rooms[gid].partie.cfg.ZONE_ATTENTE },
+              cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT,
+                ZONE_DUREE, ZONE_DEGATS, ZONE_R1,
+                MONDE: rooms[gid].partie.monde, ZONE_R0: rooms[gid].partie.zoneR0,
+                ZONE_ATTENTE: rooms[gid].partie.zoneAttente },
               decor: rooms[gid].partie.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches })),
             }));
           } catch {}
@@ -750,7 +763,10 @@ wss.on('connection', (ws) => {
             pl.ws.send(JSON.stringify({
               type: 'init', playerId: plPid, gameId: gid, map: MONDE,
               spawn: { x: a.x, y: a.y }, st: Date.now(),
-              cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT, ZONE_DUREE, ZONE_DEGATS, ZONE_R1, ...rooms[gid].partie.cfg, ZONE_ATTENTE: rooms[gid].partie.cfg.ZONE_ATTENTE },
+              cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT,
+                ZONE_DUREE, ZONE_DEGATS, ZONE_R1,
+                MONDE: rooms[gid].partie.monde, ZONE_R0: rooms[gid].partie.zoneR0,
+                ZONE_ATTENTE: rooms[gid].partie.zoneAttente },
               decor: room.partie.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches })),
             }));
           } catch {}
