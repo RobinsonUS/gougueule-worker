@@ -1284,9 +1284,13 @@ function dessine(p, moi, viseur, drag) {
   }
 
   // ---- joueurs caches par la vegetation : sous le feuillage ----
+  const MARGE_AGENT = R_JOUEUR * 6; // marge généreuse (bras, arme...)
   const pose = (dessus, texture) => {
     for (const j of agentsArr) {
       if (!j.vivant || !!j._dessus !== dessus) continue;
+      // Culling viewport : ne pas rendre les agents hors caméra
+      if (j.x < gch - MARGE_AGENT || j.x > drt + MARGE_AGENT ||
+          j.y < hau - MARGE_AGENT || j.y > bas + MARGE_AGENT) continue;
       const coul = (j.id === moi) ? C.perso : C.persoEnn;
       const av = (j.alphaVis !== undefined) ? j.alphaVis : 1;
       dessineJoueur(p, j, coul, av, j._decoupe, gch, hau, demiL, demiH, j._arme, texture, j.poingTimer||0, j.punchSide||0);
@@ -1374,7 +1378,12 @@ function dessine(p, moi, viseur, drag) {
     ctx.restore();
   }
 
-  for (const b of p.balles) dessineBalle(b);
+  // Balles : culling viewport (évite de dessiner des centaines de balles hors écran)
+  const balleMarge = R_JOUEUR * 2;
+  for (const b of p.balles) {
+    if (b.x < gch-balleMarge||b.x>drt+balleMarge||b.y<hau-balleMarge||b.y>bas+balleMarge) continue;
+    dessineBalle(b);
+  }
 
   // ---- vegetation ----
   for (const o of p.obs)
@@ -1627,6 +1636,7 @@ function genDeathParticules(x, y) {
   }
 }
 function majParticulesLocales(dt) {
+  if (localParticules.length > 400) localParticules.length = 400; // cap
   for (var i = localParticules.length-1; i >= 0; i--) {
     var q = localParticules[i];
     q.x += q.vx*dt; q.y += q.vy*dt;
