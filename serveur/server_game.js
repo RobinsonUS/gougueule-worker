@@ -34,7 +34,7 @@ const N_ARBRES = 26, N_BUISSONS = 32;
 const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
-const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.25;
+const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
 
 const DT = 1 / 30; // 30 Hz : charge CPU réduite de moitié
 const TICK_MS = 1000 / 30;
@@ -122,7 +122,7 @@ function ajouteJoueur(partie, pid, name, avecArme = true) {
     pv: PV_MAX, angle: 0, recharge: 0, vivant: true,
     secousse: 0, touche: 0, tirTimer: 0, recul: 0, revele: 0,
     munitions: CHARGEUR, rechargement: 0, dureeRechargeMax: 0, slot: 0,
-    poingTimer: 0, punchSide: 0,
+    poingTimer: 0, punchSide: 0, _pCd: 0,
     inv: avecArme ? [null, 'fusil', null, null, null, null] : [null, null, null, null, null, null],
     ticZone: 0, lastSeq: 0, file: [], rtt: 120,
   };
@@ -182,8 +182,9 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
-  if (cmd.poing && a.poingTimer < 0.02) {
-    a.poingTimer = 0.50; // toujours 0.5 pour l'animation
+  if (cmd.poing && a._pCd < 0.02) {
+    a._pCd = 0.25;       // cooldown court robuste au lag
+    a.poingTimer = 0.50;  // animation pleine pour tous les écrans
     a.punchSide = 1 - a.punchSide;
     a.revele = 0.35;
     // Dégâts aux arbres (même en lobby)
@@ -285,6 +286,7 @@ function pas(p) {
     if (a.recul > 0)    a.recul    = Math.max(0, a.recul - DT);
     if (a.revele > 0)   a.revele   = Math.max(0, a.revele - DT);
     if (a.poingTimer > 0) a.poingTimer = Math.max(0, a.poingTimer - DT);
+    if (a._pCd > 0) a._pCd = Math.max(0, a._pCd - DT);
     if (a.rechargement > 0) {
       a.rechargement -= DT;
       if (a.rechargement <= 0) { a.munitions = CHARGEUR; a.dureeRechargeMax = 0; }
