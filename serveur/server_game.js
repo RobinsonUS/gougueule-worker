@@ -34,7 +34,7 @@ const N_ARBRES = 26, N_BUISSONS = 32;
 const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
-const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
+const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.6;
 
 const DT = 1 / 30; // 30 Hz : charge CPU réduite de moitié
 const TICK_MS = 1000 / 30;
@@ -191,7 +191,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
     for (const o of p.obs) {
       if (o.type !== 'arbre') continue;
       const _ex=o.x-a.x, _ey=o.y-a.y, _d=Math.hypot(_ex,_ey);
-      if (_d < MELEE_PORTEE + o.r) {  // cone large, pas de filtre directionnel
+      if (_d < R_JOUEUR * 4.0 + o.r * 0.25) { // portée raisonnable (player touching tree)
         o.pv -= MELEE_DEGATS; o.secousse = 0.22;
         if (o.pv <= 0) { o.pv=0; o.type='souche'; o.secousse=0; p.arbres=null; }
       }
@@ -286,7 +286,7 @@ const N_ARBRES = 26, N_BUISSONS = 32;
 const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
-const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
+const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.6;
 
 const DT = 1 / 30; // 30 Hz : charge CPU réduite de moitié
 const TICK_MS = 1000 / 30;
@@ -443,7 +443,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
     for (const o of p.obs) {
       if (o.type !== 'arbre') continue;
       const _ex=o.x-a.x, _ey=o.y-a.y, _d=Math.hypot(_ex,_ey);
-      if (_d < MELEE_PORTEE + o.r) {  // cone large, pas de filtre directionnel
+      if (_d < R_JOUEUR * 4.0 + o.r * 0.25) { // portée raisonnable (player touching tree)
         o.pv -= MELEE_DEGATS; o.secousse = 0.22;
         if (o.pv <= 0) { o.pv=0; o.type='souche'; o.secousse=0; p.arbres=null; }
       }
