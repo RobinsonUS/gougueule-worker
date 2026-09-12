@@ -26,7 +26,9 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 #lobby{position:fixed;inset:0;background:url('/game/bg_lobby.png') center/cover no-repeat;z-index:50;color:#fff;overflow:hidden}
 #solo-btn{background:none;border:none;padding:0;cursor:pointer;
   filter:drop-shadow(0 10px 0 rgba(0,0,0,0.65));
-  transition:filter .06s,transform .06s}
+  transition:filter .06s,transform .06s;
+  -webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+#solo-btn img{pointer-events:none;-webkit-user-drag:none;user-drag:none}
 #solo-btn:active{filter:drop-shadow(0 0 0 transparent) brightness(0.82);transform:translateY(7px) scale(0.97)}
 #amis-toggle{font-size:13px;color:rgba(255,255,255,.5);cursor:pointer;margin-top:8px;user-select:none;text-decoration:underline}
 #amis-toggle:hover{color:rgba(255,255,255,.8)}
@@ -520,26 +522,14 @@ function dessineArme(R) {
 
 function dessineOmbreArme(R) {
   ctx.save();
-  ctx.lineJoin = 'round';
-  const ep = R * 0.28;
-  const coulOmbre = C.ombre;
-
-  const segOmbre = (y0, y1, l0, l1, r) => {
-    ctx.lineWidth = ep;
-    ctx.strokeStyle = C.ombre;
-    trapeze(y0, y1, l0 * 1.32, l1 * 1.32, r);
-    ctx.stroke();
-    ctx.fillStyle = coulOmbre;
-    ctx.fill();
-  };
-
-  segOmbre(-R * 0.80, -R * 1.10, R * 0.32, R * 0.32, R * 0.04);
-  segOmbre(-R * 1.10, -R * 1.38, R * 0.34, R * 0.34, R * 0.04);
-  segOmbre(-R * 1.38, -R * 1.72, R * 0.38, R * 0.38, R * 0.05);
-  segOmbre(-R * 1.72, -R * 2.35, R * 0.42, R * 0.34, R * 0.06);
-  segOmbre(-R * 2.35, -R * 2.56, R * 0.22, R * 0.20, R * 0.04);
-  segOmbre(-R * 2.56, -R * 3.05, R * 0.12, R * 0.11, R * 0.03);
-
+  ctx.rotate(-Math.PI / 2);
+  // Correspond EXACTEMENT à dessineArme : grip=0.82R, sup=3.05R, y=-0.27R à +0.46R
+  ctx.fillStyle = C.ombre;
+  ctx.globalAlpha = 0.55;
+  ctx.beginPath();
+  ctx.rect(R*0.82, -R*0.27, R*2.23, R*0.73);
+  ctx.fill();
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
@@ -623,7 +613,7 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   const pT=punchTimer||0, pS=punchSide||0;
   var pE=0;
   if(pT>0){
-    const _dur=0.50, _mid=0.25; // timer 0.5s
+    const _dur=0.60, _mid=0.30; // timer 0.6s
     pE = pT>_mid ? (_dur-pT)/_mid : pT/_mid;
     pE = Math.max(0,Math.min(1,pE));
   }
@@ -645,7 +635,7 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
     // Main frappeur : P0 idle → P1 extérieur → P2 avant
     const hx0=ps*R*0.66,hy0=-R*0.62; // idle
     const hx1=ps*R*1.10,hy1=-R*1.10; // controle extérieur
-    const hx2=ps*R*0.25,hy2=-R*2.00; // final avant-intérieur
+    const hx2=-ps*R*0.15,hy2=-R*1.95; // final : dépasse le centre
     const pAx1=t12*hx0+2*t1*t*hx1+t2*hx2;
     const pAy1=t12*hy0+2*t1*t*hy1+t2*hy2;
     // Épaule frappeur
@@ -1913,7 +1903,7 @@ function appliqueLoc(a, cmd) {
   if (a.recul > 0)    a.recul    = Math.max(0, a.recul - dt);
   if ((a.poingTimer||0) > 0) a.poingTimer = Math.max(0, a.poingTimer - dt);
   if (cmd.poing && (a.poingTimer||0) <= 0) {
-    a.poingTimer = 0.5;
+    a.poingTimer = 0.6;
     a.punchSide = 1 - (a.punchSide||0);
   }
 }
@@ -2631,6 +2621,20 @@ window.addEventListener('load', function () {
   requestAnimationFrame(boucle);
 });
 
+// Solo btn : touch + anti-sélection tablette
+(function(){
+  var sb=document.getElementById('solo-btn');
+  if(!sb)return;
+  function on(){sb.style.filter='drop-shadow(0 0 0 transparent) brightness(0.82)';sb.style.transform='translateY(7px) scale(0.97)';}
+  function off(){sb.style.filter='';sb.style.transform='';}
+  sb.addEventListener('contextmenu',function(e){e.preventDefault();},false);
+  sb.addEventListener('touchstart',function(e){e.preventDefault();on();},{passive:false});
+  sb.addEventListener('touchend',function(e){e.preventDefault();off();joinSolo();},{passive:false});
+  sb.addEventListener('touchcancel',off,false);
+  sb.addEventListener('mousedown',on);
+  sb.addEventListener('mouseup',off);
+  sb.addEventListener('mouseleave',off);
+})();
 </script>
 </body>
 </html>
