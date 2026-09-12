@@ -603,11 +603,11 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   const t=touche||0;
   if(t>0){
     const a=t/0.30;
-    const gr=ctx.createRadialGradient(posX,posY,R*0.7,posX,posY,R*1.7);
+    const gr=ctx.createRadialGradient(posX,posY,R*0.7,posX,posY,R*1.65);
     gr.addColorStop(0,'rgba(255,140,0,'+(0.75*a).toFixed(3)+')');
     gr.addColorStop(0.5,'rgba(255,80,0,'+(0.40*a).toFixed(3)+')');
     gr.addColorStop(1,'rgba(255,60,0,0)');
-    ctx.fillStyle=gr;ctx.beginPath();ctx.arc(posX,posY,R*1.7,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=gr;ctx.beginPath();ctx.arc(posX,posY,R*1.65,0,Math.PI*2);ctx.fill();
   }
   ctx.translate(posX,posY);
   ctx.rotate(angle+Math.PI/2);
