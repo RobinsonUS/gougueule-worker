@@ -140,7 +140,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','slotXM8','MediumProjectile'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile','XM8'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // weapon_XM8 : supprimer le fond blanc
 (function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
   var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
@@ -469,7 +469,7 @@ function dessineBalle(b) {
     ctx.save();
     ctx.rotate(Math.PI / 2);
     // Source crop : contenu utile de MediumProjectile.png (cols 2-37, rows 1-92)
-    const bW=R_JOUEUR*0.14, bL=R_JOUEUR*0.38;
+    const bW=R_JOUEUR*0.17, bL=R_JOUEUR*0.46;
     ctx.drawImage(bsp, 2, 1, 35, 91, -bW, -bL, bW*2, bL*2);
     ctx.restore();
   } else {
@@ -622,10 +622,17 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   }
   const AW=R*0.55, HR=R*0.40;
   if(arme){
-    drawBras(-R*0.30, R*0.15, R*0.28,-R*1.48,AW);
-    drawBras( R*0.18, R*0.10, R*0.52,-R*1.18,AW);
-    drawMain(R*0.28,-R*1.48,HR); drawMain(R*0.52,-R*1.18,HR);
-    dessineArme(R);
+    // Sprite complet (tête + bras + arme) — plus de composants séparés
+    const spXM8 = SPRITES.XM8;
+    if (spXM8 && (spXM8.naturalWidth||spXM8.width)) {
+      ctx.save();
+      ctx.rotate(-Math.PI/2); // repère doublé : x=axe visée, y=perpendiculaire
+      // Tête centre à (338,215) dans 916×452, rayon 154px → scale R/154
+      const sc = R / 154;
+      ctx.drawImage(spXM8, -338*sc, -215*sc, 916*sc, 452*sc);
+      ctx.restore();
+    }
+    // NE PAS appeler drawTete — déjà dans le sprite
   }else if(pT>0){
     const ps=pS===0?-1:1;
     // Bras repos : positions idle correctes
@@ -649,12 +656,13 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
     const pAy0=t12*sy0+2*t1*t*sy1+t2*sy2;
     drawBras(pAx0,pAy0,pAx1,pAy1,AW);
     drawMain(pAx1,pAy1,HR);
+    drawTete(R);
   }else{
     drawBras(-R*0.42,-R*0.30,-R*0.66,-R*0.62,AW);
     drawBras( R*0.42,-R*0.30, R*0.66,-R*0.62,AW);
     drawMain(-R*0.66,-R*0.62,HR); drawMain(R*0.66,-R*0.62,HR);
+    drawTete(R);
   }
-  drawTete(R);
   ctx.restore();
 }
 
@@ -1593,9 +1601,8 @@ var prevTirTimer = {};
 
 function genMuzzleFlash(a) {
   var ang = a.angle;
-  var _mco = R_JOUEUR * 0.08;
-  var px = a.x + Math.cos(ang) * (CANON_L + 6) + Math.sin(ang) * _mco;
-  var py = a.y + Math.sin(ang) * (CANON_L + 6) - Math.cos(ang) * _mco;
+  var px = a.x + Math.cos(ang) * (CANON_L + 6);
+  var py = a.y + Math.sin(ang) * (CANON_L + 6);
   localParticules.push({type:'flamme', x:px, y:py, vx:0, vy:0, ang:ang, r:17, vie:0.05, vieMax:0.05});
   var nb = 5 + ((Math.random()*4)|0);
   for (var e = 0; e < nb; e++) {
