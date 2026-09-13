@@ -25,22 +25,7 @@ function verifyJWT(token) {
 }
 
 // ─────────────── Constantes (identiques au client) ─────────────────
-const CELL = 50;
-// ── Map fixe LOBBY (petite, toujours identique) ────────────────────
-const CFG_LOBBY = {
-  MONDE: 3200, SEED: 314159,
-  N_ARBRES: 26, N_BUISSONS: 32,
-  ZONE_R0: 1900, ZONE_ATTENTE: 12,
-  SPAWN_MIN: 200, SPAWN_MAX: 1200, MARGE: 160,
-};
-// ── Map fixe JEU (4× plus grande, toujours identique) ──────────────
-const CFG_JEU = {
-  MONDE: 6400, SEED: 271828,
-  N_ARBRES: 90, N_BUISSONS: 110,
-  ZONE_R0: 3800, ZONE_ATTENTE: 20,
-  SPAWN_MIN: 400, SPAWN_MAX: 2600, MARGE: 280,
-};
-const MONDE = CFG_LOBBY.MONDE; // alias pour les constantes dérivées
+const MONDE = 3200, CELL = 50;
 const R_JOUEUR = CELL * 0.60, VITESSE = 320, PV_MAX = 100;
 const CANON_L = R_JOUEUR * 3.05, CADENCE = 0.12, V_BALLE = 1500;
 const DISPERSION = 0.10, PORTEE = 800;
@@ -56,6 +41,29 @@ const TICK_MS = 1000 / 30;
 const SNAP_TOUS_LES = 1; // snap chaque tick (= 30 Hz)
 const DT_MAX_INPUT = 0.05;
 
+
+// ─────────────── Grille spatiale (bullets vs arbres) ──────────────
+// Réduit collision O(balles×arbres) → O(balles×~4 arbres voisins)
+const GRID_CELL_SZ = 220; // légèrement plus grand que R_ARBRE*1.3
+
+function buildGrid(arbres) {
+  const g = new Map();
+  for (const o of arbres) {
+    const cx = Math.floor(o.x / GRID_CELL_SZ);
+    const cy = Math.floor(o.y / GRID_CELL_SZ);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      const k = (cx + dx) * 10000 + (cy + dy);
+      let c = g.get(k); if (!c) { c = []; g.set(k, c); }
+      c.push(o);
+    }
+  }
+  return g;
+}
+function queryGrid(g, x, y) {
+  const k = Math.floor(x / GRID_CELL_SZ) * 10000 + Math.floor(y / GRID_CELL_SZ);
+  return g.get(k) || [];
+}
+
 // ─────────────── RNG deterministe ─────────────────────────────────
 function creeRng(graine) {
   let a = graine | 0;
@@ -68,18 +76,17 @@ function creeRng(graine) {
 }
 
 // ─────────────── Decor ────────────────────────────────────────────
-function genereDecor(rng, cfg) {
-  const M = cfg.MONDE, nm = cfg.MARGE;
+function genereDecor(rng) {
   const obs = [];
-  const marge = nm, libre = M - 2 * nm;
+  const marge = 160, libre = MONDE - 2 * marge;
   const poser = (n, r, type) => {
     let essais = 0, poses = 0;
     while (poses < n && essais < n * 100) {
       essais++;
-      const x = nm + rng() * libre, y = nm + rng() * libre;
+      const x = marge + rng() * libre, y = marge + rng() * libre;
       let ok = true;
       for (const o of obs) if (Math.hypot(o.x - x, o.y - y) < o.r + r + 24) { ok = false; break; }
-      if (Math.hypot(x - M / 2, y - M / 2) < 350) ok = false; // zone libre au centre
+      if (Math.hypot(x - MONDE / 2, y - MONDE / 2) < 280) ok = false;
       if (ok) {
         obs.push({
           x, y, r, type, pv: PV_ARBRE, secousse: 0,
@@ -94,20 +101,18 @@ function genereDecor(rng, cfg) {
       }
     }
   };
-  poser(cfg.N_ARBRES, R_ARBRE, 'arbre');
-  poser(cfg.N_BUISSONS, R_BUISSON, 'buisson');
+  poser(N_ARBRES, R_ARBRE, 'arbre');
+  poser(N_BUISSONS, R_BUISSON, 'buisson');
   return obs;
 }
 
 function uid() { return Math.random().toString(36).slice(2, 11); }
 
-function placer(rng, obs, cfg) {
-  const M = cfg ? cfg.MONDE : MONDE;
-  const sMin = cfg ? cfg.SPAWN_MIN : 200, sMax = cfg ? cfg.SPAWN_MAX : 1200;
+function placer(rng, obs) {
   for (let i = 0; i < 300; i++) {
-    const ang = rng() * Math.PI * 2, dist = sMin + rng() * sMax;
-    const x = M / 2 + Math.cos(ang) * dist, y = M / 2 + Math.sin(ang) * dist;
-    if (x < 150 || x > M - 150 || y < 150 || y > M - 150) continue;
+    const ang = rng() * Math.PI * 2, dist = 200 + rng() * 1200;
+    const x = MONDE / 2 + Math.cos(ang) * dist, y = MONDE / 2 + Math.sin(ang) * dist;
+    if (x < 150 || x > MONDE - 150 || y < 150 || y > MONDE - 150) continue;
     let ok = true;
     for (const o of obs) {
       if (o.type !== 'arbre') continue;
@@ -115,28 +120,26 @@ function placer(rng, obs, cfg) {
     }
     if (ok) return { x, y };
   }
-  return { x: M / 2, y: M / 2 };
+  return { x: MONDE / 2, y: MONDE / 2 };
 }
 
-function creePartie(mode = 'jeu') {
-  const cfg = mode === 'lobby' ? CFG_LOBBY : CFG_JEU;
-  const rng = creeRng(cfg.SEED); // seed fixe = map toujours identique
-  const obs = genereDecor(rng, cfg);
+function creePartie() {
+  const rng = creeRng((Math.random() * 1e9) | 0);
+  const obs = genereDecor(rng);
   obs.forEach(o => { o._lt = o.type; });
   const arbres = obs.filter(o => o.type === 'arbre');
   return {
-    rng, obs, arbres, cfg,
-    monde: cfg.MONDE, zoneR0: cfg.ZONE_R0, zoneAttente: cfg.ZONE_ATTENTE,
+    rng, obs, arbres, // arbres : liste pré-filtrée pour deplaceSolo
     t: 0, tick: 0, fini: false, vainqueur: null,
     demarree: false, nbMax: 0, balleId: 0,
-    zone: { x: cfg.MONDE / 2, y: cfg.MONDE / 2, r: cfg.ZONE_R0 },
+    zone: { x: MONDE / 2, y: MONDE / 2, r: ZONE_R0 },
     balles: [], agents: {}, kills: [], evts: [],
   };
 }
 
 function ajouteJoueur(partie, pid, name, avecArme = true) {
   partie.nbMax++;
-  const pos = placer(partie.rng, partie.obs, partie.cfg);
+  const pos = placer(partie.rng, partie.obs);
   partie.agents[pid] = {
     id: pid, name, x: pos.x, y: pos.y,
     pv: PV_MAX, angle: 0, recharge: 0, vivant: true,
@@ -149,17 +152,18 @@ function ajouteJoueur(partie, pid, name, avecArme = true) {
 }
 
 // ─────────────── Deplacement ───────────────────────────────────────
-function borne(a, M) {
-  M = M || MONDE;
-  a.x = Math.min(M - R_JOUEUR, Math.max(R_JOUEUR, a.x));
-  a.y = Math.min(M - R_JOUEUR, Math.max(R_JOUEUR, a.y));
+function borne(a) {
+  a.x = Math.min(MONDE - R_JOUEUR, Math.max(R_JOUEUR, a.x));
+  a.y = Math.min(MONDE - R_JOUEUR, Math.max(R_JOUEUR, a.y));
 }
 
-function deplaceSolo(a, dx, dy, obs, maxIter = 3, M = MONDE) {
-  a.x += dx; a.y += dy; borne(a, M);
+function deplaceSolo(a, dx, dy, obs, maxIter = 3) {
+  a.x += dx; a.y += dy; borne(a);
+  // obs doit déjà être la liste des arbres (pré-filtrée)
   for (let it = 0; it < maxIter; it++) {
     let hit = false;
     for (const o of obs) {
+      // pas de filtre type ici (obs = arbres uniquement)
       const nx = a.x - o.x, ny = a.y - o.y;
       const d = Math.hypot(nx, ny), min = o.r + R_JOUEUR;
       if (d < min) {
@@ -170,11 +174,10 @@ function deplaceSolo(a, dx, dy, obs, maxIter = 3, M = MONDE) {
     }
     if (!hit) break;
   }
-  borne(a, M);
+  borne(a);
 }
 
-function separeJoueurs(arr, M) {
-  M = M || MONDE;
+function separeJoueurs(arr) {
   for (const a of arr) {
     if (!a.vivant) continue;
     for (const b of arr) {
@@ -182,10 +185,10 @@ function separeJoueurs(arr, M) {
       const nx = a.x - b.x, ny = a.y - b.y;
       const d = Math.hypot(nx, ny), min = R_JOUEUR * 2;
       if (d < min && d > 1e-6) {
-        const p2 = (min - d) * 0.5;
-        a.x += nx / d * p2; a.y += ny / d * p2;
-        b.x -= nx / d * p2; b.y -= ny / d * p2;
-        borne(a, M); borne(b, M);
+        const p = (min - d) * 0.5;
+        a.x += nx / d * p; a.y += ny / d * p;
+        b.x -= nx / d * p; b.y -= ny / d * p;
+        borne(a); borne(b);
       }
     }
   }
@@ -199,7 +202,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   if (n > 1) { mx /= n; my /= n; }
 
   // Bots : 1 itération de collision (précision réduite mais 3× plus rapide)
-  deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3, p.monde);
+  deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
   if (cmd.poing && a._pCd < 0.02) {
@@ -293,11 +296,10 @@ function pas(p) {
     if (p.demarree) p.t += DT;
   }
 
-  const _pM = p.monde || MONDE, _pZR0 = p.zoneR0 || ZONE_R0, _pZA = p.zoneAttente || ZONE_ATTENTE;
-  const t = p.t - _pZA;
+  const t = p.t - ZONE_ATTENTE;
   p.zone.r = (!p.demarree || t <= 0)
-    ? _pZR0
-    : _pZR0 + (ZONE_R1 - _pZR0) * Math.min(1, t / ZONE_DUREE);
+    ? ZONE_R0
+    : ZONE_R0 + (ZONE_R1 - ZONE_R0) * Math.min(1, t / ZONE_DUREE);
 
   for (const o of p.obs) if (o.secousse > 0) o.secousse = Math.max(0, o.secousse - DT);
   for (const a of arr) {
@@ -317,6 +319,7 @@ function pas(p) {
   // Cache arbres (mis à jour si une souche apparaît, max toutes les 5s)
   if (!p.arbres || p.tick % 150 === 0) {
     p.arbres = p.obs.filter(o => o.type === 'arbre');
+    p.arbresGrid = buildGrid(p.arbres);
   }
 
   // Suivi de vitesse + précalcul _inBush en une seule passe
@@ -352,7 +355,7 @@ function pas(p) {
       }
     }
   }
-  separeJoueurs(arr, _pM);
+  separeJoueurs(arr);
 
   if (p.fini) return;
 
@@ -371,12 +374,16 @@ function pas(p) {
     const dx = b.vx * DT, dy = b.vy * DT;
     b.reste -= Math.hypot(dx, dy);
     if (b.reste <= 0) { p.balles.splice(k, 1); continue; }
-    const nx = b.x + dx, ny = b.y + dy;
+    // Supprimer si hors map
+    const nx2 = b.x + dx, ny2 = b.y + dy;
+    if (nx2 < 0 || nx2 > MONDE || ny2 < 0 || ny2 > MONDE) { p.balles.splice(k, 1); continue; }
+    const nx = nx2, ny = ny2;
     let mort = false;
-    for (const o of (p.arbres || p.obs)) {
+    for (const o of (p.arbresGrid ? queryGrid(p.arbresGrid, nx, ny) : (p.arbres || p.obs))) {
+      if (o.type !== 'arbre') continue;
       if (Math.hypot(o.x - nx, o.y - ny) < o.r + R_BALLE) {
         o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
-        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; }
+        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; p.arbresGrid = null; }
         mort = true; break;
       }
     }
@@ -576,51 +583,26 @@ function diffuseLobby(room, gid) {
   }
 }
 
-// Lancer la partie : NOUVELLE partie jeu + init envoyé aux clients
+// Lancer la partie solo après le countdown
 function demarrePartie(room, gid) {
-  if (gid === soloRoomId) soloRoomId = null;
-  room.countdownStart = null;
+  const p = room.partie;
+  p.phaseLobby = false;
+  p.demarree = true;
   room.etat = 'en_cours';
-
-  // Créer une nouvelle partie avec la grande map de jeu fixe
-  const jeu = creePartie('jeu');
-  jeu.phaseLobby = false;
-  jeu.demarree = true;
-
-  // Transférer joueurs humains + bots depuis la partie lobby
-  for (const [plPid, pl] of Object.entries(room.players)) {
-    ajouteJoueur(jeu, plPid, pl.name);
+  room.countdownStart = null;
+  if (gid === soloRoomId) soloRoomId = null; // libérer pour les prochains
+  // Téléporter + équiper chaque joueur vivant
+  for (const a of Object.values(p.agents)) {
+    if (!a.vivant) continue;
+    const pos = placer(p.rng, p.obs);
+    a.x = pos.x; a.y = pos.y; a.pv = PV_MAX;
+    a.inv = [null, 'fusil', null, null, null, null];
+    a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
+    if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._tick = 0; a._dernCmd = null; }
   }
-  for (const [pid, agent] of Object.entries(room.partie.agents)) {
-    if (!agent.estBot) continue;
-    ajouteJoueur(jeu, pid, agent.name);
-    const ba = jeu.agents[pid];
-    ba.estBot = true; ba._tick = 0; ba._smx = 0; ba._smy = 0; ba._dernCmd = null;
-  }
-
-  // Séparer les agents qui se chevauchent au spawn (évite la vibration initiale)
-  const spawnArr = Object.values(jeu.agents);
-  for (let _si = 0; _si < 50; _si++) separeJoueurs(spawnArr, jeu.monde);
-
-  room.partie = jeu;
-
-  // Envoyer un nouveau init avec le décor de la grande map
-  const jeuCfg = { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT,
-    ZONE_DUREE, ZONE_DEGATS, ZONE_R1,
-    MONDE: jeu.monde, ZONE_R0: jeu.zoneR0, ZONE_ATTENTE: jeu.zoneAttente };
-  for (const [plPid, pl] of Object.entries(room.players)) {
-    if (pl.ws.readyState !== WebSocket.OPEN) continue;
-    const a = jeu.agents[plPid];
-    try {
-      pl.ws.send(JSON.stringify({
-        type: 'init', playerId: plPid, gameId: gid,
-        map: jeu.monde, spawn: { x: a.x, y: a.y }, st: Date.now(),
-        cfg: jeuCfg,
-        decor: jeu.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type,
-          pv: o.pv, lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches })),
-      }));
-    } catch {}
-  }
+  // Restaurer les arbres
+  p.obs.forEach(o => { if(o._lt==='arbre'){o.pv=PV_ARBRE;o.type='arbre';o.secousse=0;} });
+  p.arbres = null;
 }
 
 // ─── Connexion ─────────────────────────────────────────────────────
@@ -708,7 +690,7 @@ wss.on('connection', (ws) => {
         // Trouver ou créer la room solo ouverte
         if (!soloRoomId || !rooms[soloRoomId] || rooms[soloRoomId].etat !== 'lobby') {
           const newGid = uid();
-          const partie = creePartie('lobby');
+          const partie = creePartie();
           partie.phaseLobby = true; // bloque tir + zone
           rooms[newGid] = { etat: 'lobby', mode: 'solo', createur: null, players: {}, partie, countdownStart: null };
           soloRoomId = newGid;
@@ -728,10 +710,7 @@ wss.on('connection', (ws) => {
             ws.send(JSON.stringify({
               type: 'init', playerId: pid, gameId: gid, map: MONDE,
               spawn: { x: a.x, y: a.y }, st: Date.now(),
-              cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT,
-                ZONE_DUREE, ZONE_DEGATS, ZONE_R1,
-                MONDE: rooms[gid].partie.monde, ZONE_R0: rooms[gid].partie.zoneR0,
-                ZONE_ATTENTE: rooms[gid].partie.zoneAttente },
+              cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT, ZONE_ATTENTE, ZONE_DUREE, ZONE_R0, ZONE_R1, MONDE },
               decor: rooms[gid].partie.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches })),
             }));
           } catch {}
@@ -756,7 +735,7 @@ wss.on('connection', (ws) => {
           try { ws.send(JSON.stringify({ type: 'erreur', msg: 'Il faut au moins 2 joueurs' })); } catch {}
           return;
         }
-        room.partie = creePartie('jeu');
+        room.partie = creePartie();
         room.partie.demarree = true;
         room.etat = 'en_cours';
         for (const [plPid, pl] of Object.entries(room.players)) ajouteJoueur(room.partie, plPid, pl.name);
@@ -767,10 +746,7 @@ wss.on('connection', (ws) => {
             pl.ws.send(JSON.stringify({
               type: 'init', playerId: plPid, gameId: gid, map: MONDE,
               spawn: { x: a.x, y: a.y }, st: Date.now(),
-              cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT,
-                ZONE_DUREE, ZONE_DEGATS, ZONE_R1,
-                MONDE: rooms[gid].partie.monde, ZONE_R0: rooms[gid].partie.zoneR0,
-                ZONE_ATTENTE: rooms[gid].partie.zoneAttente },
+              cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT, ZONE_ATTENTE, ZONE_DUREE, ZONE_R0, ZONE_R1, MONDE },
               decor: room.partie.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches })),
             }));
           } catch {}
