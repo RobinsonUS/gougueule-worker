@@ -10,6 +10,7 @@ import arm          from '../game/arm.png';
 import hand         from '../game/hand.png';
 import head         from '../game/head.png';
 import weapon_XM8   from '../game/weapon_XM8.png';
+import xm8Full      from '../game/XM8.png';
 import slotXM8      from '../game/slotXM8.png';
 import bullet       from '../game/MediumProjectile.png';
 import {
@@ -155,6 +156,7 @@ export default {
       '/game/hand.png':         hand,
       '/game/head.png':         head,
       '/game/weapon_XM8.png':   weapon_XM8,
+      '/game/XM8.png':          xm8Full,
       '/game/slotXM8.png':      slotXM8,
       '/game/MediumProjectile.png': bullet,
     };
