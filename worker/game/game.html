@@ -632,11 +632,12 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
       const _ih = spXM8.naturalHeight || spXM8.height;
       // Scale : rayon tête orange (154px dans image 916px) = R_JOUEUR
       // Adapté à iw : sc = R * 916 / (154 * iw)
-      const _sc = R * 1.25 / 154; // head = 1.25*R = shadow outer
+      const sc = R * 916 / (154 * _iw);
       // dx constant : tête toujours à (0,0) quelle que soit iw
       //   dx = -(col_tête / iw_ref) * iw * sc = -(338/916)*iw*sc = -338*R/154
+      const _sc = R / 154;
       const _dx = -338 * _sc;
-      const _dy = -215 * _sc;
+      const _dy = -240 * _sc; // canon row240 → axe visée = centre ombre
       ctx.drawImage(spXM8, _dx, _dy, 916 * _sc, 452 * _sc);
       ctx.restore();
     }
