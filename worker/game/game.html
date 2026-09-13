@@ -150,7 +150,7 @@ const SPRITES = {};
   otx.putImageData(d,0,0);SPRITES.weapon_XM8=oc;
 };raw.src='/game/weapon_XM8.png';})();
 // ============ monde ============
-var MONDE = 3200; // mis à jour par SIM.MONDE à chaque init
+const MONDE = 3200;
 const CELL  = 50;
 
 // ============ vision ============
@@ -254,7 +254,7 @@ const C = {
 let cv, ctx, LARG = LARG_JEU, HAUT = HAUT_JEU, ECH = 1, DPR = 1;
 let ZOOM = 1, PX = 1;          // PX = ZOOM * DPR : pixels reels par unite monde
 let calque, cctx;
-var cam = { x: MONDE / 2, y: MONDE / 2 };
+const cam = { x: MONDE / 2, y: MONDE / 2 };
 const ecranJoueur = { x: 0, y: 0 };
 
 function initRendu() {
@@ -1284,9 +1284,13 @@ function dessine(p, moi, viseur, drag) {
   }
 
   // ---- joueurs caches par la vegetation : sous le feuillage ----
+  const MARGE_AGENT = R_JOUEUR * 6; // marge généreuse (bras, arme...)
   const pose = (dessus, texture) => {
     for (const j of agentsArr) {
       if (!j.vivant || !!j._dessus !== dessus) continue;
+      // Culling viewport : ne pas rendre les agents hors caméra
+      if (j.x < gch - MARGE_AGENT || j.x > drt + MARGE_AGENT ||
+          j.y < hau - MARGE_AGENT || j.y > bas + MARGE_AGENT) continue;
       const coul = (j.id === moi) ? C.perso : C.persoEnn;
       const av = (j.alphaVis !== undefined) ? j.alphaVis : 1;
       dessineJoueur(p, j, coul, av, j._decoupe, gch, hau, demiL, demiH, j._arme, texture, j.poingTimer||0, j.punchSide||0);
@@ -1374,7 +1378,12 @@ function dessine(p, moi, viseur, drag) {
     ctx.restore();
   }
 
-  for (const b of p.balles) dessineBalle(b);
+  // Balles : culling viewport (évite de dessiner des centaines de balles hors écran)
+  const balleMarge = R_JOUEUR * 2;
+  for (const b of p.balles) {
+    if (b.x < gch-balleMarge||b.x>drt+balleMarge||b.y<hau-balleMarge||b.y>bas+balleMarge) continue;
+    dessineBalle(b);
+  }
 
   // ---- vegetation ----
   for (const o of p.obs)
@@ -1627,6 +1636,7 @@ function genDeathParticules(x, y) {
   }
 }
 function majParticulesLocales(dt) {
+  if (localParticules.length > 400) localParticules.length = 400; // cap
   for (var i = localParticules.length-1; i >= 0; i--) {
     var q = localParticules[i];
     q.x += q.vx*dt; q.y += q.vy*dt;
@@ -1891,9 +1901,8 @@ function angleLerp(a, b, t) {
 // ═══ Physique locale : DOIT etre identique au serveur ═══
 function borneLoc(a) {
   var R = SIM.R_JOUEUR;
-  var M = SIM.MONDE || MONDE;
-  a.x = Math.min(M - R, Math.max(R, a.x));
-  a.y = Math.min(M - R, Math.max(R, a.y));
+  a.x = Math.min(MONDE - R, Math.max(R, a.x));
+  a.y = Math.min(MONDE - R, Math.max(R, a.y));
 }
 
 function deplaceLoc(a, dx, dy) {
@@ -2170,8 +2179,6 @@ function connect(mode) {
     if (msg.type === 'init') {
       pid = msg.playerId; gid = msg.gameId;
       if (msg.cfg) for (var k in msg.cfg) SIM[k] = msg.cfg[k];
-      if (SIM.MONDE) MONDE = SIM.MONDE; // sync MONDE global avec la map
-      cam.x = MONDE / 2; cam.y = MONDE / 2; // recentrer camera sur la nouvelle map
       initObs(msg.decor);
       moi = { x: msg.spawn.x, y: msg.spawn.y, angle: 0, recharge: 0,
               munitions: SIM.CHARGEUR, rechargement: 0, dureeRechargeMax: 0,
