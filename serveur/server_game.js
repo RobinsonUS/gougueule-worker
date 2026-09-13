@@ -259,8 +259,9 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
     a.recharge = CADENCE; a.tirTimer = 0.35; a.revele = 0.35; a.recul = 0.08;
     a.munitions--;
     const at = a.angle + (p.rng() - 0.5) * DISPERSION;
-    const bx = a.x + Math.cos(a.angle) * CANON_L;
-    const by = a.y + Math.sin(a.angle) * CANON_L;
+    const _co = R_JOUEUR * 0.08;
+    const bx = a.x + Math.cos(a.angle) * CANON_L + Math.sin(a.angle) * _co;
+    const by = a.y + Math.sin(a.angle) * CANON_L - Math.cos(a.angle) * _co;
     const liveArr = Object.values(p.agents);
     let spawnHit = false;
     for (const c of liveArr) {
