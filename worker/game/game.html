@@ -627,8 +627,9 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
     if (spXM8 && (spXM8.naturalWidth||spXM8.width)) {
       ctx.save();
       ctx.rotate(-Math.PI/2); // repère doublé : x=axe visée, y=perpendiculaire
-      // Tête centre à (338,215) dans 916×452, rayon 154px → scale R/154
-      const sc = R / 154;
+      // scale = CANON_L/351 : le tip du suppressor s'aligne avec le canon physique
+      // (351 = col689 - col338, distance tête→tip dans l'image)
+      const sc = CANON_L / 351;
       ctx.drawImage(spXM8, -338*sc, -215*sc, 916*sc, 452*sc);
       ctx.restore();
     }
@@ -2655,7 +2656,8 @@ function startGame() {} // remplacé par lobbyAction()
 var precedent = 0;
 
 function boucle(maintenant) {
-  requestAnimationFrame(boucle);
+  requestAnimationFrame(boucle); // en premier : survit aux erreurs
+  try {
   var dt = (maintenant - (precedent || maintenant)) / 1000;
   if (dt > 0.15) dt = 0.05;
   precedent = maintenant;
@@ -2688,6 +2690,7 @@ function boucle(maintenant) {
   }
 
   // hud minimap dessiné dans dessine()
+  } catch(e) { console.error('boucle:', e); }
 }
 
 window.addEventListener('load', function () {
