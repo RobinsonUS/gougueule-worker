@@ -79,7 +79,7 @@ function genereDecor(rng, cfg) {
       const x = nm + rng() * libre, y = nm + rng() * libre;
       let ok = true;
       for (const o of obs) if (Math.hypot(o.x - x, o.y - y) < o.r + r + 24) { ok = false; break; }
-      if (Math.hypot(x - M / 2, y - M / 2) < M * 0.088) ok = false;
+      if (Math.hypot(x - M / 2, y - M / 2) < 350) ok = false; // zone libre au centre
       if (ok) {
         obs.push({
           x, y, r, type, pv: PV_ARBRE, secousse: 0,
@@ -595,8 +595,12 @@ function demarrePartie(room, gid) {
     if (!agent.estBot) continue;
     ajouteJoueur(jeu, pid, agent.name);
     const ba = jeu.agents[pid];
-    ba.estBot = true; ba._tick = 0; ba._smx = 0; ba._smy = 0;
+    ba.estBot = true; ba._tick = 0; ba._smx = 0; ba._smy = 0; ba._dernCmd = null;
   }
+
+  // Séparer les agents qui se chevauchent au spawn (évite la vibration initiale)
+  const spawnArr = Object.values(jeu.agents);
+  for (let _si = 0; _si < 50; _si++) separeJoueurs(spawnArr, jeu.monde);
 
   room.partie = jeu;
 
