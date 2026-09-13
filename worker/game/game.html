@@ -627,16 +627,17 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
     if (spXM8 && (spXM8.naturalWidth||spXM8.width)) {
       ctx.save();
       ctx.rotate(-Math.PI/2); // repère doublé : x=axe visée, y=perpendiculaire
-      // Image réelle (transparent autour du contenu, ex : 916×452)
-      const _iw = spXM8.naturalWidth || spXM8.width;
+      // Dimensions réelles de l'image (robuste à toute résolution)
+      const _iw = spXM8.naturalWidth  || spXM8.width;
       const _ih = spXM8.naturalHeight || spXM8.height;
-      // Scale : tip suppressor (351px de la tête dans l'image ref 916px) = CANON_L
-      // Adapté à iw réel : sc = CANON_L * 916 / (351 * iw)
-      const sc = CANON_L * 916 / (351 * _iw);
-      // dx CONSTANT : -338*CANON_L/351 (tête orange toujours à canvas (0,0))
-      const _dx = -338 * CANON_L / 351;
-      const _dy = -(215 / 452) * _ih * sc;
-      ctx.drawImage(spXM8, _dx, _dy, _iw * sc, _ih * sc);
+      // Scale : rayon tête orange (154px dans image 916px) = R_JOUEUR
+      // Adapté à iw : sc = R * 916 / (154 * iw)
+      const _sc = R * 1.25 / 154; // head = 1.25*R = shadow outer
+      // dx constant : tête toujours à (0,0) quelle que soit iw
+      //   dx = -(col_tête / iw_ref) * iw * sc = -(338/916)*iw*sc = -338*R/154
+      const _dx = -338 * _sc;
+      const _dy = -215 * _sc;
+      ctx.drawImage(spXM8, _dx, _dy, 916 * _sc, 452 * _sc);
       ctx.restore();
     }
     // NE PAS appeler drawTete — déjà dans le sprite
