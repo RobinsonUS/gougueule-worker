@@ -469,7 +469,7 @@ function dessineBalle(b) {
     ctx.save();
     ctx.rotate(Math.PI / 2);
     // Source crop : contenu utile de MediumProjectile.png (cols 2-37, rows 1-92)
-    const bW=R_JOUEUR*0.17, bL=R_JOUEUR*0.46;
+    const bW=R_JOUEUR*0.14, bL=R_JOUEUR*0.38;
     ctx.drawImage(bsp, 2, 1, 35, 91, -bW, -bL, bW*2, bL*2);
     ctx.restore();
   } else {
@@ -1593,8 +1593,9 @@ var prevTirTimer = {};
 
 function genMuzzleFlash(a) {
   var ang = a.angle;
-  var px = a.x + Math.cos(ang) * (CANON_L + 6);
-  var py = a.y + Math.sin(ang) * (CANON_L + 6);
+  var _mco = R_JOUEUR * 0.08;
+  var px = a.x + Math.cos(ang) * (CANON_L + 6) + Math.sin(ang) * _mco;
+  var py = a.y + Math.sin(ang) * (CANON_L + 6) - Math.cos(ang) * _mco;
   localParticules.push({type:'flamme', x:px, y:py, vx:0, vy:0, ang:ang, r:17, vie:0.05, vieMax:0.05});
   var nb = 5 + ((Math.random()*4)|0);
   for (var e = 0; e < nb; e++) {
