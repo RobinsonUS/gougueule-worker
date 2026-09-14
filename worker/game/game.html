@@ -632,10 +632,10 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
       const _ih = spXM8.naturalHeight || spXM8.height;
       // Scale : rayon tête orange (154px dans image 916px) = R_JOUEUR
       // Adapté à iw : sc = R * 916 / (154 * iw)
-      const _sc = R / 176; // tête totale (154+22outline) = R
-      const _dx = -338 * _sc;  // orange à u=0
-      const _dy = -240 * _sc;  // canon à v=0 (axe visée)
-      ctx.drawImage(spXM8, _dx, _dy, 916 * _sc, 452 * _sc);
+      const _sc = R / 210; // tête réelle = 210px
+      const _dx = -105 * _sc;  // centre tête à x=105
+      const _dy = -128 * _sc;  // centre tête à y=128
+      ctx.drawImage(spXM8, _dx, _dy, 527 * _sc, 257 * _sc);
       ctx.restore();
     }
     // NE PAS appeler drawTete — déjà dans le sprite
