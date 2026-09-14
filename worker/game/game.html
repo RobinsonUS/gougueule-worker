@@ -636,7 +636,7 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
       const _dx = -338 * _sc;  // orange à u=0
       const _dy = -240 * _sc;  // canon à v=0 (axe visée)
       ctx.drawImage(spXM8, _dx, _dy, 916 * _sc, 452 * _sc);
-      ctx.drawImage(spXM8, _dx, _dy, _iw * sc, _ih * sc);
+      ctx.drawImage(spXM8, _dx, _dy, _iw * _sc, _ih * _sc);
       ctx.restore();
     }
     // NE PAS appeler drawTete — déjà dans le sprite
