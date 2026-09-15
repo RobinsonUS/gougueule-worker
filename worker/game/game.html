@@ -150,8 +150,9 @@ const SPRITES = {};
   otx.putImageData(d,0,0);SPRITES.weapon_XM8=oc;
 };raw.src='/game/weapon_XM8.png';})();
 // ============ monde ============
-const MONDE = 3200;
-const CELL  = 50;
+// Valeur de repli : la vraie taille arrive dans le message init (cfg.MONDE)
+let MONDE  = 3200;
+const CELL = 50;
 
 // ============ vision ============
 // Resolution de jeu fixe : le canvas fait toujours cette taille en unites
@@ -632,13 +633,11 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
       const _ih = spXM8.naturalHeight || spXM8.height;
       // Scale : rayon tête orange (154px dans image 916px) = R_JOUEUR
       // Adapté à iw : sc = R * 916 / (154 * iw)
-      // Cercle de tête mesuré dans XM8.png (527x257) : centre (129.5,127.5), diametre 256
-      // Exprime en ratios -> robuste si l'image est reexportee a une autre resolution
-      const _hd = (256/257) * _ih;        // diametre du cercle de tete dans l'image
-      const _sc = (2*R) / _hd;            // tete idle = 2R (drawTete: -R,-R,2R,2R)
-      const _dx = -(129.5/527) * _iw * _sc; // ancre sur le centre du cercle
-      const _dy = -(127.5/257) * _ih * _sc;
-      ctx.drawImage(spXM8, _dx, _dy, _iw * _sc, _ih * _sc);
+      const _sc = R / 176; // tête totale (154+22outline) = R
+      const _dx = -338 * _sc;  // orange à u=0
+      const _dy = -240 * _sc;  // canon à v=0 (axe visée)
+      ctx.drawImage(spXM8, _dx, _dy, 916 * _sc, 452 * _sc);
+      ctx.drawImage(spXM8, _dx, _dy, _iw * sc, _ih * sc);
       ctx.restore();
     }
     // NE PAS appeler drawTete — déjà dans le sprite
@@ -1667,14 +1666,47 @@ function majParticulesLocales(dt) {
 // =================== Obs locaux ===================
 var localObs = [];
 var prevObsTypes = {};
+var mapVerLocal = 0;
+
+// Meme generateur que le serveur : la carte ne stocke qu'une graine par
+// objet, tout l'habillage visuel est redérivé ici.
+function creeRngC(graine) {
+  var a = graine | 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function cosmetiques(seed) {
+  var rng = creeRngC(seed || 1);
+  return {
+    lobes: 9 + ((rng() * 3) | 0),
+    phase: rng() * Math.PI * 2,
+    teinte: (rng() * 4) | 0,
+    taches: [
+      { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
+      { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
+      { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
+    ],
+  };
+}
 
 function initObs(decor) {
-  localObs = decor.map(function(o){ return Object.assign({}, o, {alphaVis:1}); });
+  localObs = (decor || []).map(function (o) {
+    return Object.assign({}, o, cosmetiques(o.seed), { alphaVis: 1 });
+  });
+  prevObsTypes = {};
   for (var i = 0; i < localObs.length; i++) prevObsTypes[i] = localObs[i].type;
 }
 
-function majObs(decorMaj) {
+function majObs(decorMaj, mapVer) {
   if (!decorMaj || !decorMaj.length) return;
+  // Snapshot en vol emis avant un changement de carte : les index ne
+  // correspondent plus a localObs, on jette plutot que de corrompre.
+  if (mapVer && mapVerLocal && mapVer !== mapVerLocal) return;
   for (var i = 0; i < decorMaj.length; i++) {
     var m = decorMaj[i], o = localObs[m.idx];
     if (!o) continue;
@@ -2196,7 +2228,11 @@ function connect(mode) {
     if (msg.type === 'init') {
       pid = msg.playerId; gid = msg.gameId;
       if (msg.cfg) for (var k in msg.cfg) SIM[k] = msg.cfg[k];
+      if (SIM.MONDE) MONDE = SIM.MONDE;
+      mapVerLocal = msg.mapVer || 1;
       initObs(msg.decor);
+      localParticules.length = 0;
+      cam.x = msg.spawn.x; cam.y = msg.spawn.y;
       moi = { x: msg.spawn.x, y: msg.spawn.y, angle: 0, recharge: 0,
               munitions: SIM.CHARGEUR, rechargement: 0, dureeRechargeMax: 0,
               tirTimer: 0, recul: 0,
@@ -2227,7 +2263,7 @@ function connect(mode) {
         var ag = msg.agents[id];
         if (ag.tirTimer > 0.30) genMuzzleFlash(ag);
       }
-      majObs(msg.decorMaj);
+      majObs(msg.decorMaj, msg.mapVer);
       if (typeof msg.retard === 'number') RETARD = msg.retard;
       snapDernier = msg;
       pousseSnap(msg);
