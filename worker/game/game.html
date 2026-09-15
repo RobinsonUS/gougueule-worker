@@ -483,11 +483,15 @@ function dessineArme(R) {
   ctx.restore();
 }
 
+// Epaisseur des halos d'ombre, en fraction de R.
+const HALO_TETE = 0.25 / 1.5;   // tete : 1.5 fois plus fin
+const HALO_ARME = 0.25 / 2;     // arme + bras : 2 fois plus fin
+
 // Silhouette d'ombre du sprite XM8 (tete + bras + arme), fabriquee une
-// seule fois puis mise en cache. Le sprite est dilate de 0.125 fois le
-// diametre de la tete : une fois remis a l'echelle du jeu ca fait
-// exactement 0.25 R, donc le meme halo que la tete seule, mais qui
-// epouse la vraie forme de l'arme au lieu d'un rectangle.
+// seule fois puis mise en cache. L'arme est obtenue en dilatant le
+// sprite, la tete en posant un disque : les deux halos n'ont pas la
+// meme epaisseur. Tout est exprime par rapport au diametre de tete
+// mesure dans l'image, donc valable a n'importe quelle resolution.
 var _silXM8 = null;
 function silhouetteXM8() {
   var sp = SPRITES.XM8;
@@ -495,14 +499,18 @@ function silhouetteXM8() {
   var iw = sp.naturalWidth || sp.width, ih = sp.naturalHeight || sp.height;
   if (_silXM8 && _silXM8.iw === iw && _silXM8.ih === ih) return _silXM8;
 
-  var pad = Math.max(1, Math.round(0.125 * (256 / 257) * ih));
+  var hd = (256 / 257) * ih;          // diametre de la tete dans l'image
+  var padArme = HALO_ARME * hd / 2;   // dilatation du sprite
+  var rTete = hd / 2 * (1 + HALO_TETE);
+  var pad = Math.ceil(Math.max(padArme, rTete - hd / 2)) + 1;
+
   var cv = document.createElement('canvas');
   cv.width = iw + pad * 2; cv.height = ih + pad * 2;
   var c = cv.getContext('2d');
 
-  // Dilatation : le sprite recopie sur deux anneaux d'offsets
+  // Halo de l'arme : le sprite recopie sur deux anneaux d'offsets
   c.drawImage(sp, pad, pad);
-  var anneaux = [[pad, 40], [pad * 0.55, 20]];
+  var anneaux = [[padArme, 40], [padArme * 0.55, 20]];
   for (var k = 0; k < anneaux.length; k++) {
     var r = anneaux[k][0], n = anneaux[k][1];
     for (var i = 0; i < n; i++) {
@@ -510,6 +518,11 @@ function silhouetteXM8() {
       c.drawImage(sp, pad + Math.cos(a) * r, pad + Math.sin(a) * r);
     }
   }
+  // Halo de la tete : disque plein, plus large que celui de l'arme
+  c.beginPath();
+  c.arc(pad + (129.5 / 527) * iw, pad + (127.5 / 257) * ih, rTete, 0, Math.PI * 2);
+  c.fill();
+
   // Aplatir en une couleur unique : les recouvrements ne s'additionnent pas
   c.globalCompositeOperation = 'source-in';
   c.fillStyle = C.ombre;
@@ -578,7 +591,7 @@ function dessineOmbrePerso(x, y, angle, secousse, arme, recul) {
   } else {
     ctx.fillStyle = C.ombre;
     ctx.beginPath();
-    ctx.arc(0, 0, R * 1.25, 0, Math.PI * 2);
+    ctx.arc(0, 0, R * (1 + HALO_TETE), 0, Math.PI * 2);
     ctx.arc(0, 0, R, 0, Math.PI * 2, true);
     ctx.fill();
   }
