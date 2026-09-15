@@ -269,12 +269,15 @@ function separeJoueurs(arr, monde) {
       if (b === a || !b.vivant) continue;
       const nx = a.x - b.x, ny = a.y - b.y;
       const d = Math.hypot(nx, ny), min = R_JOUEUR * 2;
-      if (d < min && d > 1e-6) {
-        const p = (min - d) * 0.5;
-        a.x += nx / d * p; a.y += ny / d * p;
-        b.x -= nx / d * p; b.y -= ny / d * p;
-        borne(a, monde); borne(b, monde);
-      }
+      if (d >= min) continue;
+      // Superposition exacte : sans direction de sortie les deux joueurs
+      // restaient colles indefiniment. On en impose une.
+      let ux = 1, uy = 0;
+      if (d > 1e-6) { ux = nx / d; uy = ny / d; }
+      const p = (min - d) * 0.5;
+      a.x += ux * p; a.y += uy * p;
+      b.x -= ux * p; b.y -= uy * p;
+      borne(a, monde); borne(b, monde);
     }
   }
 }
