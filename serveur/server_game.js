@@ -5,6 +5,8 @@
 const WebSocket = require('ws');
 const http = require('http');
 const { createHmac, timingSafeEqual } = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 // ─────────────── JWT (sans dépendance externe) ─────────────────────
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -25,7 +27,7 @@ function verifyJWT(token) {
 }
 
 // ─────────────── Constantes (identiques au client) ─────────────────
-const MONDE = 3200, CELL = 50;
+const MONDE_DEFAUT = 3200, CELL = 50;
 const R_JOUEUR = CELL * 0.60, VITESSE = 320, PV_MAX = 100;
 const CANON_L = R_JOUEUR * 3.05, CADENCE = 0.12, V_BALLE = 1500;
 const DISPERSION = 0.10, PORTEE = 800;
@@ -75,71 +77,154 @@ function creeRng(graine) {
   };
 }
 
-// ─────────────── Decor ────────────────────────────────────────────
-function genereDecor(rng) {
+// ─────────────── Decor de secours (si un fichier map est illisible) ─
+function genereDecor(rng, monde) {
   const obs = [];
-  const marge = 160, libre = MONDE - 2 * marge;
+  const marge = 160, libre = monde - 2 * marge;
+  const densite = (monde / MONDE_DEFAUT) * (monde / MONDE_DEFAUT);
   const poser = (n, r, type) => {
     let essais = 0, poses = 0;
-    while (poses < n && essais < n * 100) {
+    while (poses < n && essais < n * 200) {
       essais++;
       const x = marge + rng() * libre, y = marge + rng() * libre;
       let ok = true;
       for (const o of obs) if (Math.hypot(o.x - x, o.y - y) < o.r + r + 24) { ok = false; break; }
-      if (Math.hypot(x - MONDE / 2, y - MONDE / 2) < 280) ok = false;
-      if (ok) {
-        obs.push({
-          x, y, r, type, pv: PV_ARBRE, secousse: 0,
-          lobes: 9 + ((rng() * 3) | 0), phase: rng() * Math.PI * 2, teinte: (rng() * 4) | 0,
-          taches: [
-            { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
-            { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
-            { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
-          ],
-        });
-        poses++;
-      }
+      if (Math.hypot(x - monde / 2, y - monde / 2) < 280) ok = false;
+      if (ok) { obs.push({ x, y, r, type, seed: (rng() * 2147483647) | 0 }); poses++; }
     }
   };
-  poser(N_ARBRES, R_ARBRE, 'arbre');
-  poser(N_BUISSONS, R_BUISSON, 'buisson');
+  poser(Math.round(N_ARBRES * densite), R_ARBRE, 'arbre');
+  poser(Math.round(N_BUISSONS * densite), R_BUISSON, 'buisson');
   return obs;
+}
+
+// ─────────────── Cartes (fichiers JSON editables) ─────────────────
+// Une carte = { nom, monde, zone, spawns, obs }. Le serveur en est la
+// seule source de verite : le client recoit tout via le message init.
+const MAPS_DIR = path.join(__dirname, 'maps');
+const R_DEFAUT = { arbre: R_ARBRE, buisson: R_BUISSON };
+
+function nombre(v, defaut) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : defaut;
+}
+
+function valideMap(brut, nom) {
+  if (!brut || typeof brut !== 'object') throw new Error('racine invalide');
+  const monde = nombre(brut.monde, NaN);
+  if (!Number.isFinite(monde) || monde < 500) throw new Error('champ monde invalide');
+  if (!Array.isArray(brut.obs)) throw new Error('champ obs manquant');
+
+  const obs = [];
+  for (let i = 0; i < brut.obs.length; i++) {
+    const o = brut.obs[i] || {};
+    const type = o.type === 'buisson' ? 'buisson' : 'arbre';
+    const x = nombre(o.x, NaN), y = nombre(o.y, NaN);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('obs[' + i + '] : x/y invalide');
+    const r = Math.max(4, nombre(o.r, R_DEFAUT[type]));
+    let seed = nombre(o.seed, 0) | 0;
+    if (!seed) seed = Math.imul(i + 1, 2654435761) | 0;
+    obs.push({ x, y, r, type, seed });
+  }
+
+  const z = brut.zone || {};
+  const zone = {
+    cx: nombre(z.cx, monde / 2),
+    cy: nombre(z.cy, monde / 2),
+    r0: nombre(z.r0, monde * 0.60),
+    r1: nombre(z.r1, monde * 0.10),
+    attente: nombre(z.attente, ZONE_ATTENTE),
+    duree: Math.max(1, nombre(z.duree, ZONE_DUREE)),
+  };
+
+  const spawns = Array.isArray(brut.spawns)
+    ? brut.spawns
+        .filter(p => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
+        .map(p => ({ x: Number(p.x), y: Number(p.y) }))
+    : [];
+
+  return { nom: brut.nom || nom, monde, zone, spawns, obs };
+}
+
+function mapSecours(nom) {
+  const rng = creeRng((Math.random() * 1e9) | 0);
+  const monde = MONDE_DEFAUT;
+  return {
+    nom: nom + '(secours)', monde,
+    zone: { cx: monde / 2, cy: monde / 2, r0: ZONE_R0, r1: ZONE_R1, attente: ZONE_ATTENTE, duree: ZONE_DUREE },
+    spawns: [], obs: genereDecor(rng, monde),
+  };
+}
+
+// Les cartes ne changent pas en cours d'execution : on les lit une fois.
+const mapsCache = {};
+function chargeMap(nom) {
+  if (mapsCache[nom]) return mapsCache[nom];
+  let m;
+  try {
+    const brut = JSON.parse(fs.readFileSync(path.join(MAPS_DIR, nom + '.json'), 'utf8'));
+    m = valideMap(brut, nom);
+    console.log('[map] ' + nom + ' : ' + m.obs.length + ' objets, monde ' + m.monde);
+  } catch (e) {
+    console.error('[map] ' + nom + ' illisible (' + e.message + ') -> carte aleatoire de secours');
+    m = mapSecours(nom);
+  }
+  mapsCache[nom] = m;
+  return m;
 }
 
 function uid() { return Math.random().toString(36).slice(2, 11); }
 
-function placer(rng, obs) {
-  for (let i = 0; i < 300; i++) {
-    const ang = rng() * Math.PI * 2, dist = 200 + rng() * 1200;
-    const x = MONDE / 2 + Math.cos(ang) * dist, y = MONDE / 2 + Math.sin(ang) * dist;
-    if (x < 150 || x > MONDE - 150 || y < 150 || y > MONDE - 150) continue;
-    let ok = true;
+function placer(rng, map, obs) {
+  const monde = map.monde;
+  const libre = (x, y) => {
+    if (x < 150 || x > monde - 150 || y < 150 || y > monde - 150) return false;
     for (const o of obs) {
       if (o.type !== 'arbre') continue;
-      if (Math.hypot(o.x - x, o.y - y) < o.r + R_JOUEUR + 20) { ok = false; break; }
+      if (Math.hypot(o.x - x, o.y - y) < o.r + R_JOUEUR + 20) return false;
     }
-    if (ok) return { x, y };
+    return true;
+  };
+
+  if (map.spawns.length) {
+    for (let i = 0; i < 200; i++) {
+      const s = map.spawns[(rng() * map.spawns.length) | 0];
+      const ang = rng() * Math.PI * 2, d = rng() * 140;
+      const x = s.x + Math.cos(ang) * d, y = s.y + Math.sin(ang) * d;
+      if (libre(x, y)) return { x, y };
+    }
+    return { x: map.spawns[0].x, y: map.spawns[0].y };
   }
-  return { x: MONDE / 2, y: MONDE / 2 };
+
+  for (let i = 0; i < 300; i++) {
+    const ang = rng() * Math.PI * 2, dist = 200 + rng() * (monde * 0.375);
+    const x = monde / 2 + Math.cos(ang) * dist, y = monde / 2 + Math.sin(ang) * dist;
+    if (libre(x, y)) return { x, y };
+  }
+  return { x: monde / 2, y: monde / 2 };
 }
 
-function creePartie() {
+function creePartie(nomMap) {
+  const map = chargeMap(nomMap || 'lobby');
   const rng = creeRng((Math.random() * 1e9) | 0);
-  const obs = genereDecor(rng);
-  obs.forEach(o => { o._lt = o.type; });
-  const arbres = obs.filter(o => o.type === 'arbre');
+  // Copie de travail : la carte de reference n'est jamais modifiee
+  const obs = map.obs.map(o => ({
+    x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed,
+    pv: PV_ARBRE, secousse: 0, _lt: o.type,
+  }));
   return {
-    rng, obs, arbres, // arbres : liste pré-filtrée pour deplaceSolo
+    map, monde: map.monde, mapVer: 1,
+    rng, obs, arbres: obs.filter(o => o.type === 'arbre'), arbresGrid: null,
     t: 0, tick: 0, fini: false, vainqueur: null,
     demarree: false, nbMax: 0, balleId: 0,
-    zone: { x: MONDE / 2, y: MONDE / 2, r: ZONE_R0 },
+    zone: { x: map.zone.cx, y: map.zone.cy, r: map.zone.r0 },
     balles: [], agents: {}, kills: [], evts: [],
   };
 }
 
 function ajouteJoueur(partie, pid, name, avecArme = true) {
   partie.nbMax++;
-  const pos = placer(partie.rng, partie.obs);
+  const pos = placer(partie.rng, partie.map, partie.obs);
   partie.agents[pid] = {
     id: pid, name, x: pos.x, y: pos.y,
     pv: PV_MAX, angle: 0, recharge: 0, vivant: true,
@@ -152,13 +237,13 @@ function ajouteJoueur(partie, pid, name, avecArme = true) {
 }
 
 // ─────────────── Deplacement ───────────────────────────────────────
-function borne(a) {
-  a.x = Math.min(MONDE - R_JOUEUR, Math.max(R_JOUEUR, a.x));
-  a.y = Math.min(MONDE - R_JOUEUR, Math.max(R_JOUEUR, a.y));
+function borne(a, monde) {
+  a.x = Math.min(monde - R_JOUEUR, Math.max(R_JOUEUR, a.x));
+  a.y = Math.min(monde - R_JOUEUR, Math.max(R_JOUEUR, a.y));
 }
 
-function deplaceSolo(a, dx, dy, obs, maxIter = 3) {
-  a.x += dx; a.y += dy; borne(a);
+function deplaceSolo(a, dx, dy, obs, maxIter, monde) {
+  a.x += dx; a.y += dy; borne(a, monde);
   // obs doit déjà être la liste des arbres (pré-filtrée)
   for (let it = 0; it < maxIter; it++) {
     let hit = false;
@@ -174,10 +259,10 @@ function deplaceSolo(a, dx, dy, obs, maxIter = 3) {
     }
     if (!hit) break;
   }
-  borne(a);
+  borne(a, monde);
 }
 
-function separeJoueurs(arr) {
+function separeJoueurs(arr, monde) {
   for (const a of arr) {
     if (!a.vivant) continue;
     for (const b of arr) {
@@ -188,7 +273,7 @@ function separeJoueurs(arr) {
         const p = (min - d) * 0.5;
         a.x += nx / d * p; a.y += ny / d * p;
         b.x -= nx / d * p; b.y -= ny / d * p;
-        borne(a); borne(b);
+        borne(a, monde); borne(b, monde);
       }
     }
   }
@@ -202,7 +287,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   if (n > 1) { mx /= n; my /= n; }
 
   // Bots : 1 itération de collision (précision réduite mais 3× plus rapide)
-  deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3);
+  deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3, p.monde);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
   if (cmd.poing && a._pCd < 0.02) {
@@ -297,10 +382,12 @@ function pas(p) {
     if (p.demarree) p.t += DT;
   }
 
-  const t = p.t - ZONE_ATTENTE;
+  const zc = p.map.zone;
+  const t = p.t - zc.attente;
+  p.zone.x = zc.cx; p.zone.y = zc.cy;
   p.zone.r = (!p.demarree || t <= 0)
-    ? ZONE_R0
-    : ZONE_R0 + (ZONE_R1 - ZONE_R0) * Math.min(1, t / ZONE_DUREE);
+    ? zc.r0
+    : zc.r0 + (zc.r1 - zc.r0) * Math.min(1, t / zc.duree);
 
   for (const o of p.obs) if (o.secousse > 0) o.secousse = Math.max(0, o.secousse - DT);
   for (const a of arr) {
@@ -356,7 +443,7 @@ function pas(p) {
       }
     }
   }
-  separeJoueurs(arr);
+  separeJoueurs(arr, p.monde);
 
   if (p.fini) return;
 
@@ -377,7 +464,7 @@ function pas(p) {
     if (b.reste <= 0) { p.balles.splice(k, 1); continue; }
     // Supprimer si hors map
     const nx2 = b.x + dx, ny2 = b.y + dy;
-    if (nx2 < 0 || nx2 > MONDE || ny2 < 0 || ny2 > MONDE) { p.balles.splice(k, 1); continue; }
+    if (nx2 < 0 || nx2 > p.monde || ny2 < 0 || ny2 > p.monde) { p.balles.splice(k, 1); continue; }
     const nx = nx2, ny = ny2;
     let mort = false;
     for (const o of (p.arbresGrid ? queryGrid(p.arbresGrid, nx, ny) : (p.arbres || p.obs))) {
@@ -595,7 +682,7 @@ function demarrePartie(room, gid) {
   // Téléporter + équiper chaque joueur vivant
   for (const a of Object.values(p.agents)) {
     if (!a.vivant) continue;
-    const pos = placer(p.rng, p.obs);
+    const pos = placer(p.rng, p.map, p.obs);
     a.x = pos.x; a.y = pos.y; a.pv = PV_MAX;
     a.inv = [null, 'fusil', null, null, null, null];
     a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
@@ -604,6 +691,20 @@ function demarrePartie(room, gid) {
   // Restaurer les arbres
   p.obs.forEach(o => { if(o._lt==='arbre'){o.pv=PV_ARBRE;o.type='arbre';o.secousse=0;} });
   p.arbres = null;
+}
+
+// Bloc carte commun aux messages init (et plus tard a mapSwitch)
+function payloadCarte(p) {
+  const zc = p.map.zone;
+  return {
+    map: p.monde, mapNom: p.map.nom, mapVer: p.mapVer,
+    cfg: {
+      VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT,
+      MONDE: p.monde,
+      ZONE_ATTENTE: zc.attente, ZONE_DUREE: zc.duree, ZONE_R0: zc.r0, ZONE_R1: zc.r1,
+    },
+    decor: p.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, seed: o.seed })),
+  };
 }
 
 // ─── Connexion ─────────────────────────────────────────────────────
@@ -691,7 +792,7 @@ wss.on('connection', (ws) => {
         // Trouver ou créer la room solo ouverte
         if (!soloRoomId || !rooms[soloRoomId] || rooms[soloRoomId].etat !== 'lobby') {
           const newGid = uid();
-          const partie = creePartie();
+          const partie = creePartie('lobby');
           partie.phaseLobby = true; // bloque tir + zone
           rooms[newGid] = { etat: 'lobby', mode: 'solo', createur: null, players: {}, partie, countdownStart: null };
           soloRoomId = newGid;
@@ -709,10 +810,9 @@ wss.on('connection', (ws) => {
         if (ws.readyState === WebSocket.OPEN) {
           try {
             ws.send(JSON.stringify({
-              type: 'init', playerId: pid, gameId: gid, map: MONDE,
+              type: 'init', playerId: pid, gameId: gid,
+              ...payloadCarte(rooms[gid].partie),
               spawn: { x: a.x, y: a.y }, st: Date.now(),
-              cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT, ZONE_ATTENTE, ZONE_DUREE, ZONE_R0, ZONE_R1, MONDE },
-              decor: rooms[gid].partie.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches })),
             }));
           } catch {}
         }
@@ -736,7 +836,7 @@ wss.on('connection', (ws) => {
           try { ws.send(JSON.stringify({ type: 'erreur', msg: 'Il faut au moins 2 joueurs' })); } catch {}
           return;
         }
-        room.partie = creePartie();
+        room.partie = creePartie('lobby');
         room.partie.demarree = true;
         room.etat = 'en_cours';
         for (const [plPid, pl] of Object.entries(room.players)) ajouteJoueur(room.partie, plPid, pl.name);
@@ -745,10 +845,9 @@ wss.on('connection', (ws) => {
           const a = room.partie.agents[plPid];
           try {
             pl.ws.send(JSON.stringify({
-              type: 'init', playerId: plPid, gameId: gid, map: MONDE,
+              type: 'init', playerId: plPid, gameId: gid,
+              ...payloadCarte(room.partie),
               spawn: { x: a.x, y: a.y }, st: Date.now(),
-              cfg: { VITESSE, R_JOUEUR, CADENCE, CHARGEUR, RECHARGE_DUREE, DT, ZONE_ATTENTE, ZONE_DUREE, ZONE_R0, ZONE_R1, MONDE },
-              decor: room.partie.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, lobes: o.lobes, phase: o.phase, teinte: o.teinte, taches: o.taches })),
             }));
           } catch {}
         }
@@ -899,7 +998,7 @@ function envoieSnapshot(room) {
   const nbJoueursLobby = phaseLobby ? Object.keys(room.players).length : undefined;
 
   const base = {
-    type: 'snap', tick: p.tick, t: p.t, st: Date.now(), attente: !p.demarree,
+    type: 'snap', tick: p.tick, t: p.t, st: Date.now(), attente: !p.demarree, mapVer: p.mapVer,
     retard: retardCommun(p), fini: p.fini, vainqueur: p.vainqueur, zone: p.zone,
     phaseLobby, compteARebours, nbJoueursLobby,
     balles: p.balles.map(b => ({ id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par })),
@@ -925,6 +1024,10 @@ function envoieSnapshot(room) {
   }
   p.kills = []; p.evts = [];
 }
+
+// Prechargement : un JSON casse doit se voir au demarrage, pas a la
+// premiere connexion.
+chargeMap('lobby');
 
 server.listen(PORT, () => console.log('Serveur sur le port ' + PORT));
 boucleServeur();
