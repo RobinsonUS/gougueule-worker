@@ -631,13 +631,13 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
       // Dimensions réelles de l'image (robuste à toute résolution)
       const _iw = spXM8.naturalWidth  || spXM8.width;
       const _ih = spXM8.naturalHeight || spXM8.height;
-      // Scale : rayon tête orange (154px dans image 916px) = R_JOUEUR
-      // Adapté à iw : sc = R * 916 / (154 * iw)
-      const _sc = R / 176; // tête totale (154+22outline) = R
-      const _dx = -338 * _sc;  // orange à u=0
-      const _dy = -240 * _sc;  // canon à v=0 (axe visée)
-      ctx.drawImage(spXM8, _dx, _dy, 916 * _sc, 452 * _sc);
-      ctx.drawImage(spXM8, _dx, _dy, _iw * sc, _ih * sc);
+      // Cercle de tete mesure dans XM8.png (527x257) : centre (129.5,127.5), diametre 256
+      // Exprime en ratios -> robuste si l'image est reexportee a une autre resolution
+      const _hd = (256/257) * _ih;        // diametre du cercle de tete dans l'image
+      const _sc = (2*R) / _hd;            // tete idle = 2R (drawTete: -R,-R,2R,2R)
+      const _dx = -(129.5/527) * _iw * _sc; // ancre sur le centre du cercle
+      const _dy = -(127.5/257) * _ih * _sc;
+      ctx.drawImage(spXM8, _dx, _dy, _iw * _sc, _ih * _sc);
       ctx.restore();
     }
     // NE PAS appeler drawTete — déjà dans le sprite
@@ -1992,11 +1992,16 @@ function appliqueLoc(a, cmd) {
       if (!b || !b.vivant) continue;
       var nx = a.x - b.x, ny = a.y - b.y;
       var d = Math.hypot(nx, ny);
-      if (d < R2 && d > 1e-6) {
-        var push = (R2 - d);
-        a.x += nx / d * push; a.y += ny / d * push;
-        borneLoc(a);
-      }
+      if (d >= R2) continue;
+      var ux = 1, uy = 0;
+      if (d > 1e-6) { ux = nx / d; uy = ny / d; }
+      // Le serveur ecarte CHACUN des deux de la moitie du chevauchement.
+      // Le client doit s'appliquer la meme moitie : en prenant le
+      // chevauchement entier il predisait un recul deux fois trop grand
+      // et se faisait corriger a chaque tick, d'ou la poussee saccadee.
+      var push = (R2 - d) * 0.5;
+      a.x += ux * push; a.y += uy * push;
+      borneLoc(a);
     }
   }
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
