@@ -519,7 +519,7 @@ setInterval(() => {
   });
 }, 25000);
 
-// rooms[gid] = { etat:'attente'|'en_cours'|'fini', createur:pid, players:{pid:{ws,name,accountId}}, partie:null|{} }
+// rooms[gid] = { etat:'lobby'|'en_cours'|'fini', mode:'solo', players:{pid:{ws,name,accountId}}, partie:null|{} }
 const rooms = {};
 let soloRoomId = null; // gid de la room solo ouverte (accepte de nouveaux joueurs)
 // activeSessions[accountId] = { gid, pid } — un compte = une seule session
@@ -530,15 +530,7 @@ function nettoyeJoueur(roomId, playerId) {
   const room = rooms[roomId];
   if (!room || !room.players[playerId]) return; // idempotent
 
-  if (room.etat === 'attente') {
-    // Salle d'attente amis
-    delete room.players[playerId];
-    if (playerId === room.createur && Object.keys(room.players).length > 0)
-      room.createur = Object.keys(room.players)[0];
-    if (!Object.keys(room.players).length) { delete rooms[roomId]; return; }
-    diffuseAttente(room, roomId);
-
-  } else if (room.etat === 'lobby') {
+  if (room.etat === 'lobby') {
     // Phase lobby solo : retirer le joueur de la room ET de la partie
     delete room.players[playerId];
     if (room.partie && room.partie.agents[playerId]) {
@@ -566,14 +558,6 @@ function nettoyeJoueur(roomId, playerId) {
       if (roomId === soloRoomId) soloRoomId = null;
       delete rooms[roomId];
     }
-  }
-}
-
-function diffuseAttente(room, gid) {
-  const joueurs = Object.entries(room.players).map(([id, pl]) => ({ id, name: pl.name }));
-  for (const [plPid, pl] of Object.entries(room.players)) {
-    if (pl.ws.readyState !== WebSocket.OPEN) continue;
-    try { pl.ws.send(JSON.stringify({ type: 'attente', joueurs, createur: room.createur, gameId: gid, yourId: plPid })); } catch {}
   }
 }
 
@@ -721,57 +705,6 @@ wss.on('connection', (ws) => {
     try {
       let msg; try { msg = JSON.parse(raw); } catch { return; }
 
-      // ── creer / rejoindre ─────────────────────────────────────────
-      if (msg.type === 'creer' || msg.type === 'rejoindre') {
-        if (!JWT_SECRET) { ws.close(4003, 'JWT_SECRET manquant'); return; }
-        const payload = verifyJWT(msg.token || '');
-        if (!payload) { ws.close(4001, 'Token invalide ou expiré'); return; }
-
-        // Kick l'ancienne session du même compte si elle existe
-        const sub = payload.sub;
-        if (activeSessions[sub]) {
-          const prev = activeSessions[sub];
-          const prevRoom = rooms[prev.gid];
-          if (prevRoom && prevRoom.players[prev.pid]) {
-            try { prevRoom.players[prev.pid].ws.close(4009, 'Connecté depuis un autre onglet'); } catch {}
-          }
-          nettoyeJoueur(prev.gid, prev.pid);
-          delete activeSessions[sub];
-        }
-
-        const playerName = (payload.name || 'Joueur').slice(0, 16);
-        const roomId = (String(msg.gameId || '')).trim().toUpperCase().slice(0, 10);
-        if (!roomId) { ws.close(4004, 'Code room invalide'); return; }
-        gid = roomId;
-        accountId = sub;
-
-        if (msg.type === 'creer') {
-          if (rooms[gid] && rooms[gid].etat !== 'fini') {
-            try { ws.send(JSON.stringify({ type: 'erreur', msg: 'Ce code est déjà utilisé' })); } catch {}
-            ws.close(4005, 'Code déjà utilisé'); return;
-          }
-          if (rooms[gid]) delete rooms[gid]; // libérer room terminée
-          pid = uid();
-          rooms[gid] = { etat: 'attente', createur: pid, players: {}, partie: null };
-          rooms[gid].players[pid] = { ws, name: playerName, accountId };
-        } else {
-          if (!rooms[gid] || rooms[gid].etat === 'fini') {
-            try { ws.send(JSON.stringify({ type: 'erreur', msg: 'Room introuvable' })); } catch {}
-            ws.close(4007, 'Room introuvable'); return;
-          }
-          if (rooms[gid].etat !== 'attente') {
-            try { ws.send(JSON.stringify({ type: 'erreur', msg: 'Partie déjà en cours' })); } catch {}
-            ws.close(4008, 'Partie en cours'); return;
-          }
-          pid = uid();
-          rooms[gid].players[pid] = { ws, name: playerName, accountId };
-        }
-
-        activeSessions[accountId] = { gid, pid };
-        if (ws.readyState === WebSocket.OPEN) diffuseAttente(rooms[gid], gid);
-        return;
-      }
-
       // ── solo : rejoindre la matchmaking automatique ─────────────
       if (msg.type === 'solo') {
         if (!JWT_SECRET) { ws.close(4003, 'JWT_SECRET manquant'); return; }
@@ -797,7 +730,7 @@ wss.on('connection', (ws) => {
           const newGid = uid();
           const partie = creePartie('lobby');
           partie.phaseLobby = true; // bloque tir + zone
-          rooms[newGid] = { etat: 'lobby', mode: 'solo', createur: null, players: {}, partie, countdownStart: null };
+          rooms[newGid] = { etat: 'lobby', mode: 'solo', players: {}, partie, countdownStart: null };
           soloRoomId = newGid;
           gid = newGid;
         } else {
@@ -820,40 +753,6 @@ wss.on('connection', (ws) => {
           } catch {}
         }
         diffuseLobby(rooms[gid], gid);
-        return;
-      }
-
-      // ── quitter la salle d'attente ────────────────────────────────
-      if (msg.type === 'quitter') {
-        if (accountId) delete activeSessions[accountId];
-        if (pid && gid) nettoyeJoueur(gid, pid);
-        pid = null; gid = null; accountId = null;
-        return;
-      }
-
-      // ── start : le créateur lance la partie ───────────────────────
-      if (msg.type === 'start' && pid && rooms[gid]) {
-        const room = rooms[gid];
-        if (room.etat !== 'attente' || room.createur !== pid) return;
-        if (Object.keys(room.players).length < 2) {
-          try { ws.send(JSON.stringify({ type: 'erreur', msg: 'Il faut au moins 2 joueurs' })); } catch {}
-          return;
-        }
-        room.partie = creePartie('lobby');
-        room.partie.demarree = true;
-        room.etat = 'en_cours';
-        for (const [plPid, pl] of Object.entries(room.players)) ajouteJoueur(room.partie, plPid, pl.name);
-        for (const [plPid, pl] of Object.entries(room.players)) {
-          if (pl.ws.readyState !== WebSocket.OPEN) continue;
-          const a = room.partie.agents[plPid];
-          try {
-            pl.ws.send(JSON.stringify({
-              type: 'init', playerId: plPid, gameId: gid,
-              ...payloadCarte(room.partie),
-              spawn: { x: a.x, y: a.y }, st: Date.now(),
-            }));
-          } catch {}
-        }
         return;
       }
 
