@@ -30,9 +30,6 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
   -webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 #solo-btn img{pointer-events:none;-webkit-user-drag:none;user-drag:none}
 #solo-btn:active{filter:drop-shadow(0 0 0 transparent) brightness(0.82);transform:translateY(7px) scale(0.97)}
-#amis-toggle{font-size:13px;color:rgba(255,255,255,.5);cursor:pointer;margin-top:8px;user-select:none;text-decoration:underline}
-#amis-toggle:hover{color:rgba(255,255,255,.8)}
-#amis-section{display:none;flex-direction:column;align-items:center;margin-top:10px;width:100%}
 #lobby h1{font-size:clamp(28px,7vw,56px);font-weight:900;color:#8cc152;text-shadow:0 0 30px rgba(140,193,82,0.4);margin-bottom:28px}
 #lobby input{background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:10px;color:#fff;font-size:16px;padding:12px 20px;width:260px;text-align:center;margin:6px 0;outline:none}
 #lobby input::placeholder{color:#888}
@@ -41,21 +38,7 @@ canvas{display:block;cursor:crosshair;touch-action:none;margin:0 auto}
 
 
 #ecran-fin{display:none;position:fixed;inset:0;background:linear-gradient(135deg,#1a2a1a,#0d1a0d);z-index:45;flex-direction:column;align-items:center;justify-content:center;color:#fff;pointer-events:auto}
-#sa{display:none;position:fixed;inset:0;background:linear-gradient(135deg,#1a2a1a,#0d1a0d);z-index:50;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:12px}
-#sa h2{font-size:26px;font-weight:800;color:#8cc152;margin-bottom:4px}
-#sa .code{font-size:13px;color:rgba(255,255,255,.5)}
-#sa .liste{display:flex;flex-direction:column;gap:6px;min-width:220px;margin:8px 0}
-#sa .joueur{background:rgba(255,255,255,.08);border-radius:8px;padding:9px 16px;font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
-#sa .crown{font-size:14px}
-#sa-start{background:#8cc152;border:none;border-radius:10px;color:#1a2a1a;font-size:16px;font-weight:700;padding:13px 44px;cursor:pointer;transition:opacity .2s}
-#sa-start:disabled{opacity:.4;cursor:not-allowed}
-#sa-quitter{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#fff;font-size:14px;font-weight:600;padding:10px 30px;cursor:pointer}
 #cpt{display:none;position:fixed;top:calc(50% - 160px);left:50%;transform:translateX(-50%);pointer-events:none;z-index:25;font-size:56px;font-weight:bold;font-family:system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;color:#fff;text-shadow:3px 3px 0 rgba(0,0,0,0.75);transition:opacity .7s}
-#sa .attente-txt{color:rgba(255,255,255,.5);font-size:13px}
-#lobby .tabs{display:flex;margin-bottom:16px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.18)}
-#lobby .tab{padding:9px 28px;cursor:pointer;font-size:14px;font-weight:600;background:rgba(255,255,255,.05);transition:background .2s}
-#lobby .tab.active{background:rgba(255,255,255,.16)}
-#lobby .hint{font-size:12px;color:rgba(255,255,255,.4);margin:2px 0 6px}
 #lobby .err{color:#f87171;font-size:13px;min-height:18px}
 #ecran-fin h1{font-size:56px;font-weight:900;margin-bottom:10px;letter-spacing:1px}
 #ecran-fin .kills-txt{font-size:22px;font-weight:600;color:rgba(255,255,255,0.75);margin-bottom:28px}
@@ -97,38 +80,17 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
     <button onclick="deconnexion()" style="pointer-events:auto;background:linear-gradient(135deg,#ef4444,#b91c1c);border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:800;padding:9px 18px;cursor:pointer;box-shadow:0 3px 0 #7f1d1d,0 5px 12px rgba(239,68,68,.35);letter-spacing:.5px;transition:transform .1s" onmousedown="this.style.transform='translateY(2px)'" onmouseup="this.style.transform=''" onmouseleave="this.style.transform=''">DÉCO</button>
   </div>
 
-  <!-- Centre : bouton Solo + amis -->
+  <!-- Centre : bouton Solo -->
   <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:16px">
     <!-- Bouton Solo image -->
     <button id="solo-btn" onclick="joinSolo()">
       <img src="/game/bouton.png" alt="Solo" style="width:500px;height:500px;display:block">
     </button>
 
-    <!-- Amis (section repliable) -->
-    <div id="amis-toggle" onclick="toggleAmis()" style="display:none">▶ Jouer avec des amis</div>
-    <div id="amis-section" style="display:none;flex-direction:column;align-items:center;gap:8px">
-      <div style="background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:18px 24px;display:flex;flex-direction:column;align-items:center;gap:8px;backdrop-filter:blur(6px);min-width:260px">
-        <div class="tabs" style="width:100%;margin:0">
-          <div class="tab active" id="tab-creer" onclick="lobbyTab('creer')">Créer</div>
-          <div class="tab" id="tab-rejoindre" onclick="lobbyTab('rejoindre')">Rejoindre</div>
-        </div>
-        <input id="room-in" type="text" placeholder="Code room" maxlength="10" autocomplete="off" style="text-transform:uppercase;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);border-radius:10px;color:#fff;font-size:15px;padding:10px 14px;width:100%;box-sizing:border-box;text-align:center;outline:none">
-        <div class="hint" id="lobby-hint" style="font-size:11px;color:rgba(255,255,255,.45);text-align:center"></div>
-        <div class="err" id="lobby-err" style="color:#f87171;font-size:12px;min-height:14px;text-align:center"></div>
-        <button id="lobby-btn" onclick="lobbyAction()" style="background:linear-gradient(135deg,#22c55e,#16a34a);border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:800;padding:11px 0;cursor:pointer;width:100%;box-shadow:0 3px 0 #14532d;transition:transform .1s" onmousedown="this.style.transform='translateY(2px)'" onmouseup="this.style.transform=''" onmouseleave="this.style.transform=''">Créer</button>
-      </div>
-    </div>
+    <div class="err" id="lobby-err" style="color:#f87171;font-size:13px;min-height:18px;text-align:center;text-shadow:0 2px 6px rgba(0,0,0,.8)"></div>
   </div>
 </div>
 
-<div id="sa">
-  <h2>Salle d'attente</h2>
-  <div class="code" id="sa-code"></div>
-  <div class="liste" id="sa-liste"></div>
-  <button id="sa-start" onclick="demandeStart()">Commencer</button>
-  <div class="attente-txt" id="sa-attente-txt"></div>
-  <button id="sa-quitter" onclick="quitterSalle()">Quitter</button>
-</div>
 <!-- hud supprimé -->
 <div id="ecran-fin">
   <h1 id="fin-titre">Victoire !</h1>
@@ -1910,7 +1872,7 @@ window.addEventListener('mouseup', function(e) {
 //  Reseau : prediction locale + reconciliation serveur
 // ═══════════════════════════════════════════════════════════════════
 var ws = null, pid = null, gid = null;
-var myName = '', myRoom = '', myToken = null;
+var myName = '', myToken = null;
 var etatJeu = 'lobby';
 var nbVivants = 0;
 var myKills = 0;
@@ -1920,7 +1882,6 @@ var ICO_KILLS = new Image(); ICO_KILLS.src = 'data:image/png;base64,iVBORw0KGgoA
 var ICO_TEAM  = new Image(); ICO_TEAM.src  = 'data:image/png;base64,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';
 var ICO_TIME  = new Image(); ICO_TIME.src  = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAANhklEQVR42u2ZeYxd9XXHP+d3733bvDerxzNjm/GM13idOHbMjjEFEpIqUkvTJqIJUYJS4SpIFXRLgyBpigilCn9UzaY2IaGELSROAqTFGLAxBGMDtjHg8YKXsWdf337v/f1O/5gxMbSAx5C0UjnSlZ7uu/rd7/ee/Rx4X96X/98i7/FZApi3eUYBd8rv/xMEBPCAGECMATH/Az5BnQV9/b4P2HdL5N0SMIATMdS2n1VfGpqYExVHrwOCNwGzU4AfpnnuVhpTRfZ156ceMado5XdGYNJURGx24YdmFLp3fha4Fmhv+fBFidqOedhqjMjk8UagGBtOPPoTpVooAq8azF1u7ll3cuTI2BS5+HdFYPKLGQPOXQ18ueaseYuWfPZLNCxeSrD4/DA1q0Y0gin8eALDVfTlh58JqE7IyBO/IPzVd4FoL9n6DRTGtpypJqZLwANsbtYHmvInXv2mSWU/03719ay99i/DSqrGi4DDJ2IpFSPxfO83nusUtQ4vmwYPdYKbeGqTHf3+TUm3/+kxk0x/2VXL35oiodPxC5ku+MSM2QvDoeP30jpv1Zyb7oxnX3ABbsyaQiUGERQhdlAcK+GsEwDfN6RzGVQdqpOEvLoU1ZGJuP+Wz3nhsz81EqRv1ajyt6DTIuFNC3y2dWk41vtQdvUlSz/2bw+HS5ct9fYdKYkTD4NSykf0Hx1m/Pgg43t3Uzx2lOKxIxTHSpTKShQ6glQCPwgkLlUJUmmT++intTpesdHeJ9aJFzSh+vA0cOGfps3bZF1LR3W8b1PDZZ9u67j5zmhdR+AfHqriJxOE5ZDeg/2UunfBiz+Ho7tgoBtRizqLNrZTbWynumgdE0supnH5Muqac8SRRWxsWq+7VfoSmbB8781fEi8xqrZ60+k6tnc6MX7pJ2/y+55/6J7cuVd0zb3twVBD9XtGI/aUPEoTIcc2bSbceCveo7eT69tFWzbJsq61tM1ZKJ3zFpGTiPjYHuye/8Dt3URJ6qVa16E12YRgfMRayZx9iRQGS851b7mYZM0WbHToFJ84Yx8wiDgx5na84Pr53/t1mJ7f5dtSBfE9xkeqnPjl/XDf9TSYkEVr1jN30QrqG1sY6D1O/8Gt+NkOus5ZR1/PUQb7e+je+ST9g/24dRvwL72G1sVz8ZKBiIEwlrj3hssC++qTm1G9FBEzlUPOSAMGcEEm02XD8I7lN3wzuOaznzDH+itSxKcwWqXnF/fh3XMdi+Yv4IJPXM3MWZ0kEwkqlRiGN3PXv3Qx+PJGnutupLmlmXQ6S+fS1QS+z9CTdxGXihSaVpBtqkVEJMglJB/lYrv9gfl8/ZZxnH1mCqO+Hci3/u+mm/yoVPpYum1u47KrPu929DgZCI3YSDnxyIOYe/+CFStWce5H/lg845FOBLS1tjCjeSbVSpGhnt0UKgmyuSwd7e1SW5tDbcSSVRey+tI/JHjmTtzm7zFybFDEM2gplPrzr4Dlv4/E4TUsXpx7JxPy3sa0XOPxcrY81nf3yuv/IeOWnye7jlUkXZPi+I5dlP/5Myxsn82a9X+AjUJaW1tpqK8TESSbSYpLdbBxU0gheT7LVqwQG0VksznJ1tVRmBijceZsrDoGt95D1PpBEh1LSCY8MamUlMPA2u33z2Rs7GlUu6cc2k1HAwIwcmD7RThX33n+5To6imSTnpQKEYVNd1EnZZaecznqLG2z2kgnk2JtjCpY5yiX8hQqhnK5iosjFIjjmMAYmT17tqizLFi+lrraOnj6R+RPDOAUAhNL7dr1wuwPGrH2PO7TMzIhUVUBNrSee0mioa3NVouhGN9n7NBh3PMb6Vy8kvr6GbS0NJNJJsU5hyAkEgl6enr1tZ0/4K++EBD038nOHTtIp9OgirMWz/dpntlMTU1OOpevRQ5uI9r/IrEFUbAEQmM7IJ/hU76dcmSZlg8YP1Bg3GtfxvYog41jrBiKLz9HKn+cWQu6qKvNkk6niWOLMQYEfM+Qn8jLmuUNXPqJNj55eR2VcpVkIsDzzGS2ji3ZTFpqMmltX7iSXGCI9m6mWnWotdS1ZElefJVTNIVnVr9dxDRvGX3SqSXAunzHehfm8YzvUSrEhLseo7mxiea2dtI19RL4CTHGoKpTilbE+Li4IpW+F+gbrJAvhIyMFRkZL2OMh+d7+H6guYZm6ptaaJu7AN23herQABgf3zfGNM2KSdU2G2s/OoXdnG4mFsDZKGoB2iSZtU4xhsleRPND1DXO4Njh/Rx+/n4N6hZx7kVXCDgcYB0kEx7d3QW97Z+G2X+ohZbUAT3w3HGqpQmeHqmRj//R5zl8+Cj7X9hIZBpJ55qQE/tE1ILx0GoE9WcJTZ3K8V1lxJzaCJ1eKSEiEaCofV136sAkU/QdG2DlikP88Gfn85Xrf8iLL7breeeukkKxBJ7RiUKJ+lqfv7tuKV7sgW8hLEOmka/e+JhufeYFyUS7+eW3u3jol0/wZ1+fIFFT97oWVUDVgrPv1KKeVi00ZRk6WSI6SyqdZmi0yJP/uZVjI3XUz6kndoqK0fHxcYqlCnVSIOzdTHE8xBiDw5DM+AyPFonjSKsuybantvHKEUjXZKnYSJn04Te/+YyLOW9SEfJ6Y2KMoCZJXX2OZMt6brtnmJY5c2Xhog7K5YpOTBSI46p0ds7R7U+s4LINhwiCJM4pYgxxFJGXCzh73TyqYTu3/OQl0tkG5i84yDOvHpzsp5ksuRED4uk7NTlvbULGFIFiVA3TLkZxSCrnabDy9xjcuJmubJpFH7oEY4yOjo1TrVSxNsYYQQS54PIrKZajSZNApgwDcpmAOI5IJDxWn32+lipVtu7eDJ1rSTS1gI0wiSQy3gPDrwnGZHDKdPKABbyoWHweeLT065+bqsM6QdU6/I7ljFifvsP76O3tp7+vn1KpIKqxGG/SXZxzxFGFVGBJJx2ZpJVMwpJJOsKwgnMW5xyFQp6RoX4GhgYwnatI1qSUyUCg8fEDHtV8wZnE41Om5KZXC3m+ChgGDmtltIiKJzayUjN/icRzVnF8/y5KlSphWJ2M74CqviFYnAyv1ilOwTkQI4gIilERj6GeA4zHAdlzPkbgI6pCFKLR0/cZYB8u2vZ2DmHe0m+dxcC3tHuLTLz4nKcmwFlHtilD8JENHO4f5MShl0QRsdZOhlg1ioCIYLyA4ZEqsfXV9/zXEahOkoijmHx+nO4XnsKu30DtosW4sIokPMrHj1pO7MVg/p0bv2KmTF2nW8yhmeaChPnPxzFpb+l6l84mRFCClrmMj5QZe/xfaelcRjKZxXgqnjGiKJ4XsHvHNk1OPEr3q93UzpwniWQCFIwYqtVYq7Fjx69+yJGGFTRtuJ2aGl9QxXmBDm/8AfbZe0NN1XyDxx49MoVnWgQU8ImKeczXVPr2XVaZtcZm2ueL54mkUp7oWV2MHjzI+PYHqWudSzJdh7OxpFMJenuHaZbnuOdnV+IdfZRHdtaxYEGnVMpVDSNLaB17nniQlydgxo0PUN/aJDaM8HyP4df6bOn7NwRSGPgVNr51qsl3Z9LQKHwV2lfulZGeP9VSoSFaeInN1aeMImRyKdzidQz1DdH7+I9I+oZU3UysE4wJOHboJeqqL/LI0wayq8hkcxRLZUaHetn+yN10l3wab/4Z9fPmSlyu4Cd8xiciN/rT7yA7fuzUT34BF/W8U1v5Tj2xx3h/GS9xQAYPfCqqmeOihg6pqU8DnmQbMpJcfYWMeTM5uu0XjO57BlspYDwIcp08tNWXMLGEhoYcR17eSfcLT7Hj2S3Ea65g4d/fTUPHHCmOVwiSPpWK1cEnH7M88DeBRpV70fiO0xl2nc5cyEPEonxHamd+Ua/6djXX9eGguX2GOAyeUawkKJzo1Ymffwt3aCfe0d1kE0b8ZFKdtZSLRaLZHyC95GwWXHkV2SUrKZRgaKQiJvAJK5a+Z5+L4+9+LpChg69qw7xzGD2UP5350OkQmKxHWlam6N/9sDTMvkj/5I5qbs1FQfOsWsELwFlMkEA9iGMoHTqgNiwJTIZMHDR9YInObPFkooDmxyoS45HwoVSyOrB9Z2zvvDYhJ/b0aK7pUvLD+0531Hi6k7nJw9pXNHB0z4NSO/NivfIbYXrN5V7jjJRJ1WZR44FacIqkkm98gYCrxtjYIr6HESHM58mPVci/8lLk7vrzhPR392pN/Ucpju0+OUh7LydzChjGB8q0XPYAI3s65JVNH4xcQgt+iy1XYiGsiKhiggBUkZOZ6+SlTiWOpTI2oRMDYwwfHrSVnZucPnBDQgYP7dBM86cojew6ZW/wWxnuTmpCBFS/JnAjZ3Wh511t6VzrTH2T+J4nNfUp8TNpNHaCETWCFEbyGka4eHxc6esWtnzHlwPb0Di8mznnXEPPr8vT+fLvZrwuJ9tmUjUXUin8tcDHmTkfXbwOaluVhRdOpmYjgnPgJaDvFRjY78nxl+DQdqgWX1DMPyL646n6410tOs50OzNZ9vr+hcD3BB4XKEumXt9w1TSqGE8FngXuBy5n9ReDN+3W/ldWTN7UV1NEJsl4yS6iUu3UfXmDHxlv21TRdDI6TttkfltbylNnN+6/HSuc2tOak333e7GplN+Sab3Vue8J6PflfXlffiP/Bbvwc9v5bAFjAAAAAElFTkSuQmCC';
 var viseeAngle = 0, viseeActive = false;
-var lobbyFormHTML = '';
 
 // ---- Constantes de simulation, transmises par le serveur ----
 var SIM = { VITESSE: 320, R_JOUEUR: 30, CADENCE: 0.12, CHARGEUR: 30, RECHARGE_DUREE: 1.4, DT: 1/60 };
@@ -2191,19 +2152,10 @@ function planifiePing() {
   setTimeout(planifiePing, nbPings < 15 ? 120 : 1000);
 }
 
-var _createRoom = false;
-var _connectMode = 'solo'; // 'solo' | 'creer' | 'rejoindre'
-function connect(mode) {
-  _connectMode = mode || 'solo';
-  _createRoom = (mode === 'creer');
+function connect() {
   ws = new WebSocket(SERVER);
   ws.onopen = function () {
-    if (_connectMode === 'solo') {
-      ws.send(JSON.stringify({ type: 'solo', token: myToken }));
-    } else {
-      var msgType = _connectMode === 'creer' ? 'creer' : 'rejoindre';
-      ws.send(JSON.stringify({ type: msgType, gameId: myRoom, token: myToken }));
-    }
+    ws.send(JSON.stringify({ type: 'solo', token: myToken }));
     planifiePing();
   };
 
@@ -2245,17 +2197,13 @@ function connect(mode) {
       pendantes = []; seq = 0; buffer = [];
       erreurLissage.x = 0; erreurLissage.y = 0;
       document.getElementById('lobby').style.display = 'none';
-      document.getElementById('sa').style.display = 'none';
       etatJeu = 'jeu';
       return;
     }
 
-    if (msg.type === 'attente') { handleAttente(msg); return; }
-
     if (msg.type === 'erreur') {
       // Erreur serveur (room introuvable, partie en cours, etc.)
       etatJeu = 'lobby';
-      document.getElementById('sa').style.display = 'none';
       document.getElementById('lobby').style.display = 'flex';
       var errEl = document.getElementById('lobby-err');
       if (errEl) errEl.textContent = msg.msg || 'Erreur inconnue';
@@ -2357,7 +2305,6 @@ function connect(mode) {
     if (e.code === 4009) {
       // Cette session a été remplacée par une connexion plus récente du même compte
       ws = null; etatJeu = 'lobby';
-      document.getElementById('sa').style.display = 'none';
       document.getElementById('ecran-fin').style.display = 'none';
       showLobby();
       var er = document.getElementById('lobby-err'); if (er) er.textContent = 'Tu t\'es connecté depuis un autre onglet.';
@@ -2378,7 +2325,7 @@ function connect(mode) {
       var er = document.getElementById('lobby-err'); if (er) er.textContent = 'Cette partie est déjà en cours.';
       return;
     }
-    if (etatJeu === 'connecting' || etatJeu === 'attente') {
+    if (etatJeu === 'connecting') {
       ws = null; etatJeu = 'lobby'; showLobby();
       var er = document.getElementById('lobby-err');
       if (er) er.textContent = 'Connexion perdue. Réessaie.';
@@ -2456,7 +2403,6 @@ function produitCommande(dt) {
 
 function rejouer() {
   document.getElementById('ecran-fin').style.display = 'none';
-  document.getElementById('sa').style.display = 'none';
   var _cptEl = document.getElementById('cpt'); if (_cptEl) _cptEl.style.display = 'none';
   if (ws) { try { ws.close(); } catch {} ws = null; }
   etatJeu = 'lobby';
@@ -2585,17 +2531,10 @@ async function authSubmit() {
 }
 
 function showLobby() {
-  document.getElementById('auth').style.display    = 'none';
-  document.getElementById('sa').style.display      = 'none';
-  document.getElementById('lobby').style.display   = 'flex';
+  document.getElementById('auth').style.display  = 'none';
+  document.getElementById('lobby').style.display = 'flex';
   var ps = document.getElementById('lobby-pseudo'); if (ps) ps.textContent = myName;
-  var ri = document.getElementById('room-in');      if (ri) { ri.value = ''; ri.style.outline = ''; }
   var er = document.getElementById('lobby-err');    if (er) er.textContent = '';
-  // Replier la section amis
-  _amisVisible = false;
-  var as = document.getElementById('amis-section'); if (as) { as.style.display = 'none'; as.style.flexDirection = 'column'; }
-  var at = document.getElementById('amis-toggle');  if (at) at.textContent = '▶ Jouer avec des amis';
-  lobbyTab(_lobbyMode || 'creer');
 }
 
 function deconnexion() {
@@ -2613,93 +2552,12 @@ function deconnexion() {
 })();
 // ═══════════════════════════════════════════════════════════════════
 
-// ══ Lobby (créer/rejoindre) ══════════════════════════════════════
-var _lobbyMode = 'creer';
-var _amisVisible = false;
-
+// ══ Lobby ════════════════════════════════════════════════════════
 function joinSolo() {
   if (!myToken || !myName) { deconnexion(); return; }
-  connect('solo');
+  connect();
 }
 
-function toggleAmis() {
-  _amisVisible = !_amisVisible;
-  document.getElementById('amis-section').style.display = _amisVisible ? 'flex' : 'none';
-  document.getElementById('amis-toggle').textContent = (_amisVisible ? '▼' : '▶') + ' Jouer avec des amis';
-}
-
-function lobbyTab(mode) {
-  _lobbyMode = mode;
-  document.getElementById('tab-creer').classList.toggle('active', mode === 'creer');
-  document.getElementById('tab-rejoindre').classList.toggle('active', mode === 'rejoindre');
-  document.getElementById('lobby-btn').textContent = mode === 'creer' ? 'Créer' : 'Rejoindre';
-  document.getElementById('lobby-hint').textContent = mode === 'creer'
-    ? 'Les autres joueurs rejoignent avec ce code'
-    : 'Entre le code que le créateur t\'a partagé';
-  document.getElementById('lobby-err').textContent = '';
-}
-
-function lobbyAction() {
-  if (!myToken || !myName) { deconnexion(); return; }
-  var roomEl = document.getElementById('room-in');
-  var room = (roomEl ? roomEl.value.trim().toUpperCase() : '');
-  var errEl = document.getElementById('lobby-err');
-  if (!room) {
-    if (roomEl) roomEl.style.outline = '2px solid #f44';
-    if (errEl) errEl.textContent = 'Entre un code room.';
-    return;
-  }
-  if (roomEl) roomEl.style.outline = '';
-  if (errEl) errEl.textContent = '';
-  myRoom = room.slice(0, 10);
-  connect(_lobbyMode); // 'creer' ou 'rejoindre'
-}
-
-// ══ Salle d'attente ══════════════════════════════════════════════
-function demandeStart() {
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'start' }));
-}
-
-function quitterSalle() {
-  // Envoyer 'quitter' d'abord : le serveur nettoie immédiatement sans attendre le close event
-  if (ws && ws.readyState === 1) {
-    try { ws.send(JSON.stringify({ type: 'quitter' })); } catch {}
-  }
-  if (ws) { try { ws.close(); } catch {} ws = null; }
-  etatJeu = 'lobby'; pid = null;
-  document.getElementById('sa').style.display = 'none';
-  document.getElementById('lobby').style.display = 'flex';
-}
-
-function handleAttente(msg) {
-  etatJeu = 'attente';
-  if (msg.yourId) pid = msg.yourId;
-  // Afficher la salle d'attente
-  document.getElementById('lobby').style.display = 'none';
-  document.getElementById('sa').style.display = 'flex';
-  document.getElementById('sa-code').textContent = 'Code room : ' + (msg.gameId || myRoom);
-  var liste = document.getElementById('sa-liste');
-  liste.innerHTML = msg.joueurs.map(function(j) {
-    return '<div class="joueur">' + (j.id === msg.createur ? '<span class="crown">👑</span> ' : '') + escHtml(j.name) + '</div>';
-  }).join('');
-  var estCreateur = (pid === msg.createur);
-  var btnStart = document.getElementById('sa-start');
-  var txtAttente = document.getElementById('sa-attente-txt');
-  if (estCreateur) {
-    btnStart.style.display = 'block';
-    btnStart.disabled = msg.joueurs.length < 2;
-    txtAttente.textContent = msg.joueurs.length < 2 ? 'En attente d\'un autre joueur…' : '';
-  } else {
-    btnStart.style.display = 'none';
-    txtAttente.textContent = 'En attente que le créateur démarre…';
-  }
-}
-
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function startGame() {} // remplacé par lobbyAction()
 
 // ═══ Boucle ═══
 var precedent = 0;
@@ -2711,7 +2569,7 @@ function boucle(maintenant) {
   if (dt > 0.15) dt = 0.05;
   precedent = maintenant;
 
-  if (etatJeu === 'lobby' || etatJeu === 'connecting' || etatJeu === 'attente') return;
+  if (etatJeu === 'lobby' || etatJeu === 'connecting') return;
 
   window._lastDt = dt;
   produitCommande(dt);
@@ -2743,8 +2601,6 @@ function boucle(maintenant) {
 }
 
 window.addEventListener('load', function () {
-  var lobbyEl = document.getElementById('lobby');
-  if (lobbyEl) lobbyFormHTML = lobbyEl.innerHTML;
   initRendu();
   initHUD();
   if (isMobile) initTouchControls();
