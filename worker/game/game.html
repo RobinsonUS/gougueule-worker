@@ -483,17 +483,41 @@ function dessineArme(R) {
   ctx.restore();
 }
 
-function dessineOmbreArme(R) {
-  ctx.save();
-  ctx.rotate(-Math.PI / 2);
-  // Correspond EXACTEMENT à dessineArme : grip=0.82R, sup=3.05R, y=-0.27R à +0.46R
-  ctx.fillStyle = C.ombre;
-  ctx.globalAlpha = 0.55;
-  ctx.beginPath();
-  ctx.rect(R*0.82, -R*0.365, R*2.23, R*0.73);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.restore();
+// Silhouette d'ombre du sprite XM8 (tete + bras + arme), fabriquee une
+// seule fois puis mise en cache. Le sprite est dilate de 0.125 fois le
+// diametre de la tete : une fois remis a l'echelle du jeu ca fait
+// exactement 0.25 R, donc le meme halo que la tete seule, mais qui
+// epouse la vraie forme de l'arme au lieu d'un rectangle.
+var _silXM8 = null;
+function silhouetteXM8() {
+  var sp = SPRITES.XM8;
+  if (!sp || !(sp.naturalWidth || sp.width)) return null;
+  var iw = sp.naturalWidth || sp.width, ih = sp.naturalHeight || sp.height;
+  if (_silXM8 && _silXM8.iw === iw && _silXM8.ih === ih) return _silXM8;
+
+  var pad = Math.max(1, Math.round(0.125 * (256 / 257) * ih));
+  var cv = document.createElement('canvas');
+  cv.width = iw + pad * 2; cv.height = ih + pad * 2;
+  var c = cv.getContext('2d');
+
+  // Dilatation : le sprite recopie sur deux anneaux d'offsets
+  c.drawImage(sp, pad, pad);
+  var anneaux = [[pad, 40], [pad * 0.55, 20]];
+  for (var k = 0; k < anneaux.length; k++) {
+    var r = anneaux[k][0], n = anneaux[k][1];
+    for (var i = 0; i < n; i++) {
+      var a = i / n * Math.PI * 2;
+      c.drawImage(sp, pad + Math.cos(a) * r, pad + Math.sin(a) * r);
+    }
+  }
+  // Aplatir en une couleur unique : les recouvrements ne s'additionnent pas
+  c.globalCompositeOperation = 'source-in';
+  c.fillStyle = C.ombre;
+  c.fillRect(0, 0, cv.width, cv.height);
+  c.globalCompositeOperation = 'source-over';
+
+  _silXM8 = { cv: cv, iw: iw, ih: ih, pad: pad };
+  return _silXM8;
 }
 
 // ===================== personnage =====================
@@ -541,15 +565,22 @@ function dessineOmbrePerso(x, y, angle, secousse, arme, recul) {
   ctx.save();
   ctx.translate(posX, posY);
 
-  ctx.fillStyle = C.ombre;
-  ctx.beginPath();
-  ctx.arc(0, 0, R * 1.25, 0, Math.PI * 2);
-  ctx.arc(0, 0, R, 0, Math.PI * 2, true);
-  ctx.fill();
-
-  if (arme) {
-    ctx.rotate(angle + Math.PI / 2);
-    dessineOmbreArme(R);
+  var sil = arme ? silhouetteXM8() : null;
+  if (sil) {
+    // Meme ancrage et meme echelle que le sprite dans dessinePerso,
+    // decales du padding de dilatation.
+    ctx.rotate(angle);
+    var hd = (256 / 257) * sil.ih;
+    var sc = (2 * R) / hd;
+    var cx = (129.5 / 527) * sil.iw + sil.pad;
+    var cy = (127.5 / 257) * sil.ih + sil.pad;
+    ctx.drawImage(sil.cv, -cx * sc, -cy * sc, sil.cv.width * sc, sil.cv.height * sc);
+  } else {
+    ctx.fillStyle = C.ombre;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 1.25, 0, Math.PI * 2);
+    ctx.arc(0, 0, R, 0, Math.PI * 2, true);
+    ctx.fill();
   }
 
   ctx.restore();
