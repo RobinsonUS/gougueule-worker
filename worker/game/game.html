@@ -848,6 +848,78 @@ function dessineViseur(x, y) {
 
 // ===================== nom au-dessus de la tête =====================
 // ===================== minimap + HUD stats =====================
+// Le decor est fige : on le peint une fois dans un canevas hors ecran,
+// puis on se contente de le recopier a chaque image. Redessiner 834
+// feuillages soixante fois par seconde serait absurde.
+var _mmCanvas = null, _mmCle = '', _mmSale = false, _mmProchain = 0;
+var MM_TAILLE = 220, MM_SUR = 2;          // rendu interne a 2x pour rester net
+var MM_GROS = 2.2;                        // grossissement des objets sur la minimap
+
+function marqueMinimapSale() { _mmSale = true; }
+
+function construitMinimap() {
+  if (!_mmCanvas) {
+    _mmCanvas = document.createElement('canvas');
+    _mmCanvas.width = MM_TAILLE * MM_SUR;
+    _mmCanvas.height = MM_TAILLE * MM_SUR;
+  }
+  var c = _mmCanvas.getContext('2d');
+  var k = MM_TAILLE * MM_SUR / MONDE;      // monde -> pixels du canevas
+
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, _mmCanvas.width, _mmCanvas.height);
+  c.fillStyle = C.sol;
+  c.fillRect(0, 0, _mmCanvas.width, _mmCanvas.height);
+
+  c.save();
+  c.scale(k, k);
+  // A cette echelle un arbre ferait 1,5 pixel : on grossit un peu pour
+  // qu'on distingue la forme et la teinte, sans noyer la carte.
+  var gros = MM_GROS, rMini = 2.4 / k;
+  c.lineJoin = 'round';
+
+  for (var i = 0; i < localObs.length; i++) {
+    var o = localObs[i];
+    var r = Math.max(o.r * gros, rMini);
+    if (o.type === 'souche') {
+      c.fillStyle = 'rgba(58,74,45,.85)';
+      c.beginPath(); c.arc(o.x, o.y, r * 0.55, 0, 6.2832); c.fill();
+      continue;
+    }
+    var arbre = o.type === 'arbre';
+    var pal = arbre ? C.arbres[o.teinte] : C.buisson;
+    // Meme silhouette lobee qu'en jeu, pas un simple point
+    c.lineWidth = r * 0.22;
+    c.strokeStyle = arbre ? C.traitArbre : C.buisson.trait;
+    cheminBlobSur(c, o.x, o.y, r * 0.92, o.lobes || 10, o.phase || 0, 0.075);
+    c.stroke();
+    c.fillStyle = pal.ext;
+    cheminBlobSur(c, o.x, o.y, r * 0.92, o.lobes || 10, o.phase || 0, 0.075);
+    c.fill();
+    if (arbre) {
+      c.fillStyle = pal.int;
+      cheminBlobSur(c, o.x, o.y, r * 0.52, o.lobes || 10, o.phase || 0, 0.105);
+      c.fill();
+    }
+  }
+  c.restore();
+  _mmCle = MONDE + ':' + mapVerLocal + ':' + localObs.length;
+  _mmSale = false;
+}
+
+// Variante de cheminBlob qui accepte un contexte : la minimap peint dans
+// son propre canevas, pas dans celui du jeu.
+function cheminBlobSur(c, x, y, r, lobes, phase, amp) {
+  c.beginPath();
+  for (var i = 0; i <= 48; i++) {
+    var a = i / 48 * Math.PI * 2;
+    var rr = r * (1 + Math.sin(a * lobes + phase) * amp);
+    var px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
+    if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+  }
+  c.closePath();
+}
+
 function dessineMinimap() {
   var mW = 220, mH = 220;
   var mX = LARG - mW - 12;
@@ -869,21 +941,45 @@ function dessineMinimap() {
   ctx.arcTo(mX, mY, mX + r, mY, r);
   ctx.closePath();
 
-  ctx.globalAlpha = 0.3;
-  ctx.fillStyle = '#47594a';
-  ctx.fill();
-  ctx.globalAlpha = 1;
+  var enJeu = snapDernier && !snapDernier.phaseLobby && localObs.length > 0;
+
+  if (!enJeu) {
+    // Salle d'attente : on garde le carre neutre
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = '#47594a';
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  } else {
+    var cle = MONDE + ':' + mapVerLocal + ':' + localObs.length;
+    var maintenant = Date.now();
+    if (!_mmCanvas || cle !== _mmCle || (_mmSale && maintenant > _mmProchain)) {
+      construitMinimap();
+      _mmProchain = maintenant + 700;      // un arbre abattu ne redessine pas tout a chaque coup
+    }
+    ctx.save();
+    ctx.clip();
+    ctx.drawImage(_mmCanvas, mX, mY, mW, mH);
+    ctx.restore();
+  }
 
   // Contour vert, semi-transparent
   ctx.strokeStyle = 'rgba(15, 35, 15, 0.33)';
   ctx.lineWidth = 3;
   ctx.stroke();
 
-  // Point joueur blanc au centre
+  // Point joueur, a sa vraie position sur la carte
+  var px = mX + mW / 2, py = mY + mH / 2;
+  if (enJeu && moi) {
+    px = mX + Math.min(mW, Math.max(0, moi.x / MONDE * mW));
+    py = mY + Math.min(mH, Math.max(0, moi.y / MONDE * mH));
+  }
   ctx.beginPath();
-  ctx.arc(mX + mW/2, mY + mH/2, 4, 0, Math.PI * 2);
+  ctx.arc(px, py, 4.5, 0, Math.PI * 2);
   ctx.fillStyle = '#fff';
   ctx.fill();
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = 'rgba(20,32,16,.75)';
+  ctx.stroke();
 
   // ── Stats sous la minimap ── pas de fond ──
   // Layout calqué sur la capture : 3 groupes [icone+texte] espacés uniformément
@@ -1756,6 +1852,7 @@ function initObs(decor) {
 
 function majObs(decorMaj, mapVer) {
   if (!decorMaj || !decorMaj.length) return;
+  marqueMinimapSale();
   // Snapshot en vol emis avant un changement de carte : les index ne
   // correspondent plus a localObs, on jette plutot que de corrompre.
   if (mapVer && mapVerLocal && mapVer !== mapVerLocal) return;
@@ -2302,6 +2399,7 @@ function connect() {
       if (SIM.MONDE) MONDE = SIM.MONDE;
       mapVerLocal = msg.mapVer || (mapVerLocal + 1);
       initObs(msg.decor);                    // decor + index repartis a neuf
+      _mmCanvas = null; _mmCle = '';         // la minimap doit repartir de zero
       localParticules.length = 0;
       _deathFades = {};
       alphaVisJoueurs = {};
