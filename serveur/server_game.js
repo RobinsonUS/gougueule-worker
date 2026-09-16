@@ -236,6 +236,18 @@ function ajouteJoueur(partie, pid, name, avecArme = true) {
   };
 }
 
+// Un seul chemin pour tuer un agent : la place et le tueur sont ainsi
+// toujours renseignes, quelle que soit la cause.
+function tue(p, c, tueur, etiquette) {
+  if (!c.vivant) return;
+  c.pv = 0; c.vivant = false;
+  c.tueurId = tueur ? tueur.id : null;
+  let vivants = 0;
+  for (const x of Object.values(p.agents)) if (x.vivant) vivants++;
+  c.place = vivants + 1;           // en se comptant lui-meme
+  p.kills.push({ killer: tueur ? tueur.name : (etiquette || 'Zone'), victim: c.name });
+}
+
 // ─────────────── Deplacement ───────────────────────────────────────
 function borne(a, monde) {
   a.x = Math.min(monde - R_JOUEUR, Math.max(R_JOUEUR, a.x));
@@ -331,8 +343,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
         closest.pv -= MELEE_DEGATS;
         closest.secousse = 0.20; closest.touche = 0.30; closest.revele = 0.35;
         if (closest.pv <= 0) {
-          closest.pv = 0; closest.vivant = false;
-          p.kills.push({ killer: a.name, victim: closest.name });
+          tue(p, closest, a);
         }
       }
     }
@@ -360,7 +371,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
       if (Math.hypot(c.x - bx, c.y - by) < R_JOUEUR + R_BALLE) {
         const dg = p.rng() < 0.5 ? 10 : 11;
         c.pv -= dg; c.secousse = 0.16; c.touche = 0.30; c.revele = 0.35;
-        if (c.pv <= 0) { c.pv = 0; c.vivant = false; p.kills.push({ killer: a.name, victim: c.name }); }
+        if (c.pv <= 0) tue(p, c, a);
         spawnHit = true; break;
       }
     }
@@ -459,7 +470,7 @@ function pas(p) {
       a.pv -= ZONE_DEGATS * DT; a.touche = 0.30; a.revele = 0.35;
       a.ticZone -= DT;
       if (a.ticZone <= 0) { a.ticZone = 0.45; a.secousse = 0.14; }
-      if (a.pv <= 0) { a.pv = 0; a.vivant = false; }
+      if (a.pv <= 0) tue(p, a, null, 'Zone');
     }
   }
 
@@ -486,11 +497,7 @@ function pas(p) {
       if (Math.hypot(c.x - nx, c.y - ny) < R_JOUEUR + R_BALLE) {
         c.pv -= p.rng() < 0.5 ? 10 : 11;
         c.secousse = 0.16; c.touche = 0.30; c.revele = 0.35;
-        if (c.pv <= 0) {
-          c.pv = 0; c.vivant = false;
-          const k2 = p.agents[b.par];
-          p.kills.push({ killer: k2 ? k2.name : '?', victim: c.name });
-        }
+        if (c.pv <= 0) tue(p, c, p.agents[b.par] || null, '?');
         mort = true; break;
       }
     }
@@ -554,7 +561,7 @@ function nettoyeJoueur(roomId, playerId) {
     // Partie en cours ou terminée
     if (room.partie) {
       const a = room.partie.agents[playerId];
-      if (a && a.vivant) { a.vivant = false; a.pv = 0; room.partie.kills.push({ killer: 'Déconnexion', victim: a.name }); }
+      if (a && a.vivant) tue(room.partie, a, null, 'Déconnexion');
     }
     delete room.players[playerId];
     if (!Object.keys(room.players).length) {
@@ -705,6 +712,7 @@ function demarrePartie(room, gid) {
     // reparties d'un numero plus bas, sont rejetees pour toujours.
     a.inv = [null, 'fusil', null, null, null, null];
     a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
+    a.tueurId = null; a.place = 0;
     if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._tick = 0; a._dernCmd = null; }
   }
 
@@ -956,6 +964,7 @@ function envoieSnapshot(room) {
   const agents = {};
   for (const [id, a] of Object.entries(p.agents)) {
     agents[id] = { id: a.id, name: a.name, x: a.x, y: a.y, angle: a.angle, pv: a.pv, vivant: a.vivant,
+      tueurId: a.tueurId || null, place: a.place || 0,
       munitions: a.munitions, rechargement: a.rechargement, dureeRechargeMax: a.dureeRechargeMax,
       secousse: a.secousse, touche: a.touche, tirTimer: a.tirTimer, recul: a.recul,
       revele: a.revele, slot: a.slot, inv: a.inv,
