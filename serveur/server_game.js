@@ -242,12 +242,15 @@ function borne(a, monde) {
   a.y = Math.min(monde - R_JOUEUR, Math.max(R_JOUEUR, a.y));
 }
 
-function deplaceSolo(a, dx, dy, obs, maxIter, monde) {
+function deplaceSolo(a, dx, dy, obs, maxIter, monde, grid) {
   a.x += dx; a.y += dy; borne(a, monde);
-  // obs doit déjà être la liste des arbres (pré-filtrée)
+  // obs doit déjà être la liste des arbres (pré-filtrée).
+  // Avec une grande carte la liste complete coute cher : on interroge la
+  // grille autour du joueur, recalculee a chaque iteration puisqu'il bouge.
   for (let it = 0; it < maxIter; it++) {
     let hit = false;
-    for (const o of obs) {
+    const proches = grid ? queryGrid(grid, a.x, a.y) : obs;
+    for (const o of proches) {
       // pas de filtre type ici (obs = arbres uniquement)
       const nx = a.x - o.x, ny = a.y - o.y;
       const d = Math.hypot(nx, ny), min = o.r + R_JOUEUR;
@@ -290,7 +293,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   if (n > 1) { mx /= n; my /= n; }
 
   // Bots : 1 itération de collision (précision réduite mais 3× plus rapide)
-  deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3, p.monde);
+  deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3, p.monde, p.arbresGrid);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
   if (cmd.poing && a._pCd < 0.02) {
@@ -659,6 +662,26 @@ function diffuseLobby(room, gid) {
 }
 
 // Lancer la partie solo après le countdown
+// Bascule complete vers une autre carte. Tout ce qui reference
+// l'ancienne est jete : les index de p.obs changent, donc un client qui
+// garderait l'ancienne liste verrait des hitbox fantomes. Le compteur
+// mapVer permet justement de reperer les snapshots en vol.
+function changeMap(p, nomMap) {
+  const map = chargeMap(nomMap);
+  p.map = map;
+  p.monde = map.monde;
+  p.mapVer++;
+  p.obs = map.obs.map(o => ({
+    x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed,
+    pv: PV_ARBRE, secousse: 0, _lt: o.type,
+  }));
+  p.arbres = null;        // caches de collision invalides
+  p.arbresGrid = null;
+  p.balles = [];          // balles encore en vol sur l'ancienne carte
+  p.evts = [];            // impacts rattaches a l'ancien decor
+  p.zone = { x: map.zone.cx, y: map.zone.cy, r: map.zone.r0 };
+}
+
 function demarrePartie(room, gid) {
   const p = room.partie;
   p.phaseLobby = false;
@@ -666,21 +689,33 @@ function demarrePartie(room, gid) {
   room.etat = 'en_cours';
   room.countdownStart = null;
   if (gid === soloRoomId) soloRoomId = null; // libérer pour les prochains
-  // Téléporter + équiper chaque joueur vivant
+
+  // On quitte la carte d'attente pour la carte de partie
+  changeMap(p, 'partie');
+
+  // Téléporter + équiper chaque joueur vivant (sur la NOUVELLE carte)
   for (const a of Object.values(p.agents)) {
     if (!a.vivant) continue;
     const pos = placer(p.rng, p.map, p.obs);
     a.x = pos.x; a.y = pos.y; a.pv = PV_MAX;
+    a._px = a.x; a._py = a.y; a._vx = 0; a._vy = 0;   // historique de vitesse
+    a.file = []; a.lastSeq = 0;                        // commandes de l'ancienne carte
     a.inv = [null, 'fusil', null, null, null, null];
     a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
     if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._tick = 0; a._dernCmd = null; }
   }
-  // Restaurer les arbres
-  p.obs.forEach(o => { if(o._lt==='arbre'){o.pv=PV_ARBRE;o.type='arbre';o.secousse=0;} });
-  p.arbres = null;
+
+  // Envoyer la nouvelle carte a chaque client, avec son point d'arrivee
+  const carte = payloadCarte(p);
+  for (const [plPid, pl] of Object.entries(room.players)) {
+    if (!pl.ws || pl.ws.readyState !== WebSocket.OPEN) continue;
+    const a = p.agents[plPid];
+    pl.ws.send(JSON.stringify(Object.assign({ type: 'mapSwitch' }, carte,
+      { spawn: a ? { x: a.x, y: a.y } : null })));
+  }
 }
 
-// Bloc carte commun aux messages init (et plus tard a mapSwitch)
+// Bloc carte commun aux messages init et mapSwitch
 function payloadCarte(p) {
   const zc = p.map.zone;
   return {
@@ -930,6 +965,7 @@ function envoieSnapshot(room) {
 // Prechargement : un JSON casse doit se voir au demarrage, pas a la
 // premiere connexion.
 chargeMap('lobby');
+chargeMap('partie');
 
 server.listen(PORT, () => console.log('Serveur sur le port ' + PORT));
 boucleServeur();
