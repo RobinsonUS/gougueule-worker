@@ -7,6 +7,7 @@ import editeurHtml from '../game/editeur.html';
 import bgAuth  from '../game/bg_auth.png';
 import bgLobby from '../game/bg_lobby.png';
 import bouton  from '../game/bouton.png';
+import continueBtn from '../game/continue_button.png';
 import arm          from '../game/arm.png';
 import hand         from '../game/hand.png';
 import head         from '../game/head.png';
@@ -153,6 +154,7 @@ export default {
       '/game/bg_auth.png':  bgAuth,
       '/game/bg_lobby.png': bgLobby,
       '/game/bouton.png':   bouton,
+      '/game/continue_button.png': continueBtn,
       '/game/arm.png':          arm,
       '/game/hand.png':         hand,
       '/game/head.png':         head,
