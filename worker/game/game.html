@@ -561,7 +561,51 @@ function drawTete(R){
   var sp=SPRITES.head; if(!sp||!sp.complete||!sp.naturalWidth)return;
   ctx.drawImage(sp,-R,-R,R*2,R*2);
 }
-function dessineOmbrePerso(x, y, angle, secousse, arme, recul) {
+// Sous-chemins d'ombre. Tous parcourus dans le sens des angles
+// croissants, comme un arc complet : l'union en nonzero est donc sure
+// et un seul fill() evite de superposer deux fois la transparence.
+function cheminCapsule(x0, y0, x1, y1, r) {
+  var a = Math.atan2(y1 - y0, x1 - x0);
+  ctx.arc(x0, y0, r, a + Math.PI / 2, a - Math.PI / 2);
+  ctx.arc(x1, y1, r, a - Math.PI / 2, a + Math.PI / 2);
+  ctx.closePath();
+}
+
+// Bras et mains du personnage desarme, dilates de HALO_ARME.
+function cheminMembres(R, punchTimer, punchSide) {
+  var hA = HALO_ARME * R;
+  var rBras = R * 0.55 / 2 + hA;   // AW / 2 + halo
+  var rMain = R * 0.40 + hA;       // HR + halo
+  var pT = punchTimer || 0;
+
+  if (pT > 0) {
+    var ps = (punchSide || 0) === 0 ? -1 : 1;
+    // Bras au repos
+    cheminCapsule(-ps * R * 0.42, -R * 0.30, -ps * R * 0.66, -R * 0.62, rBras);
+    ctx.arc(-ps * R * 0.66, -R * 0.62, rMain, 0, Math.PI * 2);
+    // Bras frappeur : meme bezier que dessinePerso
+    var pE = 0, _cool = 0.60, _anim = 0.30, _half = 0.15;
+    if (pT > _cool - _anim) {
+      var el = _cool - pT;
+      pE = el < _half ? el / _half : 1 - (el - _half) / _half;
+      pE = Math.max(0, Math.min(1, pE));
+    }
+    var t = pE, t2 = t * t, t1 = 1 - t, t12 = t1 * t1;
+    var hx = t12 * (ps*R*0.66) + 2*t1*t * (ps*R*1.10) + t2 * (-ps*R*0.15);
+    var hy = t12 * (-R*0.62)   + 2*t1*t * (-R*1.10)   + t2 * (-R*1.95);
+    var sx = t12 * (ps*R*0.42) + 2*t1*t * (ps*R*0.70) + t2 * (ps*R*0.12);
+    var sy = t12 * (-R*0.30)   + 2*t1*t * (-R*0.70)   + t2 * (-R*0.10);
+    cheminCapsule(sx, sy, hx, hy, rBras);
+    ctx.arc(hx, hy, rMain, 0, Math.PI * 2);
+  } else {
+    cheminCapsule(-R * 0.42, -R * 0.30, -R * 0.66, -R * 0.62, rBras);
+    cheminCapsule( R * 0.42, -R * 0.30,  R * 0.66, -R * 0.62, rBras);
+    ctx.arc(-R * 0.66, -R * 0.62, rMain, 0, Math.PI * 2);
+    ctx.arc( R * 0.66, -R * 0.62, rMain, 0, Math.PI * 2);
+  }
+}
+
+function dessineOmbrePerso(x, y, angle, secousse, arme, recul, punchTimer, punchSide) {
   const R = R_JOUEUR;
   const s = secousse || 0;
   const dx = s > 0 ? Math.sin(s * 190) * R * 0.09 * (s / 0.16) : 0;
@@ -589,10 +633,12 @@ function dessineOmbrePerso(x, y, angle, secousse, arme, recul) {
     var cy = (127.5 / 257) * sil.ih + sil.pad;
     ctx.drawImage(sil.cv, -cx * sc, -cy * sc, sil.cv.width * sc, sil.cv.height * sc);
   } else {
+    // Repere de dessinePerso : -y = direction de visee
+    ctx.rotate(angle + Math.PI / 2);
     ctx.fillStyle = C.ombre;
     ctx.beginPath();
     ctx.arc(0, 0, R * (1 + HALO_TETE), 0, Math.PI * 2);
-    ctx.arc(0, 0, R, 0, Math.PI * 2, true);
+    cheminMembres(R, punchTimer, punchSide);
     ctx.fill();
   }
 
@@ -759,7 +805,7 @@ function dessineJoueur(p, j, coul, alpha, decoupe, gch, hau, demiL, demiH, arme,
   if (textureSeule) {
     dessinePerso(j.x, j.y, j.angle, coul, j.secousse, j.touche, arme, j.recul, punchTimer||0, punchSide||0);
   } else {
-    dessineOmbrePerso(j.x, j.y, j.angle, j.secousse, arme, j.recul);
+    dessineOmbrePerso(j.x, j.y, j.angle, j.secousse, arme, j.recul, punchTimer||0, punchSide||0);
   }
 
   ctx.restore();
@@ -1328,8 +1374,8 @@ function dessine(p, moi, viseur, drag) {
     const _al=Math.max(0,Math.min(1,_df.t/0.25));
     if(_al<=0)continue;
     ctx.save();ctx.globalAlpha=_al;
-    dessineOmbrePerso(_df.x,_df.y,_df.angle,0,_df.arme,0);
-    dessinePerso(_df.x,_df.y,_df.angle,_df.coul,0,0,_df.arme,_df.pT||0,_df.pS||0);
+    dessineOmbrePerso(_df.x,_df.y,_df.angle,0,_df.arme,0,_df.pT||0,_df.pS||0);
+    dessinePerso(_df.x,_df.y,_df.angle,_df.coul,0,0,_df.arme,0,_df.pT||0,_df.pS||0);
     ctx.globalAlpha=1;ctx.restore();
   }
 
