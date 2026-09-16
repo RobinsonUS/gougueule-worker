@@ -699,7 +699,10 @@ function demarrePartie(room, gid) {
     const pos = placer(p.rng, p.map, p.obs);
     a.x = pos.x; a.y = pos.y; a.pv = PV_MAX;
     a._px = a.x; a._py = a.y; a._vx = 0; a._vy = 0;   // historique de vitesse
-    a.file = []; a.lastSeq = 0;                        // commandes de l'ancienne carte
+    a.file = [];   // commandes en attente calculees pour l'ancienne carte
+    // lastSeq n'est PAS remis a zero : il doit rester monotone, sinon les
+    // commandes encore en vol le font remonter et toutes les suivantes,
+    // reparties d'un numero plus bas, sont rejetees pour toujours.
     a.inv = [null, 'fusil', null, null, null, null];
     a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
     if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._tick = 0; a._dernCmd = null; }
@@ -806,6 +809,9 @@ wss.on('connection', (ws) => {
       if (msg.type === 'in' && pid && rooms[gid] && rooms[gid].partie) {
         const a = rooms[gid].partie.agents[pid];
         if (!a) return;
+        // Commandes produites avant la bascule : elles visaient l'ancienne
+        // carte, on les jette au lieu de les appliquer ici.
+        if (msg.mv && msg.mv !== rooms[gid].partie.mapVer) return;
         for (const c of (msg.c || [])) { if (c.seq > a.lastSeq + a.file.length) a.file.push(c); }
         if (a.file.length > 40) a.file.splice(0, a.file.length - 40);
         return;
