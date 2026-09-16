@@ -102,7 +102,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','slotXM8','MediumProjectile','XM8'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // weapon_XM8 : supprimer le fond blanc
 (function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
   var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
@@ -880,7 +880,8 @@ function dessineMinimap() {
   };
   cadre();
 
-  var enJeu = snapDernier && !snapDernier.phaseLobby && moi;
+  var suivi = agentVue || moi;
+  var enJeu = snapDernier && !snapDernier.phaseLobby && suivi;
 
   if (!enJeu) {
     // Salle d'attente : on garde le carre neutre
@@ -899,10 +900,10 @@ function dessineMinimap() {
 
     ctx.translate(mX + mW / 2, mY + mH / 2);
     ctx.scale(k, k);
-    ctx.translate(-moi.x, -moi.y);
+    ctx.translate(-suivi.x, -suivi.y);
 
-    var g = moi.x - large / 2, d = moi.x + large / 2;
-    var h2 = moi.y - large / 2, b = moi.y + large / 2;
+    var g = suivi.x - large / 2, d = suivi.x + large / 2;
+    var h2 = suivi.y - large / 2, b = suivi.y + large / 2;
 
     // sol : seulement l'intersection de la fenetre et de la carte
     var sx = Math.max(0, g), sy = Math.max(0, h2);
@@ -1304,10 +1305,90 @@ function dessineInventaire(agent, slot, drag) {
   ctx.textBaseline = 'alphabetic';
 }
 
+// ============ ecran de mort / fin, dessine sur le canevas ==========
+// Fond entierement transparent : on continue de voir le jeu derriere.
+function texteOmbre(txt, x, y, taille, coul, alpha) {
+  ctx.font = 'bold ' + taille + 'px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  ctx.fillStyle = 'rgba(0,0,0,0.9)'; ctx.fillText(txt, x + 2, y + 2);
+  ctx.fillStyle = coul; ctx.fillText(txt, x, y);
+  ctx.globalAlpha = 1;
+}
+function largeurTexte(txt, taille) {
+  ctx.font = 'bold ' + taille + 'px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
+  return ctx.measureText(txt).width;
+}
+// Deux morceaux de couleurs differentes, centres ensemble
+function ligneDeuxTons(g, d, y, taille, coulG, coulD, alpha) {
+  var lg = largeurTexte(g, taille), ld = largeurTexte(d, taille);
+  var x = (LARG - (lg + ld)) / 2;
+  texteOmbre(g, x, y, taille, coulG, alpha);
+  texteOmbre(d, x + lg, y, taille, coulD, alpha);
+}
+
+function dessineEcranMort(vue) {
+  if (etatJeu !== 'mort' && etatJeu !== 'fin') return;
+  if (etatJeu === 'mort' && Date.now() - tMortVue < MORT_DELAI) return;
+
+  var ags = (vue && vue.agents) || (snapDernier && snapDernier.agents) || {};
+  var monA = ags[pid];
+  var gagne = etatJeu === 'fin' && vue && vue.vainqueur === pid;
+
+  repereEcran();
+
+  // Ligne 1
+  if (gagne) {
+    ligneDeuxTons('You ', 'Won', HAUT * 0.27, 62, '#ffffff', '#ffd23f');
+  } else {
+    var tueur = monA && monA.tueurId ? ags[monA.tueurId] : null;
+    var nomT = tueur ? tueur.name : 'the Storm';
+    ligneDeuxTons('Eliminated By ', nomT, HAUT * 0.27, 62, '#ffffff', '#ff4d5a');
+  }
+
+  // Ligne 2 : le placement
+  var place = gagne ? 1 : (monA && monA.place ? monA.place : 0);
+  if (place > 0) ligneDeuxTons('You placed ', '#' + place, HAUT * 0.27 + 52, 38, '#ffffff', '#ffd23f');
+
+  // Bouton Continue
+  var sp = SPRITES.continue_button;
+  var bw = 300, bh = 86;
+  if (sp && (sp.naturalWidth || sp.width)) {
+    var iw = sp.naturalWidth || sp.width, ih = sp.naturalHeight || sp.height;
+    // L'image fournie a beaucoup de marge autour du bouton : on la recadre
+    bh = Math.round(bw * (ih / iw));
+  }
+  var bx = Math.round((LARG - bw) / 2), by = Math.round(HAUT - bh - 34);
+  btnContinue.x = bx; btnContinue.y = by; btnContinue.w = bw; btnContinue.h = bh;
+
+  // Ligne "Watching" juste au-dessus, sauf si on a gagne
+  if (!gagne && idSpectate && ags[idSpectate]) {
+    ligneDeuxTons('Watching ', ags[idSpectate].name, by - 18, 32, '#ffffff', '#ff4d5a', 0.5);
+  }
+
+  var enfonce = btnContinue.presse ? 4 : 0;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = btnContinue.presse ? 6 : 14;
+  ctx.shadowOffsetY = btnContinue.presse ? 2 : 6;
+  if (sp && (sp.naturalWidth || sp.width)) {
+    ctx.drawImage(sp, bx, by + enfonce, bw, bh);
+  } else {
+    // Repli si l'image n'est pas encore chargee
+    ctx.fillStyle = '#f5a623';
+    ctx.fillRect(bx, by + enfonce, bw, bh);
+    ctx.shadowColor = 'transparent';
+    texteOmbre('Continue', bx + bw / 2 - largeurTexte('Continue', 26) / 2,
+               by + enfonce + bh / 2 + 9, 26, '#ffffff');
+  }
+  ctx.restore();
+}
+
 // ===================== scene =====================
 function dessine(p, moi, viseur, drag) {
   const a = p.agents[moi];
   if (!a) return;
+  agentVue = a;               // la minimap et le HUD suivent cet agent
   cam.x = a.x;
   cam.y = a.y;
 
@@ -1588,7 +1669,8 @@ function dessine(p, moi, viseur, drag) {
   // ---- interface ----
   repereEcran();
   dessineBarrePV(a.pv);
-  if (a.inv) dessineInventaire(a, a.slot, drag);
+  // En spectateur l'inventaire n'a pas lieu d'etre : on garde la barre de vie
+  if (a.inv && etatJeu !== 'mort' && etatJeu !== 'fin') dessineInventaire(a, a.slot, drag);
   if (viseur) dessineViseur(viseur.x, viseur.y);
   dessineMinimap();
 
@@ -1648,6 +1730,26 @@ function ajouteKill(kills) {}
 // =================== Particules locales ===================
 var localParticules = [];
 var _deathFades = {};
+
+// ─── Ecran de mort / spectateur ────────────────────────────────────
+var MORT_DELAI = 1500;      // on laisse voir sa propre mort avant l'ecran
+var tMortVue = 0;           // instant ou le client a constate la mort
+var idSpectate = null;      // agent suivi une fois mort
+var agentVue = null;        // agent dont on affiche la vue (soi, ou le suivi)
+var btnContinue = { x: 0, y: 0, w: 0, h: 0, presse: false };
+
+// Cible de spectateur : le tueur s'il vit, sinon le tueur du tueur,
+// sinon n'importe quel vivant.
+function choisitSpectate(ags, depuis) {
+  if (!ags) return null;
+  var a = depuis && ags[depuis];
+  if (a && a.vivant) return depuis;
+  if (a && a.tueurId && ags[a.tueurId] && ags[a.tueurId].vivant) return a.tueurId;
+  var vivants = [];
+  for (var k in ags) if (ags[k].vivant) vivants.push(k);
+  if (!vivants.length) return depuis || null;
+  return vivants[(Math.random() * vivants.length) | 0];
+}
 var _deathDone = new Set();
 var _prevTouche = {};
 var invDrag = null; // { depuis, x, y, objet } pendant un drag d'inventaire
@@ -2038,6 +2140,42 @@ window.addEventListener('mouseup', function(e) {
   if (invDrag) { termineInvDrag(e); return; }
   shooting = false; souris.enfonce = false;
 });
+
+// ─── Bouton Continue de l'ecran de mort ────────────────────────────
+function posEcran(e) {
+  if (!cv) return { x: -1, y: -1 };
+  var r = cv.getBoundingClientRect();
+  var t = (e.touches && e.touches[0]) ? e.touches[0] : e;
+  return { x: (t.clientX - r.left) / r.width * LARG,
+           y: (t.clientY - r.top) / r.height * HAUT };
+}
+function surContinue(e) {
+  if (etatJeu !== 'mort' && etatJeu !== 'fin') return false;
+  if (etatJeu === 'mort' && Date.now() - tMortVue < MORT_DELAI) return false;
+  var p = posEcran(e);
+  return p.x >= btnContinue.x && p.x <= btnContinue.x + btnContinue.w &&
+         p.y >= btnContinue.y && p.y <= btnContinue.y + btnContinue.h;
+}
+// window et non cv : le canevas n'existe pas encore a ce stade
+window.addEventListener('mousedown', function (e) {
+  if (surContinue(e)) { btnContinue.presse = true; e.preventDefault(); }
+});
+window.addEventListener('mouseup', function (e) {
+  if (btnContinue.presse) {
+    btnContinue.presse = false;
+    if (surContinue(e)) rejouer();
+  }
+});
+window.addEventListener('touchstart', function (e) {
+  if (surContinue(e)) { btnContinue.presse = true; e.preventDefault(); }
+}, { passive: false });
+window.addEventListener('touchend', function (e) {
+  if (btnContinue.presse) {
+    btnContinue.presse = false;
+    var t = e.changedTouches && e.changedTouches[0];
+    if (t && surContinue({ clientX: t.clientX, clientY: t.clientY })) rejouer();
+  }
+}, { passive: false });
 
 // =================== WebSocket + état ===================
 // ═══════════════════════════════════════════════════════════════════
@@ -2466,15 +2604,20 @@ function connect() {
       }
       var s = msg.agents[pid];
       if (s && !s.vivant && etatJeu === 'jeu') {
-        etatJeu = 'mort';  // pause — pas d'éjection, le joueur peut bouger
-        document.getElementById('ecran-fin').style.display = 'flex';
-        document.getElementById('fin-titre').textContent = 'Éliminé';
-        document.getElementById('fin-titre').style.color = '#ff4444';
-        document.getElementById('fin-kills').textContent = myKills + (myKills > 1 ? ' kills' : ' kill');
+        etatJeu = 'mort';
+        tMortVue = Date.now();          // l'ecran n'apparait qu'apres MORT_DELAI
+        // Le tueur s'il est encore en vie, sinon quelqu'un d'autre
+        idSpectate = choisitSpectate(msg.agents, s.tueurId);
       }
       if (msg.fini && etatJeu !== 'fin') {
+        var gagnant = msg.vainqueur;
+        if (gagnant === pid) {
+          idSpectate = null;            // on garde sa propre vue
+        } else if (gagnant && msg.agents[gagnant]) {
+          idSpectate = gagnant;         // on fige sur la vue du vainqueur
+          if (!tMortVue) tMortVue = Date.now() - MORT_DELAI;
+        }
         etatJeu = 'fin';
-        showFin(msg.vainqueur);
         // Déconnecter immédiatement — plus de timer, plus de race condition
         // L'écran de fin est une image statique totalement déconnectée de la room
         aEnvoyer = [];
@@ -2612,6 +2755,8 @@ function rejouer() {
   buffer = []; pendantes = []; seq = 0; aEnvoyer = [];
   nbPings = 0; pingEnvoi = {};
   myKills = 0; nbVivants = 0; alphaVisJoueurs = {};
+  tMortVue = 0; idSpectate = null; agentVue = null;
+  btnContinue.presse = false;
   showLobby();
 }
 
@@ -2772,6 +2917,7 @@ function boucle(maintenant) {
   precedent = maintenant;
 
   if (etatJeu === 'lobby' || etatJeu === 'connecting') return;
+  if (etatJeu === 'mort' || etatJeu === 'fin') return;   // spectateur : aucune commande
 
   window._lastDt = dt;
   produitCommande(dt);
@@ -2787,16 +2933,32 @@ function boucle(maintenant) {
   var vue = etatAffiche();
   if (!vue) return;
 
+  // Mort ou partie finie : la camera suit le joueur observe
+  var idVue = pid;
+  if (etatJeu === 'mort' || etatJeu === 'fin') {
+    if (idSpectate && !(vue.agents[idSpectate] && vue.agents[idSpectate].vivant)
+        && etatJeu !== 'fin') {
+      idSpectate = choisitSpectate(vue.agents, idSpectate);   // le suivi est tombe
+    }
+    if (Date.now() - tMortVue >= MORT_DELAI && idSpectate && vue.agents[idSpectate]) {
+      idVue = idSpectate;
+    }
+  }
+  var spectateur = idVue !== pid;
+
   dessine({ agents: vue.agents, balles: vue.balles, particules: localParticules,
             obs: localObs, zone: vue.zone, t: vue.t,
             fini: vue.fini, vainqueur: vue.vainqueur },
-          pid, (!isMobile && souris.vu) ? souris : null, invDrag || null);
+          idVue, (!isMobile && souris.vu && !spectateur) ? souris : null,
+          spectateur ? null : (invDrag || null));
 
-  if (isMobile) {
+  if (isMobile && etatJeu === 'jeu') {
     repereEcran();
     if (viseeActive) dessineLigneTir(viseeAngle);
     dessineJoysticks();
   }
+
+  dessineEcranMort(vue);
 
   // hud minimap dessiné dans dessine()
   } catch(e) { console.error('boucle:', e); }
