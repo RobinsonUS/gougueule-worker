@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Editeur de cartes</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#1b2417;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e8eee2}
+  #cv{position:absolute;inset:0;touch-action:none;display:block}
+  .panneau{position:absolute;background:rgba(18,26,14,.92);border:1px solid rgba(255,255,255,.14);
+    border-radius:12px;padding:10px;backdrop-filter:blur(6px)}
+  #outils{top:10px;left:10px;width:196px;max-height:calc(100% - 20px);overflow-y:auto}
+  #infos{top:10px;right:10px;font-size:12px;line-height:1.7;min-width:150px}
+  h3{margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.9px;color:#8cc152}
+  .grp{margin-bottom:11px;padding-bottom:11px;border-bottom:1px solid rgba(255,255,255,.09)}
+  .grp:last-child{border:none;margin-bottom:0;padding-bottom:0}
+  button{width:100%;margin-bottom:4px;padding:8px;border:1px solid rgba(255,255,255,.18);
+    border-radius:8px;background:rgba(255,255,255,.06);color:#e8eee2;font-size:13px;
+    font-weight:600;cursor:pointer;text-align:left}
+  button:hover{background:rgba(255,255,255,.13)}
+  button.on{background:#8cc152;border-color:#8cc152;color:#16200f}
+  button.large{text-align:center;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;
+    box-shadow:0 2px 0 #14532d}
+  label{display:block;font-size:11px;color:rgba(255,255,255,.55);margin:6px 0 2px}
+  input[type=range]{width:100%;margin:0}
+  input[type=number],input[type=text]{width:100%;padding:6px;border-radius:7px;
+    border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#e8eee2;font-size:13px}
+  .duo{display:flex;gap:5px}
+  .val{float:right;color:#8cc152;font-weight:700}
+  #msg{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);padding:9px 20px;
+    border-radius:9px;background:rgba(140,193,82,.95);color:#16200f;font-weight:700;font-size:13px;
+    opacity:0;transition:opacity .25s;pointer-events:none}
+  #aide{position:absolute;bottom:10px;left:10px;font-size:11px;color:rgba(255,255,255,.4);
+    line-height:1.6;pointer-events:none}
+  textarea{position:absolute;inset:0;width:100%;height:100%;background:#0f1509;color:#cfe0c0;
+    border:none;padding:14px;font-family:ui-monospace,Menlo,monospace;font-size:12px;resize:none}
+  #zoneJson{position:absolute;inset:26px;display:none;z-index:20;border-radius:12px;overflow:hidden;
+    border:1px solid rgba(255,255,255,.2)}
+  #barreJson{position:absolute;top:0;left:0;right:0;height:46px;background:rgba(18,26,14,.97);
+    display:flex;gap:8px;align-items:center;padding:0 10px;z-index:21}
+  #barreJson button{width:auto;margin:0;padding:7px 16px}
+  #ta{top:46px}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div class="panneau" id="outils">
+  <div class="grp">
+    <h3>Outil</h3>
+    <button data-outil="placer" class="on">Placer</button>
+    <button data-outil="pinceau">Pinceau (dispersion)</button>
+    <button data-outil="gomme">Gomme</button>
+    <button data-outil="spawn">Point d'apparition</button>
+  </div>
+  <div class="grp">
+    <h3>Objet</h3>
+    <button data-type="arbre" class="on">Arbre</button>
+    <button data-type="buisson">Buisson</button>
+    <label>Rayon <span class="val" id="vRayon">87</span></label>
+    <input type="range" id="rayon" min="20" max="220" value="87">
+  </div>
+  <div class="grp" id="grpPinceau">
+    <h3>Pinceau</h3>
+    <label>Portee <span class="val" id="vPort">600</span></label>
+    <input type="range" id="portee" min="150" max="2500" value="600">
+    <label>Densite <span class="val" id="vDens">6</span></label>
+    <input type="range" id="densite" min="1" max="30" value="6">
+  </div>
+  <div class="grp">
+    <h3>Carte</h3>
+    <label>Nom</label>
+    <input type="text" id="nom" value="partie">
+    <label>Taille du monde</label>
+    <input type="number" id="monde" value="12800" step="100">
+    <label>Zone depart <span class="val" id="vR0">9200</span></label>
+    <input type="range" id="r0" min="200" max="20000" step="100" value="9200">
+    <label>Zone finale <span class="val" id="vR1">400</span></label>
+    <input type="range" id="r1" min="50" max="4000" step="50" value="400">
+    <div class="duo">
+      <div style="flex:1"><label>Attente (s)</label><input type="number" id="att" value="20"></div>
+      <div style="flex:1"><label>Duree (s)</label><input type="number" id="dur" value="160"></div>
+    </div>
+  </div>
+  <div class="grp">
+    <h3>Fichier</h3>
+    <button class="large" id="bExport">Exporter le JSON</button>
+    <button id="bImport">Importer / coller</button>
+    <button id="bVide">Tout effacer</button>
+    <button id="bAnnuler">Annuler (Cmd+Z)</button>
+  </div>
+</div>
+
+<div class="panneau" id="infos"></div>
+<div id="aide">
+  Glisser : dessiner &nbsp;|&nbsp; Deux doigts ou molette : zoom<br>
+  Espace + glisser, ou clic droit : deplacer la vue
+</div>
+<div id="msg"></div>
+
+<div id="zoneJson">
+  <div id="barreJson">
+    <button id="bCharger" class="large">Charger ce JSON</button>
+    <button id="bCopier">Copier</button>
+    <button id="bTelecharger">Telecharger</button>
+    <button id="bFermer">Fermer</button>
+  </div>
+  <textarea id="ta" spellcheck="false"></textarea>
+</div>
+
+<script>
+'use strict';
+const CELL = 50;
+const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5;
+
+const C = {
+  sol:         '#6d8f4e',
+  ligne:       '#5f8145',
+  dehors:      '#4a6635',
+  ligneDehors: '#425c2e',
+  ombre:       'rgba(0,0,0,0.13)',
+  buisson: {
+    trait: '#3f4a35',
+    ext:   '#74ab52',
+    int:   '#8cc069',
+    tache: '#74ab52',
+  },
+  traitArbre: '#33383a',
+  souche:     'rgba(40,52,32,0.13)',
+  aura:       'rgba(230,60,50,0.45)',
+  invPlein:   '#d7d9cf',
+  invBord:    'rgba(255,255,255,0.55)',
+  invNumFond: 'rgba(20,30,15,0.22)',
+  invNumBord: 'rgba(255,255,255,0.55)',
+  poing:      '#f5a94e',
+  poingOmb:   '#d98c33',
+  eclat:      '#9aa094',
+  eclatOmb:   '#6f7569',
+  arbres: [
+    { ext: '#3f9e6e', int: '#7fd18f', tache: '#5cb87d' },
+    { ext: '#96602f', int: '#cf9530', tache: '#8a5a2e' },
+    { ext: '#8e2647', int: '#a83a5c', tache: '#75203c' },
+    { ext: '#1f6b4a', int: '#2d8a5f', tache: '#18543a' },
+  ],
+  perso:    '#f0cd8f',
+  persoEnn: '#f0cd8f',
+  main:     '#e0b273',
+  bras:     '#c8985c',
+  traitP:   '#2b2b2b',
+  armeOr:    '#f0922f',
+  armeBleu:  '#2f4f80',
+  armeMauve: '#9a9ade',
+  canon:     '#3a3a3a',
+  balle:    '#6a6a6a',
+  traitB:   '#242424',
+  pvVert:      '#8cc152',
+  pvVertVide:  'rgba(140,193,82,0.32)',
+  pvRouge:     '#d9534f',
+  pvRougeVide: 'rgba(217,83,79,0.32)',
+  pvTrait:     'rgba(45,45,45,0.5)',
+  zone:     'rgba(120,175,255,0.85)',
+  horsZone: 'rgba(70,130,255,0.30)',
+};
+const R_JOUEUR = 30;   // sert au calcul des ombres
+
+function creeRngC(graine) {
+  var a = graine | 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function cosmetiques(seed) {
+  var rng = creeRngC(seed || 1);
+  return {
+    lobes: 9 + ((rng() * 3) | 0),
+    phase: rng() * Math.PI * 2,
+    teinte: (rng() * 4) | 0,
+    taches: [
+      { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
+      { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
+      { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
+    ],
+  };
+}
+
+function cheminBlob(x, y, r, lobes, phase, amp) {
+  ctx.beginPath();
+  ajouteCheminBlob(x, y, r, lobes, phase, amp);
+}
+
+function ajouteCheminBlob(x, y, r, lobes, phase, amp) {
+  const n = lobes * 14;
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const rr = r * (1 + amp * Math.cos(lobes * a + phase));
+    const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
+function dessineOmbreArbre(o) {
+  const { r, lobes, phase } = o;
+  const amp = 0.075;
+  const s = o.secousse || 0;
+  const x = o.x + (s > 0 ? Math.sin(s * 130) * r * 0.09 * (s / 0.22) : 0);
+  const y = o.y + (s > 0 ? Math.cos(s * 155) * r * 0.05 * (s / 0.22) : 0);
+
+  const rayonBase = r * 0.92;
+  const epaisseurBande = (R_JOUEUR * 1.35) / 3;
+
+  ctx.save();
+  ctx.lineWidth = epaisseurBande;
+  ctx.strokeStyle = C.ombre;
+  ctx.lineJoin = 'round';
+  cheminBlob(x, y, rayonBase + epaisseurBande / 2, lobes, phase, amp);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function dessineOmbreBuisson(o) {
+  const { x, y, r, phase } = o;
+  const lobes = 8, amp = 0.135;
+  const rayonBase = r * 0.90;
+  const epaisseurBande = (R_JOUEUR * 1.35) / 3;
+
+  ctx.save();
+  ctx.lineWidth = epaisseurBande;
+  ctx.strokeStyle = C.ombre;
+  ctx.lineJoin = 'round';
+  cheminBlob(x, y, rayonBase + epaisseurBande / 2, lobes, phase, amp);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function dessineArbreTexture(o) {
+  const { r, lobes, phase } = o;
+  const pal = C.arbres[o.teinte];
+  const amp = 0.075;
+  const s = o.secousse || 0;
+  const x = o.x + (s > 0 ? Math.sin(s * 130) * r * 0.09 * (s / 0.22) : 0);
+  const y = o.y + (s > 0 ? Math.cos(s * 155) * r * 0.05 * (s / 0.22) : 0);
+
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = r * 0.15;
+  ctx.strokeStyle = C.traitArbre;
+  cheminBlob(x, y, r * 0.92, lobes, phase, amp);
+  ctx.stroke();
+
+  ctx.fillStyle = pal.ext;
+  cheminBlob(x, y, r * 0.92, lobes, phase, amp);
+  ctx.fill();
+
+  ctx.fillStyle = pal.int;
+  cheminBlob(x, y, r * 0.58, lobes, phase, amp * 1.4);
+  ctx.fill();
+
+  ctx.fillStyle = pal.tache;
+  for (const t of o.taches) {
+    ctx.save();
+    ctx.translate(x + Math.cos(t.a) * r * t.d, y + Math.sin(t.a) * r * t.d);
+    ctx.rotate(t.t);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 0.11, r * 0.055, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function dessineBuissonTexture(o) {
+  const { x, y, r, phase } = o;
+  const B = C.buisson;
+  const lobes = 8, amp = 0.135;
+
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = r * 0.16;
+  ctx.strokeStyle = B.trait;
+  cheminBlob(x, y, r * 0.90, lobes, phase, amp);
+  ctx.stroke();
+
+  ctx.fillStyle = B.ext;
+  cheminBlob(x, y, r * 0.90, lobes, phase, amp);
+  ctx.fill();
+
+  ctx.fillStyle = B.int;
+  cheminBlob(x, y, r * 0.62, lobes, phase, amp * 0.8);
+  ctx.fill();
+
+  ctx.fillStyle = B.tache;
+  cheminBlob(x, y, r * 0.13, lobes, phase, 0.30);
+  ctx.fill();
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(x, y + s * r * 0.42, r * 0.09, r * 0.19, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// ═══ etat ══════════════════════════════════════════════════════════
+let carte = {
+  nom: 'partie', monde: 12800,
+  zone: { cx: 6400, cy: 6400, r0: 9200, r1: 400, attente: 20, duree: 160 },
+  spawns: [], obs: []
+};
+let vue = { x: 6400, y: 6400, z: 0.06 };
+let outil = 'placer', typeObj = 'arbre';
+let rayon = 87, portee = 600, densite = 6;
+let histoire = [];
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+function memorise() {
+  histoire.push(JSON.stringify({ obs: carte.obs, spawns: carte.spawns }));
+  if (histoire.length > 60) histoire.shift();
+}
+function annule() {
+  if (!histoire.length) return signale('Rien a annuler');
+  const e = JSON.parse(histoire.pop());
+  carte.obs = e.obs; carte.spawns = e.spawns;
+  signale('Annule');
+}
+
+function redim() {
+  const d = window.devicePixelRatio || 1;
+  cv.width = innerWidth * d; cv.height = innerHeight * d;
+  cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+}
+addEventListener('resize', redim);
+
+const versEcran = (x, y) => ({ x: (x - vue.x) * vue.z + innerWidth / 2,
+                               y: (y - vue.y) * vue.z + innerHeight / 2 });
+const versMonde = (x, y) => ({ x: (x - innerWidth / 2) / vue.z + vue.x,
+                               y: (y - innerHeight / 2) / vue.z + vue.y });
+
+// ═══ rendu ═════════════════════════════════════════════════════════
+function dessine() {
+  const d = window.devicePixelRatio || 1;
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  ctx.fillStyle = C.dehors;
+  ctx.fillRect(0, 0, innerWidth, innerHeight);
+
+  ctx.save();
+  ctx.translate(innerWidth / 2, innerHeight / 2);
+  ctx.scale(vue.z, vue.z);
+  ctx.translate(-vue.x, -vue.y);
+
+  // sol
+  ctx.fillStyle = C.sol;
+  ctx.fillRect(0, 0, carte.monde, carte.monde);
+  // grille
+  const pas = CELL * 4;
+  ctx.strokeStyle = C.ligne; ctx.lineWidth = 1 / vue.z;
+  ctx.beginPath();
+  for (let i = 0; i <= carte.monde; i += pas) {
+    ctx.moveTo(i, 0); ctx.lineTo(i, carte.monde);
+    ctx.moveTo(0, i); ctx.lineTo(carte.monde, i);
+  }
+  ctx.stroke();
+  // bordure
+  ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 3 / vue.z;
+  ctx.strokeRect(0, 0, carte.monde, carte.monde);
+
+  // cercles de zone
+  ctx.strokeStyle = 'rgba(90,150,255,.75)'; ctx.lineWidth = 3 / vue.z;
+  ctx.setLineDash([14 / vue.z, 10 / vue.z]);
+  for (const r of [carte.zone.r0, carte.zone.r1]) {
+    ctx.beginPath(); ctx.arc(carte.zone.cx, carte.zone.cy, r, 0, 6.2832); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // decor : ombres puis feuillages, comme en jeu
+  const marge = 200 / vue.z;
+  const x0 = vue.x - innerWidth / 2 / vue.z - marge, x1 = vue.x + innerWidth / 2 / vue.z + marge;
+  const y0 = vue.y - innerHeight / 2 / vue.z - marge, y1 = vue.y + innerHeight / 2 / vue.z + marge;
+  const visibles = carte.obs.filter(o => o.x > x0 && o.x < x1 && o.y > y0 && o.y < y1);
+  for (const o of visibles) {
+    const c = cosmo(o);
+    if (o.type === 'arbre') dessineOmbreArbre(c); else dessineOmbreBuisson(c);
+  }
+  for (const o of visibles) {
+    const c = cosmo(o);
+    if (o.type === 'arbre') dessineArbreTexture(c); else dessineBuissonTexture(c);
+  }
+
+  // points d'apparition
+  for (const s of carte.spawns) {
+    ctx.fillStyle = 'rgba(255,90,90,.85)';
+    ctx.beginPath(); ctx.arc(s.x, s.y, 46, 0, 6.2832); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 6 / vue.z;
+    ctx.beginPath(); ctx.arc(s.x, s.y, 300, 0, 6.2832); ctx.stroke();
+  }
+
+  ctx.restore();
+
+  // curseur du pinceau
+  if (outil === 'pinceau' && souris.dedans) {
+    const p = versEcran(souris.mx, souris.my);
+    ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(p.x, p.y, portee * vue.z, 0, 6.2832); ctx.stroke();
+  }
+  majInfos();
+  requestAnimationFrame(dessine);
+}
+
+// Les cosmetiques sont derivees de la graine, exactement comme en jeu
+const cacheCos = new Map();
+function cosmo(o) {
+  let c = cacheCos.get(o);
+  if (!c || c.seed !== o.seed || c.r !== o.r) {
+    c = Object.assign({}, o, cosmetiques(o.seed), { alphaVis: 1, secousse: 0, pv: 100 });
+    cacheCos.set(o, c);
+  }
+  c.x = o.x; c.y = o.y; c.r = o.r; c.type = o.type;
+  return c;
+}
+
+function majInfos() {
+  const na = carte.obs.filter(o => o.type === 'arbre').length;
+  const nb = carte.obs.length - na;
+  const parEcran = carte.monde ? (carte.obs.length / (carte.monde * carte.monde) * 1580 * 1100) : 0;
+  document.getElementById('infos').innerHTML =
+    '<b>' + carte.obs.length + '</b> objets<br>' +
+    na + ' arbres &middot; ' + nb + ' buissons<br>' +
+    carte.spawns.length + ' apparitions<br>' +
+    'densite : ' + parEcran.toFixed(1) + ' / ecran<br>' +
+    'zoom : ' + (vue.z * 100).toFixed(0) + '%';
+}
+
+// ═══ edition ═══════════════════════════════════════════════════════
+const graine = () => (Math.random() * 2147483647) | 0;
+
+function libre(x, y, r) {
+  if (x < 0 || x > carte.monde || y < 0 || y > carte.monde) return false;
+  for (const o of carte.obs) if (Math.hypot(o.x - x, o.y - y) < o.r + r + 20) return false;
+  return true;
+}
+function pose(x, y) {
+  const r = typeObj === 'arbre' ? rayon : rayon * (R_BUISSON / R_ARBRE);
+  if (!libre(x, y, r)) return false;
+  carte.obs.push({ x: Math.round(x), y: Math.round(y), r: Math.round(r), type: typeObj, seed: graine() });
+  return true;
+}
+function disperse(cx, cy) {
+  const aire = Math.PI * portee * portee;
+  const n = Math.max(1, Math.round(densite * aire / (1580 * 1100)));
+  for (let i = 0; i < n * 6; i++) {
+    const a = Math.random() * 6.2832, d = Math.sqrt(Math.random()) * portee;
+    pose(cx + Math.cos(a) * d, cy + Math.sin(a) * d);
+  }
+}
+function efface(x, y, r) {
+  const avant = carte.obs.length;
+  carte.obs = carte.obs.filter(o => Math.hypot(o.x - x, o.y - y) > (r || o.r));
+  carte.spawns = carte.spawns.filter(s => Math.hypot(s.x - x, s.y - y) > (r || 200));
+  return carte.obs.length !== avant;
+}
+
+// ═══ entrees ═══════════════════════════════════════════════════════
+const souris = { mx: 0, my: 0, dedans: false };
+let appuye = false, deplace = false, espace = false, dernier = null, aMemorise = false;
+
+function pointDe(e) {
+  const t = e.touches && e.touches[0] ? e.touches[0] : e;
+  return { x: t.clientX, y: t.clientY };
+}
+function debut(e) {
+  const p = pointDe(e);
+  const m = versMonde(p.x, p.y);
+  souris.mx = m.x; souris.my = m.y; souris.dedans = true;
+  if (espace || e.button === 2 || (e.touches && e.touches.length === 2)) { deplace = true; dernier = p; return; }
+  appuye = true; aMemorise = false;
+  agit(m.x, m.y);
+}
+function bouge(e) {
+  const p = pointDe(e);
+  const m = versMonde(p.x, p.y);
+  souris.mx = m.x; souris.my = m.y; souris.dedans = true;
+  if (deplace && dernier) {
+    vue.x -= (p.x - dernier.x) / vue.z; vue.y -= (p.y - dernier.y) / vue.z;
+    dernier = p; return;
+  }
+  if (appuye) agit(m.x, m.y);
+}
+function fin() { appuye = false; deplace = false; dernier = null; }
+
+function agit(x, y) {
+  if (!aMemorise) { memorise(); aMemorise = true; }
+  if (outil === 'placer') pose(x, y);
+  else if (outil === 'pinceau') disperse(x, y);
+  else if (outil === 'gomme') efface(x, y, 160 / vue.z * 1.2);
+  else if (outil === 'spawn') carte.spawns.push({ x: Math.round(x), y: Math.round(y) });
+}
+
+cv.addEventListener('mousedown', debut);
+cv.addEventListener('mousemove', bouge);
+addEventListener('mouseup', fin);
+cv.addEventListener('mouseleave', () => { souris.dedans = false; fin(); });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('touchstart', e => { e.preventDefault(); debut(e); }, { passive: false });
+cv.addEventListener('touchmove', e => { e.preventDefault(); bouge(e); }, { passive: false });
+cv.addEventListener('touchend', e => { e.preventDefault(); fin(); }, { passive: false });
+
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const m = versMonde(e.clientX, e.clientY);
+  vue.z *= Math.exp(-e.deltaY * 0.0015);
+  vue.z = Math.min(2, Math.max(0.01, vue.z));
+  const m2 = versMonde(e.clientX, e.clientY);
+  vue.x += m.x - m2.x; vue.y += m.y - m2.y;
+}, { passive: false });
+
+// pincement a deux doigts
+let ecart0 = 0, zoom0 = 1;
+cv.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    ecart0 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY);
+    zoom0 = vue.z;
+  }
+}, { passive: false });
+cv.addEventListener('touchmove', e => {
+  if (e.touches.length === 2 && ecart0) {
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                         e.touches[0].clientY - e.touches[1].clientY);
+    vue.z = Math.min(2, Math.max(0.01, zoom0 * d / ecart0));
+  }
+}, { passive: false });
+
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { espace = true; e.preventDefault(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); annule(); }
+});
+addEventListener('keyup', e => { if (e.code === 'Space') espace = false; });
+
+// ═══ panneau ═══════════════════════════════════════════════════════
+function groupe(sel, attr, cb) {
+  document.querySelectorAll(sel).forEach(b => b.onclick = () => {
+    document.querySelectorAll(sel).forEach(x => x.classList.remove('on'));
+    b.classList.add('on'); cb(b.dataset[attr]);
+  });
+}
+groupe('[data-outil]', 'outil', v => outil = v);
+groupe('[data-type]', 'type', v => { typeObj = v; curseurRayon(); });
+
+function curseurRayon() {
+  const d = typeObj === 'arbre' ? R_ARBRE : R_BUISSON;
+  document.getElementById('rayon').value = Math.round(d);
+  rayon = typeObj === 'arbre' ? d : d * (R_ARBRE / R_BUISSON);
+  document.getElementById('vRayon').textContent = Math.round(d);
+}
+function curseur(id, span, cb) {
+  const el = document.getElementById(id);
+  el.oninput = () => { document.getElementById(span).textContent = el.value; cb(+el.value); };
+}
+curseur('rayon', 'vRayon', v => rayon = v);
+curseur('portee', 'vPort', v => portee = v);
+curseur('densite', 'vDens', v => densite = v);
+curseur('r0', 'vR0', v => carte.zone.r0 = v);
+curseur('r1', 'vR1', v => carte.zone.r1 = v);
+document.getElementById('nom').oninput = e => carte.nom = e.target.value.trim() || 'carte';
+document.getElementById('monde').oninput = e => {
+  const v = Math.max(500, +e.target.value || 500);
+  carte.monde = v; carte.zone.cx = v / 2; carte.zone.cy = v / 2;
+  document.getElementById('r0').max = v * 1.6;
+};
+document.getElementById('att').oninput = e => carte.zone.attente = Math.max(0, +e.target.value || 0);
+document.getElementById('dur').oninput = e => carte.zone.duree = Math.max(1, +e.target.value || 1);
+document.getElementById('bAnnuler').onclick = annule;
+document.getElementById('bVide').onclick = () => {
+  if (!confirm('Effacer tous les objets et points d\'apparition ?')) return;
+  memorise(); carte.obs = []; carte.spawns = []; signale('Carte videe');
+};
+
+// ═══ JSON ══════════════════════════════════════════════════════════
+function versJson() {
+  return JSON.stringify({
+    nom: carte.nom, monde: carte.monde,
+    zone: { cx: Math.round(carte.zone.cx), cy: Math.round(carte.zone.cy),
+            r0: Math.round(carte.zone.r0), r1: Math.round(carte.zone.r1),
+            attente: carte.zone.attente, duree: carte.zone.duree },
+    spawns: carte.spawns, obs: carte.obs
+  }, null, 1);
+}
+function depuisJson(txt) {
+  const m = JSON.parse(txt);
+  if (!m || typeof m !== 'object') throw new Error('racine invalide');
+  if (!Array.isArray(m.obs)) throw new Error('champ obs manquant');
+  const monde = +m.monde;
+  if (!isFinite(monde) || monde < 500) throw new Error('champ monde invalide');
+  const z = m.zone || {};
+  memorise();
+  carte = {
+    nom: m.nom || 'carte', monde,
+    zone: { cx: +z.cx || monde / 2, cy: +z.cy || monde / 2,
+            r0: +z.r0 || monde * 0.6, r1: +z.r1 || monde * 0.1,
+            attente: z.attente == null ? 12 : +z.attente,
+            duree: z.duree == null ? 70 : +z.duree },
+    spawns: Array.isArray(m.spawns) ? m.spawns.filter(s => isFinite(+s.x) && isFinite(+s.y))
+              .map(s => ({ x: Math.round(+s.x), y: Math.round(+s.y) })) : [],
+    obs: m.obs.filter(o => isFinite(+o.x) && isFinite(+o.y)).map((o, i) => ({
+      x: Math.round(+o.x), y: Math.round(+o.y),
+      r: Math.round(isFinite(+o.r) ? +o.r : (o.type === 'buisson' ? R_BUISSON : R_ARBRE)),
+      type: o.type === 'buisson' ? 'buisson' : 'arbre',
+      seed: (+o.seed | 0) || ((i + 1) * 2654435761 | 0)
+    }))
+  };
+  cacheCos.clear();
+  vue = { x: carte.monde / 2, y: carte.monde / 2, z: Math.min(1, 900 / carte.monde) };
+  synchronisePanneau();
+}
+function synchronisePanneau() {
+  document.getElementById('nom').value = carte.nom;
+  document.getElementById('monde').value = carte.monde;
+  document.getElementById('r0').max = carte.monde * 1.6;
+  document.getElementById('r0').value = carte.zone.r0;
+  document.getElementById('r1').value = carte.zone.r1;
+  document.getElementById('att').value = carte.zone.attente;
+  document.getElementById('dur').value = carte.zone.duree;
+  document.getElementById('vR0').textContent = Math.round(carte.zone.r0);
+  document.getElementById('vR1').textContent = Math.round(carte.zone.r1);
+}
+
+const zone = document.getElementById('zoneJson'), ta = document.getElementById('ta');
+document.getElementById('bExport').onclick = () => {
+  ta.value = versJson(); zone.style.display = 'block'; ta.focus(); ta.select();
+};
+document.getElementById('bImport').onclick = () => {
+  ta.value = ''; zone.style.display = 'block'; ta.focus();
+};
+document.getElementById('bFermer').onclick = () => zone.style.display = 'none';
+document.getElementById('bCopier').onclick = async () => {
+  try { await navigator.clipboard.writeText(ta.value); signale('Copie'); }
+  catch (e) { ta.select(); document.execCommand('copy'); signale('Copie'); }
+};
+document.getElementById('bTelecharger').onclick = () => {
+  const b = new Blob([ta.value], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b); a.download = carte.nom + '.json'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+document.getElementById('bCharger').onclick = () => {
+  try { depuisJson(ta.value); zone.style.display = 'none'; signale('Carte chargee'); }
+  catch (e) { signale('JSON invalide : ' + e.message, true); }
+};
+
+let minuteur = null;
+function signale(txt, err) {
+  const el = document.getElementById('msg');
+  el.textContent = txt;
+  el.style.background = err ? 'rgba(248,113,113,.95)' : 'rgba(140,193,82,.95)';
+  el.style.opacity = 1;
+  clearTimeout(minuteur);
+  minuteur = setTimeout(() => el.style.opacity = 0, 1800);
+}
+
+redim(); curseurRayon(); synchronisePanneau(); dessine();
+</script>
+</body>
+</html>
