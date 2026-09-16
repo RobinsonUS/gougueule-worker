@@ -6,115 +6,204 @@
 <title>Editeur de cartes</title>
 <style>
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;height:100%;overflow:hidden;background:#1b2417;
-    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e8eee2}
+  html,body{margin:0;height:100%;overflow:hidden;background:#141a10;color:#e9efe3;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased}
   #cv{position:absolute;inset:0;touch-action:none;display:block}
-  .panneau{position:absolute;background:rgba(18,26,14,.92);border:1px solid rgba(255,255,255,.14);
-    border-radius:12px;padding:10px;backdrop-filter:blur(6px)}
-  #outils{top:10px;left:10px;width:196px;max-height:calc(100% - 20px);overflow-y:auto}
-  #infos{top:10px;right:10px;font-size:12px;line-height:1.7;min-width:150px}
-  h3{margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.9px;color:#8cc152}
-  .grp{margin-bottom:11px;padding-bottom:11px;border-bottom:1px solid rgba(255,255,255,.09)}
-  .grp:last-child{border:none;margin-bottom:0;padding-bottom:0}
-  button{width:100%;margin-bottom:4px;padding:8px;border:1px solid rgba(255,255,255,.18);
-    border-radius:8px;background:rgba(255,255,255,.06);color:#e8eee2;font-size:13px;
-    font-weight:600;cursor:pointer;text-align:left}
-  button:hover{background:rgba(255,255,255,.13)}
-  button.on{background:#8cc152;border-color:#8cc152;color:#16200f}
-  button.large{text-align:center;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;
-    box-shadow:0 2px 0 #14532d}
-  label{display:block;font-size:11px;color:rgba(255,255,255,.55);margin:6px 0 2px}
-  input[type=range]{width:100%;margin:0}
-  input[type=number],input[type=text]{width:100%;padding:6px;border-radius:7px;
-    border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#e8eee2;font-size:13px}
-  .duo{display:flex;gap:5px}
-  .val{float:right;color:#8cc152;font-weight:700}
-  #msg{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);padding:9px 20px;
-    border-radius:9px;background:rgba(140,193,82,.95);color:#16200f;font-weight:700;font-size:13px;
-    opacity:0;transition:opacity .25s;pointer-events:none}
-  #aide{position:absolute;bottom:10px;left:10px;font-size:11px;color:rgba(255,255,255,.4);
-    line-height:1.6;pointer-events:none}
-  textarea{position:absolute;inset:0;width:100%;height:100%;background:#0f1509;color:#cfe0c0;
-    border:none;padding:14px;font-family:ui-monospace,Menlo,monospace;font-size:12px;resize:none}
-  #zoneJson{position:absolute;inset:26px;display:none;z-index:20;border-radius:12px;overflow:hidden;
-    border:1px solid rgba(255,255,255,.2)}
-  #barreJson{position:absolute;top:0;left:0;right:0;height:46px;background:rgba(18,26,14,.97);
-    display:flex;gap:8px;align-items:center;padding:0 10px;z-index:21}
-  #barreJson button{width:auto;margin:0;padding:7px 16px}
-  #ta{top:46px}
+
+  /* ---------- panneaux ---------- */
+  .carte{background:rgba(16,23,12,.82);border:1px solid rgba(255,255,255,.10);
+    border-radius:16px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    box-shadow:0 10px 30px rgba(0,0,0,.45)}
+  #barre{position:absolute;top:14px;left:14px;bottom:14px;width:232px;padding:16px;
+    display:flex;flex-direction:column;gap:2px;overflow-y:auto;scrollbar-width:thin}
+  #barre::-webkit-scrollbar{width:5px}
+  #barre::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:3px}
+  #stats{position:absolute;top:14px;right:14px;padding:14px 16px;min-width:172px}
+
+  h1{margin:0 0 14px;font-size:15px;font-weight:800;letter-spacing:.2px;display:flex;
+    align-items:center;gap:8px}
+  h1 span{width:9px;height:9px;border-radius:50%;background:#8cc152;
+    box-shadow:0 0 12px rgba(140,193,82,.85)}
+  h2{margin:16px 0 8px;font-size:10px;font-weight:700;text-transform:uppercase;
+    letter-spacing:1.3px;color:rgba(255,255,255,.38)}
+  h2:first-of-type{margin-top:0}
+
+  /* ---------- boutons ---------- */
+  .grille{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .opt{padding:10px 6px;border:1px solid rgba(255,255,255,.10);border-radius:11px;
+    background:rgba(255,255,255,.045);color:#cfd8c6;font-size:11.5px;font-weight:600;
+    cursor:pointer;text-align:center;transition:all .13s;line-height:1.35;
+    display:flex;flex-direction:column;align-items:center;gap:4px}
+  .opt .ic{font-size:16px;line-height:1}
+  .opt:hover{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.2)}
+  .opt.on{background:linear-gradient(160deg,#9ed45e,#6fae3c);border-color:#9ed45e;
+    color:#16200d;box-shadow:0 3px 12px rgba(140,193,82,.32)}
+
+  .act{width:100%;padding:10px;margin-top:6px;border:1px solid rgba(255,255,255,.12);
+    border-radius:11px;background:rgba(255,255,255,.05);color:#e9efe3;font-size:12.5px;
+    font-weight:650;cursor:pointer;transition:all .13s;display:flex;align-items:center;
+    justify-content:center;gap:7px}
+  .act:hover{background:rgba(255,255,255,.11)}
+  .act.vert{background:linear-gradient(160deg,#3ec46b,#1f9b4c);border:none;color:#08200f;
+    box-shadow:0 3px 12px rgba(40,170,80,.3)}
+  .act.vert:hover{filter:brightness(1.08)}
+  .act.rouge{color:#f2a3a3;border-color:rgba(242,120,120,.28)}
+  .act.rouge:hover{background:rgba(242,120,120,.14)}
+
+  /* ---------- champs ---------- */
+  .ligne{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:11.5px;color:rgba(255,255,255,.5);margin:11px 0 5px}
+  .ligne b{color:#9ed45e;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;height:4px;-webkit-appearance:none;appearance:none;
+    background:rgba(255,255,255,.14);border-radius:2px;outline:none;margin:0}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;
+    border-radius:50%;background:#9ed45e;cursor:pointer;border:2px solid #16200d;
+    box-shadow:0 1px 5px rgba(0,0,0,.5)}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
+    background:#9ed45e;cursor:pointer;border:2px solid #16200d}
+  input[type=text],input[type=number]{width:100%;padding:8px 10px;border-radius:10px;
+    border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#e9efe3;
+    font-size:12.5px;outline:none;font-family:inherit}
+  input[type=text]:focus,input[type=number]:focus{border-color:#9ed45e;
+    background:rgba(255,255,255,.09)}
+  .duo{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .note{font-size:10.5px;color:rgba(255,255,255,.3);margin-top:6px;line-height:1.5}
+
+  /* ---------- stats ---------- */
+  .st{display:flex;justify-content:space-between;gap:16px;font-size:11.5px;
+    color:rgba(255,255,255,.5);padding:3px 0}
+  .st b{color:#e9efe3;font-weight:650;font-variant-numeric:tabular-nums}
+  .gros{font-size:24px;font-weight:800;color:#9ed45e;line-height:1;margin-bottom:2px;
+    font-variant-numeric:tabular-nums}
+  .sous{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;
+    color:rgba(255,255,255,.34);margin-bottom:11px}
+  .sep{height:1px;background:rgba(255,255,255,.09);margin:9px 0}
+
+  /* ---------- aide ---------- */
+  #aide{position:absolute;bottom:16px;left:262px;font-size:10.5px;
+    color:rgba(255,255,255,.28);line-height:1.8;pointer-events:none}
+  #aide kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
+    border-radius:4px;padding:1px 5px;font-family:inherit;font-size:10px;color:rgba(255,255,255,.45)}
+
+  /* ---------- fenetre export ---------- */
+  #voile{position:fixed;inset:0;background:rgba(6,10,4,.72);backdrop-filter:blur(3px);
+    display:none;align-items:center;justify-content:center;z-index:40;padding:24px}
+  #fen{width:min(760px,100%);height:min(600px,100%);display:flex;flex-direction:column;
+    padding:18px;gap:12px}
+  #fen header{display:flex;align-items:center;justify-content:space-between}
+  #fen h3{margin:0;font-size:14px;font-weight:700}
+  #fen textarea{flex:1;min-height:0;width:100%;padding:13px;border-radius:12px;
+    border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.35);color:#cfe0c0;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+    line-height:1.5;resize:none;outline:none}
+  #fen footer{display:flex;gap:9px}
+  #fen footer .act{margin:0;flex:1}
+
+  /* ---------- message ---------- */
+  #msg{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(14px);
+    padding:11px 22px;border-radius:12px;font-weight:650;font-size:12.5px;opacity:0;
+    transition:opacity .22s,transform .22s;pointer-events:none;z-index:60;
+    box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  #msg.vu{opacity:1;transform:translateX(-50%) translateY(0)}
+  #msg.ok{background:linear-gradient(160deg,#9ed45e,#6fae3c);color:#16200d}
+  #msg.ko{background:linear-gradient(160deg,#f28b8b,#d05656);color:#2a0d0d}
+
+  @media (max-width:780px){
+    #barre{width:186px;padding:13px}
+    #stats{display:none}
+    #aide{display:none}
+  }
 </style>
 </head>
 <body>
+
 <canvas id="cv"></canvas>
 
-<div class="panneau" id="outils">
-  <div class="grp">
-    <h3>Outil</h3>
-    <button data-outil="placer" class="on">Placer</button>
-    <button data-outil="pinceau">Pinceau (dispersion)</button>
-    <button data-outil="gomme">Gomme</button>
-    <button data-outil="spawn">Point d'apparition</button>
+<div class="carte" id="barre">
+  <h1><span></span>Editeur de cartes</h1>
+
+  <h2>Outil</h2>
+  <div class="grille">
+    <div class="opt on" data-outil="placer"><div class="ic">+</div>Placer</div>
+    <div class="opt" data-outil="pinceau"><div class="ic">~</div>Pinceau</div>
+    <div class="opt" data-outil="gomme"><div class="ic">x</div>Gomme</div>
+    <div class="opt" data-outil="spawn"><div class="ic">o</div>Apparition</div>
   </div>
-  <div class="grp">
-    <h3>Objet</h3>
-    <button data-type="arbre" class="on">Arbre</button>
-    <button data-type="buisson">Buisson</button>
-    <div style="font-size:11px;color:rgba(255,255,255,.45);margin-top:5px">
-      Taille fixe : arbre 88, buisson 75
+
+  <div id="blocObjet">
+    <h2>Objet</h2>
+    <div class="grille">
+      <div class="opt on" data-type="arbre"><div class="ic">A</div>Arbre</div>
+      <div class="opt" data-type="buisson"><div class="ic">b</div>Buisson</div>
     </div>
+    <div class="note">Taille fixe : arbre 88, buisson 75</div>
   </div>
-  <div class="grp" id="grpGomme">
-    <h3>Gomme</h3>
-    <label>Rayon <span class="val" id="vGom">300</span></label>
-    <input type="range" id="gomme" min="60" max="2000" step="10" value="300">
-  </div>
-  <div class="grp" id="grpPinceau">
-    <h3>Pinceau</h3>
-    <label>Portee <span class="val" id="vPort">600</span></label>
-    <input type="range" id="portee" min="150" max="2500" value="600">
-    <label>Densite <span class="val" id="vDens">6</span></label>
+
+  <div id="blocPinceau">
+    <h2>Pinceau</h2>
+    <div class="ligne">Portee <b id="vPort">600</b></div>
+    <input type="range" id="portee" min="150" max="2500" step="10" value="600">
+    <div class="ligne">Densite <b id="vDens">6</b></div>
     <input type="range" id="densite" min="1" max="30" value="6">
   </div>
-  <div class="grp">
-    <h3>Carte</h3>
-    <label>Nom</label>
-    <input type="text" id="nom" value="partie">
-    <label>Taille du monde</label>
-    <input type="number" id="monde" value="12800" step="100">
-    <label>Zone depart <span class="val" id="vR0">9200</span></label>
-    <input type="range" id="r0" min="200" max="20000" step="100" value="9200">
-    <label>Zone finale <span class="val" id="vR1">400</span></label>
-    <input type="range" id="r1" min="50" max="4000" step="50" value="400">
-    <div class="duo">
-      <div style="flex:1"><label>Attente (s)</label><input type="number" id="att" value="20"></div>
-      <div style="flex:1"><label>Duree (s)</label><input type="number" id="dur" value="160"></div>
-    </div>
+
+  <div id="blocGomme">
+    <h2>Gomme</h2>
+    <div class="ligne">Rayon <b id="vGom">300</b></div>
+    <input type="range" id="gomme" min="60" max="2000" step="10" value="300">
   </div>
-  <div class="grp">
-    <h3>Fichier</h3>
-    <button class="large" id="bExport">Exporter le JSON</button>
-    <button id="bImport">Importer / coller</button>
-    <button id="bVide">Tout effacer</button>
-    <button id="bAnnuler">Annuler (Cmd+Z)</button>
+
+  <h2>Carte</h2>
+  <input type="text" id="nom" value="partie" placeholder="Nom">
+  <div class="ligne">Taille du monde</div>
+  <input type="number" id="monde" value="12800" step="100">
+  <div class="ligne">Zone de depart <b id="vR0">9200</b></div>
+  <input type="range" id="r0" min="200" max="20000" step="100" value="9200">
+  <div class="ligne">Zone finale <b id="vR1">400</b></div>
+  <input type="range" id="r1" min="50" max="4000" step="50" value="400">
+  <div class="duo" style="margin-top:11px">
+    <div><div class="ligne" style="margin-top:0">Attente (s)</div>
+      <input type="number" id="att" value="20"></div>
+    <div><div class="ligne" style="margin-top:0">Duree (s)</div>
+      <input type="number" id="dur" value="160"></div>
   </div>
+
+  <h2>Fichier</h2>
+  <button class="act vert" id="bExport">Exporter le JSON</button>
+  <button class="act" id="bColler">Coller et importer</button>
+  <button class="act" id="bAnnuler">Annuler</button>
+  <button class="act rouge" id="bVide">Tout effacer</button>
 </div>
 
-<div class="panneau" id="infos"></div>
+<div class="carte" id="stats">
+  <div class="gros" id="sNb">0</div>
+  <div class="sous">objets</div>
+  <div class="st">Arbres <b id="sArb">0</b></div>
+  <div class="st">Buissons <b id="sBui">0</b></div>
+  <div class="st">Apparitions <b id="sSpw">0</b></div>
+  <div class="sep"></div>
+  <div class="st">Densite <b id="sDen">0</b></div>
+  <div class="st">Zoom <b id="sZoom">0%</b></div>
+</div>
+
 <div id="aide">
-  Glisser : dessiner &nbsp;|&nbsp; Deux doigts ou molette : zoom<br>
-  Espace + glisser, ou clic droit : deplacer la vue
+  <kbd>glisser</kbd> dessiner &nbsp; <kbd>molette</kbd> zoom &nbsp; <kbd>2 doigts</kbd> zoom<br>
+  <kbd>espace</kbd> ou <kbd>clic droit</kbd> deplacer &nbsp; <kbd>Cmd Z</kbd> annuler
 </div>
-<div id="msg"></div>
 
-<div id="zoneJson">
-  <div id="barreJson">
-    <button id="bCharger" class="large">Charger ce JSON</button>
-    <button id="bCopier">Copier</button>
-    <button id="bTelecharger">Telecharger</button>
-    <button id="bFermer">Fermer</button>
+<div id="voile">
+  <div class="carte" id="fen">
+    <header>
+      <h3 id="fenTitre">JSON de la carte</h3>
+      <button class="act" style="width:auto;margin:0;padding:7px 15px" id="bFermer">Fermer</button>
+    </header>
+    <textarea id="ta" spellcheck="false"></textarea>
+    <footer id="fenPied"></footer>
   </div>
-  <textarea id="ta" spellcheck="false"></textarea>
 </div>
+
+<div id="msg"></div>
 
 <script>
 'use strict';
@@ -469,15 +558,16 @@ function majInfos() {
   const t = Date.now();
   if (t < prochainInfos) return;
   prochainInfos = t + 200;                   // reconstruire le HTML 60 fois par seconde ne sert a rien
-  const na = carte.obs.filter(o => o.type === 'arbre').length;
-  const nb = carte.obs.length - na;
-  const parEcran = carte.monde ? (carte.obs.length / (carte.monde * carte.monde) * 1580 * 1100) : 0;
-  document.getElementById('infos').innerHTML =
-    '<b>' + carte.obs.length + '</b> objets<br>' +
-    na + ' arbres &middot; ' + nb + ' buissons<br>' +
-    carte.spawns.length + ' apparitions<br>' +
-    'densite : ' + parEcran.toFixed(1) + ' / ecran<br>' +
-    'zoom : ' + (vue.z * 100).toFixed(0) + '%';
+  let na = 0;
+  for (const o of carte.obs) if (o.type === 'arbre') na++;
+  const dens = carte.monde ? carte.obs.length / (carte.monde * carte.monde) * 1580 * 1100 : 0;
+  const p = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  p('sNb', carte.obs.length);
+  p('sArb', na);
+  p('sBui', carte.obs.length - na);
+  p('sSpw', carte.spawns.length);
+  p('sDen', dens.toFixed(1) + ' / ecran');
+  p('sZoom', (vue.z * 100).toFixed(0) + '%');
 }
 
 // ═══ edition ═══════════════════════════════════════════════════════
@@ -623,13 +713,23 @@ addEventListener('keyup', e => { if (e.code === 'Space') espace = false; });
 
 // ═══ panneau ═══════════════════════════════════════════════════════
 function groupe(sel, attr, cb) {
-  document.querySelectorAll(sel).forEach(b => b.onclick = () => {
-    document.querySelectorAll(sel).forEach(x => x.classList.remove('on'));
-    b.classList.add('on'); cb(b.dataset[attr]);
+  const els = document.querySelectorAll(sel);
+  els.forEach(b => b.onclick = () => {
+    els.forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    cb(b.dataset[attr]);
   });
 }
-groupe('[data-outil]', 'outil', v => outil = v);
+groupe('[data-outil]', 'outil', v => { outil = v; majBlocs(); });
 groupe('[data-type]', 'type', v => typeObj = v);
+
+// Ne montrer que les reglages de l'outil courant : le panneau reste court
+function majBlocs() {
+  document.getElementById('blocObjet').style.display =
+    (outil === 'placer' || outil === 'pinceau') ? 'block' : 'none';
+  document.getElementById('blocPinceau').style.display = outil === 'pinceau' ? 'block' : 'none';
+  document.getElementById('blocGomme').style.display = outil === 'gomme' ? 'block' : 'none';
+}
 
 function curseur(id, span, cb) {
   const el = document.getElementById(id);
@@ -640,19 +740,41 @@ curseur('portee', 'vPort', v => portee = v);
 curseur('densite', 'vDens', v => densite = v);
 curseur('r0', 'vR0', v => carte.zone.r0 = v);
 curseur('r1', 'vR1', v => carte.zone.r1 = v);
+
 document.getElementById('nom').oninput = e => carte.nom = e.target.value.trim() || 'carte';
-document.getElementById('monde').oninput = e => {
-  const v = Math.max(500, +e.target.value || 500);
+document.getElementById('monde').onchange = e => {
+  const v = Math.max(500, Math.round(+e.target.value || 500));
+  e.target.value = v;
   carte.monde = v; carte.zone.cx = v / 2; carte.zone.cy = v / 2;
-  document.getElementById('r0').max = v * 1.6;
+  const r0 = document.getElementById('r0');
+  r0.max = Math.round(v * 1.6);
+  if (carte.zone.r0 > +r0.max) { carte.zone.r0 = +r0.max; }
+  synchronisePanneau();
 };
-document.getElementById('att').oninput = e => carte.zone.attente = Math.max(0, +e.target.value || 0);
-document.getElementById('dur').oninput = e => carte.zone.duree = Math.max(1, +e.target.value || 1);
+document.getElementById('att').onchange = e => {
+  const v = Math.max(0, +e.target.value || 0); e.target.value = v; carte.zone.attente = v;
+};
+document.getElementById('dur').onchange = e => {
+  const v = Math.max(1, +e.target.value || 1); e.target.value = v; carte.zone.duree = v;
+};
 document.getElementById('bAnnuler').onclick = annule;
 document.getElementById('bVide').onclick = () => {
+  if (!carte.obs.length && !carte.spawns.length) return signale('La carte est deja vide');
   if (!confirm('Effacer tous les objets et points d\'apparition ?')) return;
-  memorise(); carte.obs = []; carte.spawns = []; cacheCos.clear(); reindexe(); signale('Carte videe');
+  memorise(); carte.obs = []; carte.spawns = [];
+  cacheCos.clear(); reindexe(); signale('Carte videe');
 };
+
+function synchronisePanneau() {
+  const v = (id, val) => document.getElementById(id).value = val;
+  const t = (id, val) => document.getElementById(id).textContent = val;
+  v('nom', carte.nom); v('monde', carte.monde);
+  document.getElementById('r0').max = Math.round(carte.monde * 1.6);
+  v('r0', carte.zone.r0); v('r1', carte.zone.r1);
+  v('att', carte.zone.attente); v('dur', carte.zone.duree);
+  t('vR0', Math.round(carte.zone.r0)); t('vR1', Math.round(carte.zone.r1));
+  t('vGom', rGomme); t('vPort', portee); t('vDens', densite);
+}
 
 // ═══ JSON ══════════════════════════════════════════════════════════
 function versJson() {
@@ -664,79 +786,103 @@ function versJson() {
     spawns: carte.spawns, obs: carte.obs
   }, null, 1);
 }
+
 function depuisJson(txt) {
   const m = JSON.parse(txt);
-  if (!m || typeof m !== 'object') throw new Error('racine invalide');
+  if (!m || typeof m !== 'object' || Array.isArray(m)) throw new Error('racine invalide');
   if (!Array.isArray(m.obs)) throw new Error('champ obs manquant');
   const monde = +m.monde;
   if (!isFinite(monde) || monde < 500) throw new Error('champ monde invalide');
   const z = m.zone || {};
   memorise();
   carte = {
-    nom: m.nom || 'carte', monde,
+    nom: (m.nom || 'carte') + '', monde: Math.round(monde),
     zone: { cx: +z.cx || monde / 2, cy: +z.cy || monde / 2,
-            r0: +z.r0 || monde * 0.6, r1: +z.r1 || monde * 0.1,
-            attente: z.attente == null ? 12 : +z.attente,
-            duree: z.duree == null ? 70 : +z.duree },
-    spawns: Array.isArray(m.spawns) ? m.spawns.filter(s => isFinite(+s.x) && isFinite(+s.y))
-              .map(s => ({ x: Math.round(+s.x), y: Math.round(+s.y) })) : [],
-    obs: m.obs.filter(o => isFinite(+o.x) && isFinite(+o.y)).map((o, i) => ({
+            r0: +z.r0 || Math.round(monde * 0.6), r1: +z.r1 || Math.round(monde * 0.1),
+            attente: z.attente == null ? 12 : Math.max(0, +z.attente || 0),
+            duree: z.duree == null ? 70 : Math.max(1, +z.duree || 1) },
+    spawns: Array.isArray(m.spawns)
+      ? m.spawns.filter(s => s && isFinite(+s.x) && isFinite(+s.y))
+                .map(s => ({ x: Math.round(+s.x), y: Math.round(+s.y) })) : [],
+    obs: m.obs.filter(o => o && isFinite(+o.x) && isFinite(+o.y)).map((o, i) => ({
       x: Math.round(+o.x), y: Math.round(+o.y),
-      r: Math.round(isFinite(+o.r) ? +o.r : (o.type === 'buisson' ? R_BUISSON : R_ARBRE)),
+      r: Math.round(isFinite(+o.r) && +o.r > 0 ? +o.r
+           : (o.type === 'buisson' ? R_BUISSON : R_ARBRE)),
       type: o.type === 'buisson' ? 'buisson' : 'arbre',
-      seed: (+o.seed | 0) || ((i + 1) * 2654435761 | 0)
+      seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0)
     }))
   };
   cacheCos.clear(); reindexe();
   vue = { x: carte.monde / 2, y: carte.monde / 2, z: Math.min(1, 900 / carte.monde) };
   synchronisePanneau();
-}
-function synchronisePanneau() {
-  document.getElementById('nom').value = carte.nom;
-  document.getElementById('monde').value = carte.monde;
-  document.getElementById('r0').max = carte.monde * 1.6;
-  document.getElementById('r0').value = carte.zone.r0;
-  document.getElementById('r1').value = carte.zone.r1;
-  document.getElementById('att').value = carte.zone.attente;
-  document.getElementById('dur').value = carte.zone.duree;
-  document.getElementById('vR0').textContent = Math.round(carte.zone.r0);
-  document.getElementById('vR1').textContent = Math.round(carte.zone.r1);
+  return carte.obs.length;
 }
 
-const zone = document.getElementById('zoneJson'), ta = document.getElementById('ta');
+// ── fenetre ────────────────────────────────────────────────────────
+const voile = document.getElementById('voile'), ta = document.getElementById('ta');
+const pied = document.getElementById('fenPied'), titre = document.getElementById('fenTitre');
+function ouvre(nomTitre, boutons, contenu) {
+  titre.textContent = nomTitre;
+  ta.value = contenu || '';
+  pied.innerHTML = '';
+  for (const [libelle, classe, action] of boutons) {
+    const b = document.createElement('button');
+    b.className = 'act ' + classe; b.textContent = libelle; b.onclick = action;
+    pied.appendChild(b);
+  }
+  voile.style.display = 'flex';
+}
+function ferme() { voile.style.display = 'none'; }
+document.getElementById('bFermer').onclick = ferme;
+voile.onclick = e => { if (e.target === voile) ferme(); };
+
 document.getElementById('bExport').onclick = () => {
-  ta.value = versJson(); zone.style.display = 'block'; ta.focus(); ta.select();
+  ouvre('JSON de la carte', [
+    ['Copier', 'vert', async () => {
+      try { await navigator.clipboard.writeText(ta.value); }
+      catch (e) { ta.select(); document.execCommand('copy'); }
+      signale('JSON copie');
+    }],
+    ['Telecharger', '', () => {
+      const b = new Blob([ta.value], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b); a.download = carte.nom + '.json'; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }],
+  ], versJson());
+  ta.focus(); ta.select();
 };
-document.getElementById('bImport').onclick = () => {
-  ta.value = ''; zone.style.display = 'block'; ta.focus();
-};
-document.getElementById('bFermer').onclick = () => zone.style.display = 'none';
-document.getElementById('bCopier').onclick = async () => {
-  try { await navigator.clipboard.writeText(ta.value); signale('Copie'); }
-  catch (e) { ta.select(); document.execCommand('copy'); signale('Copie'); }
-};
-document.getElementById('bTelecharger').onclick = () => {
-  const b = new Blob([ta.value], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(b); a.download = carte.nom + '.json'; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-};
-document.getElementById('bCharger').onclick = () => {
-  try { depuisJson(ta.value); zone.style.display = 'none'; signale('Carte chargee'); }
-  catch (e) { signale('JSON invalide : ' + e.message, true); }
+
+// Import : un seul chemin, le presse-papiers. Si le navigateur refuse la
+// lecture automatique, on ouvre la meme fenetre pour un collage a la main.
+function importe(txt) {
+  if (!txt || !txt.trim()) { signale('Rien a importer', true); return false; }
+  try {
+    const n = depuisJson(txt);
+    ferme(); signale('Carte importee : ' + n + ' objets');
+    return true;
+  } catch (e) { signale('JSON invalide : ' + e.message, true); return false; }
+}
+document.getElementById('bColler').onclick = async () => {
+  let txt = null;
+  try { txt = await navigator.clipboard.readText(); } catch (e) { txt = null; }
+  if (txt && txt.trim()) { importe(txt); return; }
+  ouvre('Coller le JSON puis valider',
+    [['Importer', 'vert', () => importe(ta.value)]], '');
+  ta.focus();
 };
 
 let minuteur = null;
 function signale(txt, err) {
   const el = document.getElementById('msg');
   el.textContent = txt;
-  el.style.background = err ? 'rgba(248,113,113,.95)' : 'rgba(140,193,82,.95)';
-  el.style.opacity = 1;
+  el.className = 'vu ' + (err ? 'ko' : 'ok');
   clearTimeout(minuteur);
-  minuteur = setTimeout(() => el.style.opacity = 0, 1800);
+  minuteur = setTimeout(() => el.className = err ? 'ko' : 'ok', 2000);
 }
 
-redim(); reindexe(); synchronisePanneau(); dessine();
+redim(); reindexe(); majBlocs(); synchronisePanneau(); dessine();
+
 </script>
 </body>
 </html>
