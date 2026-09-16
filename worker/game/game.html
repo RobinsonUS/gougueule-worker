@@ -850,10 +850,10 @@ function dessineViseur(x, y) {
 // ===================== minimap + HUD stats =====================
 // Fenetre locale centree sur le joueur. Elle couvre MM_CASES cases du
 // sol, mais le quadrillage affiche est regroupe par MM_GROUPE cases :
-// 32 / 4 = 8 grands carreaux de large, sinon c'est illisible.
+// 80 / 10 = 8 grands carreaux de large, sinon c'est illisible.
 // Peu d'objets a l'ecran, donc on dessine directement, sans canevas
 // intermediaire a tenir a jour.
-var MM_CASES = 32, MM_GROUPE = 4;
+var MM_CASES = 80, MM_GROUPE = 10;
 
 function dessineMinimap() {
   var mW = 220, mH = 220;
@@ -919,9 +919,9 @@ function dessineMinimap() {
     for (var gy = Math.ceil(Math.max(0, h2) / pasG) * pasG; gy <= Math.min(MONDE, b); gy += pasG) {
       ctx.moveTo(Math.max(0, g), gy); ctx.lineTo(Math.min(MONDE, d), gy);
     }
-    ctx.globalAlpha = 0.55;                // un cran sous la grille du jeu
+    ctx.globalAlpha = 0.45;                // un cran sous la grille du jeu
     ctx.strokeStyle = C.ligne;
-    ctx.lineWidth = 2.5 / k;               // epaisseur constante a l'ecran
+    ctx.lineWidth = 3 / k;                 // epaisseur constante a l'ecran
     ctx.stroke();
     ctx.globalAlpha = 1;
 
