@@ -2305,7 +2305,8 @@ function connect() {
       alphaVisJoueurs = {};
       buffer = [];                           // interpolation de l'ancienne carte
       snapDernier = null;                    // une image blanche vaut mieux qu'une fausse
-      pendantes = []; seq = 0;               // commandes non confirmees : caduques
+      pendantes = [];        // commandes non confirmees : caduques
+      // seq n'est PAS remis a zero : le serveur le veut monotone
       erreurLissage.x = 0; erreurLissage.y = 0;
       if (msg.spawn) {
         if (moi) { moi.x = msg.spawn.x; moi.y = msg.spawn.y; }
@@ -2514,7 +2515,7 @@ function produitCommande(dt) {
   aEnvoyer.push(cmd);
 
   if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({ type: 'in', c: aEnvoyer }));
+    ws.send(JSON.stringify({ type: 'in', c: aEnvoyer, mv: mapVerLocal }));
     aEnvoyer = [];
   }
 }
