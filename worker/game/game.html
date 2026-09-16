@@ -2253,6 +2253,8 @@ function connect() {
     var msg = JSON.parse(e.data);
 
     if (msg.type === 'pong') {
+      // Retard d'interpolation calcule pour CE client seulement
+      if (typeof msg.retard === 'number') RETARD = msg.retard;
       var envoye = pingEnvoi[msg.c];
       if (envoye) {
         var t3 = Date.now();
@@ -2336,7 +2338,6 @@ function connect() {
         if (ag.tirTimer > 0.30) genMuzzleFlash(ag);
       }
       majObs(msg.decorMaj, msg.mapVer);
-      if (typeof msg.retard === 'number') RETARD = msg.retard;
       snapDernier = msg;
       pousseSnap(msg);
       reconcilie(msg);
