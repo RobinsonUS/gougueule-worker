@@ -2291,6 +2291,34 @@ function connect() {
       return;
     }
 
+    // Changement de carte en cours de session : on repart de zero.
+    // Tout ce qui vient de l'ancienne carte est jete, sinon on garde des
+    // hitbox, des particules ou une prediction qui ne veulent plus rien
+    // dire sur la nouvelle.
+    if (msg.type === 'mapSwitch') {
+      if (msg.cfg) for (var k2 in msg.cfg) SIM[k2] = msg.cfg[k2];
+      if (SIM.MONDE) MONDE = SIM.MONDE;
+      mapVerLocal = msg.mapVer || (mapVerLocal + 1);
+      initObs(msg.decor);                    // decor + index repartis a neuf
+      localParticules.length = 0;
+      _deathFades = {};
+      alphaVisJoueurs = {};
+      buffer = [];                           // interpolation de l'ancienne carte
+      snapDernier = null;                    // une image blanche vaut mieux qu'une fausse
+      pendantes = []; seq = 0;               // commandes non confirmees : caduques
+      erreurLissage.x = 0; erreurLissage.y = 0;
+      if (msg.spawn) {
+        if (moi) { moi.x = msg.spawn.x; moi.y = msg.spawn.y; }
+        cam.x = msg.spawn.x; cam.y = msg.spawn.y;
+      }
+      if (moi) {
+        moi.munitions = SIM.CHARGEUR; moi.rechargement = 0; moi.dureeRechargeMax = 0;
+        moi.tirTimer = 0; moi.recul = 0; moi.recharge = 0;
+        moi.slot = 1; moi.inv = [null, 'fusil', null, null, null, null];
+      }
+      return;
+    }
+
     if (msg.type === 'erreur') {
       // Erreur serveur (room introuvable, partie en cours, etc.)
       etatJeu = 'lobby';
