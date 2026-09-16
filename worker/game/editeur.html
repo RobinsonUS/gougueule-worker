@@ -59,8 +59,14 @@
     <h3>Objet</h3>
     <button data-type="arbre" class="on">Arbre</button>
     <button data-type="buisson">Buisson</button>
-    <label>Rayon <span class="val" id="vRayon">87</span></label>
-    <input type="range" id="rayon" min="20" max="220" value="87">
+    <div style="font-size:11px;color:rgba(255,255,255,.45);margin-top:5px">
+      Taille fixe : arbre 88, buisson 75
+    </div>
+  </div>
+  <div class="grp" id="grpGomme">
+    <h3>Gomme</h3>
+    <label>Rayon <span class="val" id="vGom">300</span></label>
+    <input type="range" id="gomme" min="60" max="2000" step="10" value="300">
   </div>
   <div class="grp" id="grpPinceau">
     <h3>Pinceau</h3>
@@ -310,19 +316,21 @@ let carte = {
 };
 let vue = { x: 6400, y: 6400, z: 0.06 };
 let outil = 'placer', typeObj = 'arbre';
-let rayon = 87, portee = 600, densite = 6;
+let portee = 600, densite = 6, rGomme = 300;
+// Un element a toujours sa taille de jeu : elle n'est pas reglable.
+const RAYON = { arbre: Math.round(R_ARBRE), buisson: Math.round(R_BUISSON) };
 let histoire = [];
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
 
 function memorise() {
-  histoire.push(JSON.stringify({ obs: carte.obs, spawns: carte.spawns }));
+  histoire.push(JSON.stringify(carte));      // carte entiere : annuler un import doit tout rendre
   if (histoire.length > 60) histoire.shift();
 }
 function annule() {
   if (!histoire.length) return signale('Rien a annuler');
-  const e = JSON.parse(histoire.pop());
-  carte.obs = e.obs; carte.spawns = e.spawns;
+  carte = JSON.parse(histoire.pop());
+  cacheCos.clear(); reindexe(); synchronisePanneau();
   signale('Annule');
 }
 
@@ -355,7 +363,8 @@ function dessine() {
   ctx.fillStyle = C.sol;
   ctx.fillRect(0, 0, carte.monde, carte.monde);
   // grille
-  const pas = CELL * 4;
+  let pas = CELL * 4;
+  while (pas * vue.z < 6) pas *= 4;          // sinon des milliers de traits confondus
   ctx.strokeStyle = C.ligne; ctx.lineWidth = 1 / vue.z;
   ctx.beginPath();
   for (let i = 0; i <= carte.monde; i += pas) {
@@ -380,13 +389,41 @@ function dessine() {
   const x0 = vue.x - innerWidth / 2 / vue.z - marge, x1 = vue.x + innerWidth / 2 / vue.z + marge;
   const y0 = vue.y - innerHeight / 2 / vue.z - marge, y1 = vue.y + innerHeight / 2 / vue.z + marge;
   const visibles = carte.obs.filter(o => o.x > x0 && o.x < x1 && o.y > y0 && o.y < y1);
-  for (const o of visibles) {
-    const c = cosmo(o);
-    if (o.type === 'arbre') dessineOmbreArbre(c); else dessineOmbreBuisson(c);
-  }
-  for (const o of visibles) {
-    const c = cosmo(o);
-    if (o.type === 'arbre') dessineArbreTexture(c); else dessineBuissonTexture(c);
+
+  // Vue d'ensemble : plus rien n'est hors champ, et le dessin complet d'un
+  // millier de feuillages lobes coute cher pour des taches de 3 pixels.
+  // En dessous d'une certaine taille a l'ecran on trace un simple disque.
+  const tailleEcran = R_ARBRE * vue.z;
+  if (tailleEcran < 7) {
+    for (const o of visibles) {
+      ctx.fillStyle = o.type === 'arbre' ? '#3b6b36' : '#7fb05a';
+      ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, 6.2832); ctx.fill();
+    }
+  } else if (tailleEcran < 26) {
+    // Zoom intermediaire : la silhouette suffit a se reperer. On garde la
+    // forme lobee et le contour, on laisse tomber l'ombre et les taches,
+    // invisibles a cette taille et qui triplent le nombre de traces.
+    for (const o of visibles) {
+      const c = cosmo(o);
+      const pal = o.type === 'arbre' ? C.arbres[c.teinte] : C.buisson;
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = o.r * (o.type === 'arbre' ? 0.15 : 0.13);
+      ctx.strokeStyle = o.type === 'arbre' ? C.traitArbre : C.buisson.trait;
+      cheminBlob(o.x, o.y, o.r * 0.92, c.lobes, c.phase, 0.075);
+      ctx.stroke();
+      ctx.fillStyle = pal.ext;
+      cheminBlob(o.x, o.y, o.r * 0.92, c.lobes, c.phase, 0.075);
+      ctx.fill();
+    }
+  } else {
+    for (const o of visibles) {
+      const c = cosmo(o);
+      if (o.type === 'arbre') dessineOmbreArbre(c); else dessineOmbreBuisson(c);
+    }
+    for (const o of visibles) {
+      const c = cosmo(o);
+      if (o.type === 'arbre') dessineArbreTexture(c); else dessineBuissonTexture(c);
+    }
   }
 
   // points d'apparition
@@ -399,11 +436,17 @@ function dessine() {
 
   ctx.restore();
 
-  // curseur du pinceau
-  if (outil === 'pinceau' && souris.dedans) {
+  // curseur des outils a rayon
+  if (souris.dedans && (outil === 'pinceau' || outil === 'gomme')) {
     const p = versEcran(souris.mx, souris.my);
-    ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(p.x, p.y, portee * vue.z, 0, 6.2832); ctx.stroke();
+    const r = (outil === 'gomme' ? rGomme : portee) * vue.z;
+    ctx.strokeStyle = outil === 'gomme' ? 'rgba(255,120,120,.95)' : 'rgba(255,255,255,.75)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.2832); ctx.stroke();
+    if (outil === 'gomme') {
+      ctx.fillStyle = 'rgba(255,90,90,.13)';
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.2832); ctx.fill();
+    }
   }
   majInfos();
   requestAnimationFrame(dessine);
@@ -421,7 +464,11 @@ function cosmo(o) {
   return c;
 }
 
+let prochainInfos = 0;
 function majInfos() {
+  const t = Date.now();
+  if (t < prochainInfos) return;
+  prochainInfos = t + 200;                   // reconstruire le HTML 60 fois par seconde ne sert a rien
   const na = carte.obs.filter(o => o.type === 'arbre').length;
   const nb = carte.obs.length - na;
   const parEcran = carte.monde ? (carte.obs.length / (carte.monde * carte.monde) * 1580 * 1100) : 0;
@@ -436,15 +483,40 @@ function majInfos() {
 // ═══ edition ═══════════════════════════════════════════════════════
 const graine = () => (Math.random() * 2147483647) | 0;
 
+// Index par cases : sans lui, chaque objet pose comparait sa position aux
+// 700 autres, et le pinceau en pose une centaine par mouvement de souris.
+let index = null, tailleCase = 260;
+function cle(x, y) { return Math.floor(x / tailleCase) + ':' + Math.floor(y / tailleCase); }
+function indexeUn(o) {
+  const k = cle(o.x, o.y);
+  let c = index.get(k); if (!c) { c = []; index.set(k, c); }
+  c.push(o);
+}
+function reindexe() {
+  let rMax = 0;
+  for (const o of carte.obs) if (o.r > rMax) rMax = o.r;
+  tailleCase = Math.max(260, rMax * 2 + 40);   // garantit qu'un voisin ne sort pas des 9 cases
+  index = new Map();
+  for (const o of carte.obs) indexeUn(o);
+}
+function autour(x, y) {
+  const cx = Math.floor(x / tailleCase), cy = Math.floor(y / tailleCase), out = [];
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+    const c = index.get((cx + dx) + ':' + (cy + dy));
+    if (c) for (const o of c) out.push(o);
+  }
+  return out;
+}
 function libre(x, y, r) {
   if (x < 0 || x > carte.monde || y < 0 || y > carte.monde) return false;
-  for (const o of carte.obs) if (Math.hypot(o.x - x, o.y - y) < o.r + r + 20) return false;
+  for (const o of autour(x, y)) if (Math.hypot(o.x - x, o.y - y) < o.r + r + 20) return false;
   return true;
 }
 function pose(x, y) {
-  const r = typeObj === 'arbre' ? rayon : rayon * (R_BUISSON / R_ARBRE);
+  const r = RAYON[typeObj];
   if (!libre(x, y, r)) return false;
-  carte.obs.push({ x: Math.round(x), y: Math.round(y), r: Math.round(r), type: typeObj, seed: graine() });
+  const o = { x: Math.round(x), y: Math.round(y), r, type: typeObj, seed: graine() };
+  carte.obs.push(o); indexeUn(o);
   return true;
 }
 function disperse(cx, cy) {
@@ -455,11 +527,14 @@ function disperse(cx, cy) {
     pose(cx + Math.cos(a) * d, cy + Math.sin(a) * d);
   }
 }
+// N'efface que ce dont le centre est dans le cercle affiche, rien au-dela.
 function efface(x, y, r) {
-  const avant = carte.obs.length;
-  carte.obs = carte.obs.filter(o => Math.hypot(o.x - x, o.y - y) > (r || o.r));
-  carte.spawns = carte.spawns.filter(s => Math.hypot(s.x - x, s.y - y) > (r || 200));
-  return carte.obs.length !== avant;
+  const avant = carte.obs.length + carte.spawns.length;
+  carte.obs = carte.obs.filter(o => Math.hypot(o.x - x, o.y - y) > r);
+  carte.spawns = carte.spawns.filter(s => Math.hypot(s.x - x, s.y - y) > r);
+  const change = carte.obs.length + carte.spawns.length !== avant;
+  if (change) reindexe();
+  return change;
 }
 
 // ═══ entrees ═══════════════════════════════════════════════════════
@@ -475,8 +550,8 @@ function debut(e) {
   const m = versMonde(p.x, p.y);
   souris.mx = m.x; souris.my = m.y; souris.dedans = true;
   if (espace || e.button === 2 || (e.touches && e.touches.length === 2)) { deplace = true; dernier = p; return; }
-  appuye = true; aMemorise = false;
-  agit(m.x, m.y);
+  appuye = true; aMemorise = false; dernierJet = null;
+  agit(m.x, m.y, true);
 }
 function bouge(e) {
   const p = pointDe(e);
@@ -486,16 +561,23 @@ function bouge(e) {
     vue.x -= (p.x - dernier.x) / vue.z; vue.y -= (p.y - dernier.y) / vue.z;
     dernier = p; return;
   }
-  if (appuye) agit(m.x, m.y);
+  if (appuye) agit(m.x, m.y, false);
 }
 function fin() { appuye = false; deplace = false; dernier = null; }
 
-function agit(x, y) {
+let dernierJet = null;
+function agit(x, y, presse) {
   if (!aMemorise) { memorise(); aMemorise = true; }
   if (outil === 'placer') pose(x, y);
-  else if (outil === 'pinceau') disperse(x, y);
-  else if (outil === 'gomme') efface(x, y, 160 / vue.z * 1.2);
-  else if (outil === 'spawn') carte.spawns.push({ x: Math.round(x), y: Math.round(y) });
+  else if (outil === 'pinceau') {
+    // Une passe par tiers de portee parcouru, sinon on redisperse au pixel
+    if (!dernierJet || Math.hypot(x - dernierJet.x, y - dernierJet.y) > portee * 0.33) {
+      disperse(x, y); dernierJet = { x, y };
+    }
+  }
+  else if (outil === 'gomme') efface(x, y, rGomme);
+  // Un point d'apparition se pose au clic, pas en continu pendant le glisser
+  else if (outil === 'spawn' && presse) carte.spawns.push({ x: Math.round(x), y: Math.round(y) });
 }
 
 cv.addEventListener('mousedown', debut);
@@ -505,7 +587,7 @@ cv.addEventListener('mouseleave', () => { souris.dedans = false; fin(); });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('touchstart', e => { e.preventDefault(); debut(e); }, { passive: false });
 cv.addEventListener('touchmove', e => { e.preventDefault(); bouge(e); }, { passive: false });
-cv.addEventListener('touchend', e => { e.preventDefault(); fin(); }, { passive: false });
+cv.addEventListener('touchend', e => { e.preventDefault(); souris.dedans = false; fin(); }, { passive: false });
 
 cv.addEventListener('wheel', e => {
   e.preventDefault();
@@ -547,19 +629,13 @@ function groupe(sel, attr, cb) {
   });
 }
 groupe('[data-outil]', 'outil', v => outil = v);
-groupe('[data-type]', 'type', v => { typeObj = v; curseurRayon(); });
+groupe('[data-type]', 'type', v => typeObj = v);
 
-function curseurRayon() {
-  const d = typeObj === 'arbre' ? R_ARBRE : R_BUISSON;
-  document.getElementById('rayon').value = Math.round(d);
-  rayon = typeObj === 'arbre' ? d : d * (R_ARBRE / R_BUISSON);
-  document.getElementById('vRayon').textContent = Math.round(d);
-}
 function curseur(id, span, cb) {
   const el = document.getElementById(id);
   el.oninput = () => { document.getElementById(span).textContent = el.value; cb(+el.value); };
 }
-curseur('rayon', 'vRayon', v => rayon = v);
+curseur('gomme', 'vGom', v => rGomme = v);
 curseur('portee', 'vPort', v => portee = v);
 curseur('densite', 'vDens', v => densite = v);
 curseur('r0', 'vR0', v => carte.zone.r0 = v);
@@ -575,7 +651,7 @@ document.getElementById('dur').oninput = e => carte.zone.duree = Math.max(1, +e.
 document.getElementById('bAnnuler').onclick = annule;
 document.getElementById('bVide').onclick = () => {
   if (!confirm('Effacer tous les objets et points d\'apparition ?')) return;
-  memorise(); carte.obs = []; carte.spawns = []; signale('Carte videe');
+  memorise(); carte.obs = []; carte.spawns = []; cacheCos.clear(); reindexe(); signale('Carte videe');
 };
 
 // ═══ JSON ══════════════════════════════════════════════════════════
@@ -611,7 +687,7 @@ function depuisJson(txt) {
       seed: (+o.seed | 0) || ((i + 1) * 2654435761 | 0)
     }))
   };
-  cacheCos.clear();
+  cacheCos.clear(); reindexe();
   vue = { x: carte.monde / 2, y: carte.monde / 2, z: Math.min(1, 900 / carte.monde) };
   synchronisePanneau();
 }
@@ -660,7 +736,7 @@ function signale(txt, err) {
   minuteur = setTimeout(() => el.style.opacity = 0, 1800);
 }
 
-redim(); curseurRayon(); synchronisePanneau(); dessine();
+redim(); reindexe(); synchronisePanneau(); dessine();
 </script>
 </body>
 </html>
