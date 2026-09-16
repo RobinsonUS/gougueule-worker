@@ -823,7 +823,10 @@ wss.on('connection', (ws) => {
           const a = rooms[gid].partie.agents[pid];
           if (a && typeof msg.rtt === 'number') a.rtt = Math.min(600, Math.max(0, msg.rtt));
         }
-        try { ws.send(JSON.stringify({ type: 'pong', c: msg.c, st: Date.now() })); } catch {}
+        try {
+          const ag = (pid && rooms[gid] && rooms[gid].partie) ? rooms[gid].partie.agents[pid] : null;
+          ws.send(JSON.stringify({ type: 'pong', c: msg.c, st: Date.now(), retard: retardPour(ag) }));
+        } catch {}
       }
     } catch (err) {
       console.error('[WS error]', err.message);
@@ -916,10 +919,13 @@ function boucleServeur() {
   setTimeout(boucleServeur, Math.max(1, prochain - Date.now()));
 }
 
-function retardCommun(p) {
-  let pire = 0;
-  for (const a of Object.values(p.agents)) pire = Math.max(pire, (a.rtt || 120) / 2);
-  return Math.round(Math.min(320, Math.max(90, pire + 60)));
+// Retard d'interpolation propre a UN joueur. Auparavant une seule valeur
+// commune etait calculee sur le pire ping de la partie : un seul joueur
+// mal connecte degradait la fluidite de tous les autres, et les bots
+// comptaient dans le calcul avec un ping fictif de 120 ms.
+function retardPour(a) {
+  const moitie = ((a && a.rtt) || 120) / 2;
+  return Math.round(Math.min(320, Math.max(90, moitie + 60)));
 }
 
 function envoieSnapshot(room) {
@@ -942,7 +948,7 @@ function envoieSnapshot(room) {
 
   const base = {
     type: 'snap', tick: p.tick, t: p.t, st: Date.now(), attente: !p.demarree, mapVer: p.mapVer,
-    retard: retardCommun(p), fini: p.fini, vainqueur: p.vainqueur, zone: p.zone,
+    fini: p.fini, vainqueur: p.vainqueur, zone: p.zone,
     phaseLobby, compteARebours, nbJoueursLobby,
     balles: p.balles.map(b => ({ id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par })),
     kills: p.kills, evts: p.evts, decorMaj,
