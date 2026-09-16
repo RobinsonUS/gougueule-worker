@@ -848,10 +848,12 @@ function dessineViseur(x, y) {
 
 // ===================== nom au-dessus de la tête =====================
 // ===================== minimap + HUD stats =====================
-// Fenetre locale centree sur le joueur, large de MM_CARREAUX carreaux de
-// la grille du sol. Peu d'objets a l'ecran, donc on dessine directement :
-// pas de canevas intermediaire a tenir a jour.
-var MM_CARREAUX = 8;
+// Fenetre locale centree sur le joueur. Elle couvre MM_CASES cases du
+// sol, mais le quadrillage affiche est regroupe par MM_GROUPE cases :
+// 32 / 4 = 8 grands carreaux de large, sinon c'est illisible.
+// Peu d'objets a l'ecran, donc on dessine directement, sans canevas
+// intermediaire a tenir a jour.
+var MM_CASES = 32, MM_GROUPE = 4;
 
 function dessineMinimap() {
   var mW = 220, mH = 220;
@@ -860,19 +862,23 @@ function dessineMinimap() {
 
   ctx.save();
 
-  // Fond vert foncé à 30%, coins légèrement arrondis
+  // Cadre arrondi. Reconstruit a la demande : dessiner la grille et les
+  // arbres cree d'autres chemins, donc celui-ci ne survit pas.
   var r = 6; // rayon d'arrondi
-  ctx.beginPath();
-  ctx.moveTo(mX + r, mY);
-  ctx.lineTo(mX + mW - r, mY);
-  ctx.arcTo(mX + mW, mY, mX + mW, mY + r, r);
-  ctx.lineTo(mX + mW, mY + mH - r);
-  ctx.arcTo(mX + mW, mY + mH, mX + mW - r, mY + mH, r);
-  ctx.lineTo(mX + r, mY + mH);
-  ctx.arcTo(mX, mY + mH, mX, mY + mH - r, r);
-  ctx.lineTo(mX, mY + r);
-  ctx.arcTo(mX, mY, mX + r, mY, r);
-  ctx.closePath();
+  var cadre = function () {
+    ctx.beginPath();
+    ctx.moveTo(mX + r, mY);
+    ctx.lineTo(mX + mW - r, mY);
+    ctx.arcTo(mX + mW, mY, mX + mW, mY + r, r);
+    ctx.lineTo(mX + mW, mY + mH - r);
+    ctx.arcTo(mX + mW, mY + mH, mX + mW - r, mY + mH, r);
+    ctx.lineTo(mX + r, mY + mH);
+    ctx.arcTo(mX, mY + mH, mX, mY + mH - r, r);
+    ctx.lineTo(mX, mY + r);
+    ctx.arcTo(mX, mY, mX + r, mY, r);
+    ctx.closePath();
+  };
+  cadre();
 
   var enJeu = snapDernier && !snapDernier.phaseLobby && moi;
 
@@ -883,7 +889,7 @@ function dessineMinimap() {
     ctx.fill();
     ctx.globalAlpha = 1;
   } else {
-    var large = MM_CARREAUX * CELL;        // largeur de la fenetre, en unites monde
+    var large = MM_CASES * CELL;           // largeur de la fenetre, en unites monde
     var k = mW / large;                    // monde -> pixels de la minimap
     ctx.save();
     ctx.clip();                            // le chemin arrondi sert de masque
@@ -903,16 +909,21 @@ function dessineMinimap() {
     var sw = Math.min(MONDE, d) - sx, sh = Math.min(MONDE, b) - sy;
     if (sw > 0 && sh > 0) { ctx.fillStyle = C.sol; ctx.fillRect(sx, sy, sw, sh); }
 
-    // grille du sol, les memes carreaux qu'en jeu
+    // Quadrillage : une ligne toutes les MM_GROUPE cases du sol, et un peu
+    // plus discret que celui de la vraie carte.
+    var pasG = CELL * MM_GROUPE;
     ctx.beginPath();
-    for (var gx = Math.floor(Math.max(0, g) / CELL) * CELL; gx <= Math.min(MONDE, d); gx += CELL) {
+    for (var gx = Math.ceil(Math.max(0, g) / pasG) * pasG; gx <= Math.min(MONDE, d); gx += pasG) {
       ctx.moveTo(gx, Math.max(0, h2)); ctx.lineTo(gx, Math.min(MONDE, b));
     }
-    for (var gy = Math.floor(Math.max(0, h2) / CELL) * CELL; gy <= Math.min(MONDE, b); gy += CELL) {
+    for (var gy = Math.ceil(Math.max(0, h2) / pasG) * pasG; gy <= Math.min(MONDE, b); gy += pasG) {
       ctx.moveTo(Math.max(0, g), gy); ctx.lineTo(Math.min(MONDE, d), gy);
     }
-    ctx.strokeStyle = C.ligne; ctx.lineWidth = 1.5 / k;
+    ctx.globalAlpha = 0.55;                // un cran sous la grille du jeu
+    ctx.strokeStyle = C.ligne;
+    ctx.lineWidth = 2.5 / k;               // epaisseur constante a l'ecran
     ctx.stroke();
+    ctx.globalAlpha = 1;
 
     // decor : uniquement ce qui tombe dans la fenetre
     ctx.lineJoin = 'round';
@@ -940,7 +951,9 @@ function dessineMinimap() {
     ctx.restore();
   }
 
-  // Contour vert, semi-transparent
+  // Contour vert, semi-transparent : exactement le meme qu'en salle
+  // d'attente, d'ou la reconstruction du chemin.
+  cadre();
   ctx.strokeStyle = 'rgba(15, 35, 15, 0.33)';
   ctx.lineWidth = 3;
   ctx.stroke();
