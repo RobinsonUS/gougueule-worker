@@ -3,6 +3,7 @@ import { rw, rewriteImports, isJs, mkInterceptor, proxyWS,
          buildReqHdrs, buildOutHdrs, corsHdrs, rewriteHtml } from './proxy.js';
 import { uiNavigateur } from './navigateur.js';
 import gameHtml from '../game/game.html';
+import editeurHtml from '../game/editeur.html';
 import bgAuth  from '../game/bg_auth.png';
 import bgLobby from '../game/bg_lobby.png';
 import bouton  from '../game/bouton.png';
@@ -163,6 +164,15 @@ export default {
     if (imgRoutes[url.pathname]) {
       return new Response(imgRoutes[url.pathname], {
         headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' }
+      });
+    }
+
+    // ── Editeur de cartes ──
+    // Page autonome, aucun appel au serveur de jeu : elle sert juste a
+    // fabriquer les JSON de carte, qu'on recopie ensuite dans le depot.
+    if (url.pathname === '/editeur') {
+      return new Response(editeurHtml, {
+        headers: { 'content-type': 'text/html;charset=utf-8', 'cache-control': 'no-store' }
       });
     }
 
