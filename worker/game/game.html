@@ -855,6 +855,19 @@ function dessineViseur(x, y) {
 // intermediaire a tenir a jour.
 var MM_CASES = 64, MM_GROUPE = 8;
 
+// Silhouette simplifiee : 12 segments au lieu de 48, un seul chemin
+// reutilise pour le contour et le remplissage.
+function blobLeger(x, y, r, lobes, phase) {
+  ctx.beginPath();
+  for (var i = 0; i < 12; i++) {
+    var a = i / 12 * Math.PI * 2;
+    var rr = r * (1 + Math.sin(a * (lobes || 10) + (phase || 0)) * 0.075);
+    var px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
 function dessineMinimap() {
   var mW = 220, mH = 220;
   var mX = LARG - mW - 12;
@@ -926,7 +939,9 @@ function dessineMinimap() {
     ctx.stroke();
     ctx.globalAlpha = 1;
 
-    // decor : uniquement ce qui tombe dans la fenetre
+    // Decor : uniquement ce qui tombe dans la fenetre, et en version
+    // allegee. cheminBlob trace 48 segments par forme, ce qui est inutile
+    // a cette taille : 12 suffisent, et un seul trace au lieu de trois.
     ctx.lineJoin = 'round';
     for (var i = 0; i < localObs.length; i++) {
       var o = localObs[i];
@@ -937,16 +952,11 @@ function dessineMinimap() {
         continue;
       }
       var arbre = o.type === 'arbre';
-      var pal = arbre ? C.arbres[o.teinte] : C.buisson;
+      blobLeger(o.x, o.y, o.r * 0.92, o.lobes, o.phase);
       ctx.lineWidth = o.r * 0.15;
       ctx.strokeStyle = arbre ? C.traitArbre : C.buisson.trait;
-      cheminBlob(o.x, o.y, o.r * 0.92, o.lobes, o.phase, 0.075);
       ctx.stroke();
-      ctx.fillStyle = pal.ext;
-      cheminBlob(o.x, o.y, o.r * 0.92, o.lobes, o.phase, 0.075);
-      ctx.fill();
-      ctx.fillStyle = pal.int;
-      cheminBlob(o.x, o.y, o.r * (arbre ? 0.58 : 0.55), o.lobes, o.phase, 0.105);
+      ctx.fillStyle = (arbre ? C.arbres[o.teinte] : C.buisson).ext;
       ctx.fill();
     }
     ctx.restore();
@@ -2618,11 +2628,10 @@ function connect() {
           if (!tMortVue) tMortVue = Date.now() - MORT_DELAI;
         }
         etatJeu = 'fin';
-        // Déconnecter immédiatement — plus de timer, plus de race condition
-        // L'écran de fin est une image statique totalement déconnectée de la room
+        // On laisse la connexion ouverte : la vue du vainqueur reste vivante
+        // et l'ecran de fin s'affiche par-dessus. C'est le bouton Continue
+        // qui ferme tout, via rejouer().
         aEnvoyer = [];
-        var _wsToClose = ws; ws = null;  // capturer AVANT de fermer
-        if (_wsToClose) { try { _wsToClose.close(1000, 'fin'); } catch {} }
       }
     }
   };
@@ -2694,7 +2703,7 @@ function connect() {
 var aEnvoyer = [];
 
 function produitCommande(dt) {
-  if (!moi || (etatJeu !== 'jeu' && etatJeu !== 'mort' && etatJeu !== 'fin')) return;
+  if (!moi || etatJeu !== 'jeu') return;   // mort ou fin : spectateur, aucune commande
   calcInput();
 
   // En mode pause (mort ou fin) : mouvement uniquement, pas de tir
@@ -2917,7 +2926,6 @@ function boucle(maintenant) {
   precedent = maintenant;
 
   if (etatJeu === 'lobby' || etatJeu === 'connecting') return;
-  if (etatJeu === 'mort' || etatJeu === 'fin') return;   // spectateur : aucune commande
 
   window._lastDt = dt;
   produitCommande(dt);
