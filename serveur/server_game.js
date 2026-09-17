@@ -480,8 +480,10 @@ function pas(p) {
     if (!p._figes) {
       p._figes = true;
       for (const a of arr) {
+        // On fige le mouvement et les animations en cours, mais on ne
+        // touche pas a l'inventaire : le vainqueur garde l'arme en main
+        // s'il en avait une, et reste les mains vides sinon.
         a.file.length = 0; a._dernCmd = null;
-        a.slot = 0;                       // mains vides : pose Idle
         a.tirTimer = 0; a.recul = 0; a.poingTimer = 0;
         a.secousse = 0; a.rechargement = 0; a.dureeRechargeMax = 0;
       }
