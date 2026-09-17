@@ -248,6 +248,42 @@ function tue(p, c, tueur, etiquette) {
   p.kills.push({ killer: tueur ? tueur.name : (etiquette || 'Zone'), victim: c.name });
 }
 
+// Simulation des balles, isolee pour pouvoir continuer a tourner une fois
+// la partie terminee.
+function majBalles(p, arr) {
+  for (let k = p.balles.length - 1; k >= 0; k--) {
+    const b = p.balles[k];
+    const dx = b.vx * DT, dy = b.vy * DT;
+    b.reste -= Math.hypot(dx, dy);
+    if (b.reste <= 0) { p.balles.splice(k, 1); continue; }
+    // Supprimer si hors map
+    const nx2 = b.x + dx, ny2 = b.y + dy;
+    if (nx2 < 0 || nx2 > p.monde || ny2 < 0 || ny2 > p.monde) { p.balles.splice(k, 1); continue; }
+    const nx = nx2, ny = ny2;
+    let mort = false;
+    for (const o of (p.arbresGrid ? queryGrid(p.arbresGrid, nx, ny) : (p.arbres || p.obs))) {
+      if (o.type !== 'arbre') continue;
+      if (Math.hypot(o.x - nx, o.y - ny) < o.r + R_BALLE) {
+        o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
+        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; p.arbresGrid = null; }
+        mort = true; break;
+      }
+    }
+    // Partie finie : les balles finissent leur trajet mais ne blessent plus
+    if (!mort && !p.fini) for (const c of arr) {
+      if (!c.vivant || c.id === b.par) continue;
+      if (Math.hypot(c.x - nx, c.y - ny) < R_JOUEUR + R_BALLE) {
+        c.pv -= p.rng() < 0.5 ? 10 : 11;
+        c.secousse = 0.16; c.touche = 0.30; c.revele = 0.35;
+        if (c.pv <= 0) tue(p, c, p.agents[b.par] || null, '?');
+        mort = true; break;
+      }
+    }
+    if (mort) p.balles.splice(k, 1); else { b.x = nx; b.y = ny; }
+  }
+
+}
+
 // ─────────────── Deplacement ───────────────────────────────────────
 function borne(a, monde) {
   a.x = Math.min(monde - R_JOUEUR, Math.max(R_JOUEUR, a.x));
@@ -437,6 +473,23 @@ function pas(p) {
 
   // Bot AI toutes les 3 ticks — la commande est réutilisée entre les ticks
   // (le mouvement reste fluide car appliqueCommande reçoit une commande valide)
+  // Partie terminee : personne ne bouge plus, tout le monde passe en Idle.
+  // On continue en revanche de simuler les balles encore en vol, pour
+  // qu'elles finissent leur course au lieu de rester suspendues.
+  if (p.fini) {
+    if (!p._figes) {
+      p._figes = true;
+      for (const a of arr) {
+        a.file.length = 0; a._dernCmd = null;
+        a.slot = 0;                       // mains vides : pose Idle
+        a.tirTimer = 0; a.recul = 0; a.poingTimer = 0;
+        a.secousse = 0; a.rechargement = 0; a.dureeRechargeMax = 0;
+      }
+    }
+    majBalles(p, arr);
+    return;
+  }
+
   for (const a of arr) {
     if (a.estBot && a.vivant) {
       if (p.tick % 3 === 0) {
@@ -448,7 +501,7 @@ function pas(p) {
 
   for (const a of arr) {
     if (!a.vivant) { a.file.length = 0; continue; }
-    const mouvSeulement = p.fini || (p.phaseLobby === true);
+    const mouvSeulement = (p.phaseLobby === true);
     if (a.file.length === 0) {
       appliqueCommande(p, a, { seq: a.lastSeq, mx: 0, my: 0, angle: a.angle, dt: DT }, mouvSeulement);
     } else {
@@ -462,8 +515,6 @@ function pas(p) {
   }
   separeJoueurs(arr, p.monde);
 
-  if (p.fini) return;
-
   for (const a of arr) {
     if (!a.vivant || !p.demarree) continue;
     if (Math.hypot(a.x - p.zone.x, a.y - p.zone.y) > p.zone.r) {
@@ -474,35 +525,7 @@ function pas(p) {
     }
   }
 
-  for (let k = p.balles.length - 1; k >= 0; k--) {
-    const b = p.balles[k];
-    const dx = b.vx * DT, dy = b.vy * DT;
-    b.reste -= Math.hypot(dx, dy);
-    if (b.reste <= 0) { p.balles.splice(k, 1); continue; }
-    // Supprimer si hors map
-    const nx2 = b.x + dx, ny2 = b.y + dy;
-    if (nx2 < 0 || nx2 > p.monde || ny2 < 0 || ny2 > p.monde) { p.balles.splice(k, 1); continue; }
-    const nx = nx2, ny = ny2;
-    let mort = false;
-    for (const o of (p.arbresGrid ? queryGrid(p.arbresGrid, nx, ny) : (p.arbres || p.obs))) {
-      if (o.type !== 'arbre') continue;
-      if (Math.hypot(o.x - nx, o.y - ny) < o.r + R_BALLE) {
-        o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
-        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; p.arbresGrid = null; }
-        mort = true; break;
-      }
-    }
-    if (!mort) for (const c of arr) {
-      if (!c.vivant || c.id === b.par) continue;
-      if (Math.hypot(c.x - nx, c.y - ny) < R_JOUEUR + R_BALLE) {
-        c.pv -= p.rng() < 0.5 ? 10 : 11;
-        c.secousse = 0.16; c.touche = 0.30; c.revele = 0.35;
-        if (c.pv <= 0) tue(p, c, p.agents[b.par] || null, '?');
-        mort = true; break;
-      }
-    }
-    if (mort) p.balles.splice(k, 1); else { b.x = nx; b.y = ny; }
-  }
+  majBalles(p, arr);
 
   const vivants = arr.filter(a => a.vivant);
   if (p.demarree && arr.length > 0) {
@@ -713,6 +736,7 @@ function demarrePartie(room, gid) {
     a.inv = [null, 'fusil', null, null, null, null];
     a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
     a.tueurId = null; a.place = 0;
+    p._figes = false;
     if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._tick = 0; a._dernCmd = null; }
   }
 
