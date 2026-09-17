@@ -1790,6 +1790,19 @@ var idSpectate = null;      // agent suivi une fois mort
 var agentVue = null;        // agent dont on affiche la vue (soi, ou le suivi)
 var btnContinue = { x: 0, y: 0, w: 0, h: 0, presse: false };
 
+// Fin de partie : on laisse les dernieres balles finir leur course, puis on
+// fige la vue pour de bon. A partir de la, l'ecran n'est plus qu'une image :
+// si le vainqueur quitte la room, ceux qui le regardaient ne voient pas son
+// personnage disparaitre ni sa barre de vie se vider.
+var vueFigee = null, tFinPartie = 0;
+var FIN_ATTENTE_MAX = 2500;   // on ne patiente pas indefiniment
+
+function doitFiger(vue) {
+  if (vueFigee || etatJeu !== 'fin' || !tFinPartie) return false;
+  var plusDeBalles = !vue.balles || vue.balles.length === 0;
+  return plusDeBalles || Date.now() - tFinPartie > FIN_ATTENTE_MAX;
+}
+
 // Cible de spectateur : le tueur s'il vit, sinon le tueur du tueur,
 // sinon n'importe quel vivant.
 function choisitSpectate(ags, depuis) {
@@ -2610,6 +2623,7 @@ function connect() {
     }
 
     if (msg.type === 'snap') {
+      if (vueFigee) return;            // l'image est figee, la suite ne compte plus
       for (var id in msg.agents) {
         if (id === pid) continue;
         var ag = msg.agents[id];
@@ -2676,6 +2690,7 @@ function connect() {
           if (!tMortVue) tMortVue = Date.now() - MORT_DELAI;
         }
         etatJeu = 'fin';
+        tFinPartie = Date.now();
         // On laisse la connexion ouverte : la vue du vainqueur reste vivante
         // et l'ecran de fin s'affiche par-dessus. C'est le bouton Continue
         // qui ferme tout, via rejouer().
@@ -2813,6 +2828,7 @@ function rejouer() {
   nbPings = 0; pingEnvoi = {};
   myKills = 0; nbVivants = 0; alphaVisJoueurs = {};
   tMortVue = 0; idSpectate = null; agentVue = null;
+  vueFigee = null; tFinPartie = 0;
   btnContinue.presse = false;
   showLobby();
 }
@@ -2986,8 +3002,9 @@ function boucle(maintenant) {
   majObsPerFrame(dt);
   // hud minimap dessiné dans dessine()
 
-  var vue = etatAffiche();
+  var vue = vueFigee || etatAffiche();
   if (!vue) return;
+  if (doitFiger(vue)) vueFigee = vue;   // plus rien ne bougera
 
   // Mort ou partie finie : la camera suit le joueur observe
   var idVue = pid;
