@@ -855,17 +855,83 @@ function dessineViseur(x, y) {
 // intermediaire a tenir a jour.
 var MM_CASES = 64, MM_GROUPE = 8;
 
-// Silhouette simplifiee : 12 segments au lieu de 48, un seul chemin
-// reutilise pour le contour et le remplissage.
-function blobLeger(x, y, r, lobes, phase) {
-  ctx.beginPath();
-  for (var i = 0; i < 12; i++) {
-    var a = i / 12 * Math.PI * 2;
-    var rr = r * (1 + Math.sin(a * (lobes || 10) + (phase || 0)) * 0.075);
+// La minimap est peinte en pleine qualite dans un canevas hors ecran qui
+// couvre une zone plus large que la fenetre affichee. Tant que le joueur
+// reste dans cette marge, chaque image se contente d'un drawImage.
+var MM_MARGE = 1.6;          // le cache couvre 1.6 fois la fenetre
+var _mmCv = null, _mmCx = 0, _mmCy = 0, _mmLarge = 0, _mmCle = '', _mmSale = false;
+
+function marqueMinimapSale() { _mmSale = true; }
+
+function blobSur(c, x, y, r, lobes, phase, amp) {
+  c.beginPath();
+  for (var i = 0; i <= 48; i++) {
+    var a = i / 48 * Math.PI * 2;
+    var rr = r * (1 + Math.sin(a * (lobes || 10) + (phase || 0)) * amp);
     var px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
-    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
   }
-  ctx.closePath();
+  c.closePath();
+}
+
+function peintMinimap(cx, cy, large, taillePx) {
+  if (!_mmCv) _mmCv = document.createElement('canvas');
+  if (_mmCv.width !== taillePx) { _mmCv.width = taillePx; _mmCv.height = taillePx; }
+  var c = _mmCv.getContext('2d');
+  var lc = large * MM_MARGE;               // cote couvert par le cache
+  var k = taillePx / lc;
+
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.fillStyle = C.dehors;
+  c.fillRect(0, 0, taillePx, taillePx);
+  c.translate(taillePx / 2, taillePx / 2);
+  c.scale(k, k);
+  c.translate(-cx, -cy);
+
+  var g = cx - lc / 2, d = cx + lc / 2, h2 = cy - lc / 2, b = cy + lc / 2;
+  var sx = Math.max(0, g), sy = Math.max(0, h2);
+  var sw = Math.min(MONDE, d) - sx, sh = Math.min(MONDE, b) - sy;
+  if (sw > 0 && sh > 0) { c.fillStyle = C.sol; c.fillRect(sx, sy, sw, sh); }
+
+  var pasG = CELL * MM_GROUPE;
+  c.beginPath();
+  for (var gx = Math.ceil(Math.max(0, g) / pasG) * pasG; gx <= Math.min(MONDE, d); gx += pasG) {
+    c.moveTo(gx, Math.max(0, h2)); c.lineTo(gx, Math.min(MONDE, b));
+  }
+  for (var gy = Math.ceil(Math.max(0, h2) / pasG) * pasG; gy <= Math.min(MONDE, b); gy += pasG) {
+    c.moveTo(Math.max(0, g), gy); c.lineTo(Math.min(MONDE, d), gy);
+  }
+  c.globalAlpha = 0.45;
+  c.strokeStyle = C.ligne;
+  c.lineWidth = 3 / (taillePx / large);    // epaisseur a l'ecran, pas dans le cache
+  c.stroke();
+  c.globalAlpha = 1;
+
+  c.lineJoin = 'round';
+  for (var i = 0; i < localObs.length; i++) {
+    var o = localObs[i];
+    if (o.x < g - o.r || o.x > d + o.r || o.y < h2 - o.r || o.y > b + o.r) continue;
+    if (o.type === 'souche') {
+      c.fillStyle = C.souche;
+      c.beginPath(); c.arc(o.x, o.y, o.r * 0.55, 0, 6.2832); c.fill();
+      continue;
+    }
+    var arbre = o.type === 'arbre';
+    var pal = arbre ? C.arbres[o.teinte] : C.buisson;
+    c.lineWidth = o.r * 0.15;
+    c.strokeStyle = arbre ? C.traitArbre : C.buisson.trait;
+    blobSur(c, o.x, o.y, o.r * 0.92, o.lobes, o.phase, 0.075);
+    c.stroke();
+    c.fillStyle = pal.ext;
+    blobSur(c, o.x, o.y, o.r * 0.92, o.lobes, o.phase, 0.075);
+    c.fill();
+    c.fillStyle = pal.int;
+    blobSur(c, o.x, o.y, o.r * (arbre ? 0.58 : 0.55), o.lobes, o.phase, 0.105);
+    c.fill();
+  }
+  _mmCx = cx; _mmCy = cy; _mmLarge = large;
+  _mmCle = MONDE + ':' + mapVerLocal + ':' + localObs.length;
+  _mmSale = false;
 }
 
 function dessineMinimap() {
@@ -904,61 +970,19 @@ function dessineMinimap() {
     ctx.globalAlpha = 1;
   } else {
     var large = MM_CASES * CELL;           // largeur de la fenetre, en unites monde
-    var k = mW / large;                    // monde -> pixels de la minimap
+    var taillePx = Math.round(mW * MM_MARGE * 2);   // 2x pour rester net
+    var cle = MONDE + ':' + mapVerLocal + ':' + localObs.length;
+    var marge = (large * MM_MARGE - large) / 2;     // de quoi bouger sans repeindre
+    if (!_mmCv || cle !== _mmCle || _mmSale || large !== _mmLarge ||
+        Math.abs(suivi.x - _mmCx) > marge * 0.9 || Math.abs(suivi.y - _mmCy) > marge * 0.9) {
+      peintMinimap(suivi.x, suivi.y, large, taillePx);
+    }
+    var px = taillePx / (large * MM_MARGE);         // pixels du cache par unite monde
+    var ox = (suivi.x - large / 2 - (_mmCx - large * MM_MARGE / 2)) * px;
+    var oy = (suivi.y - large / 2 - (_mmCy - large * MM_MARGE / 2)) * px;
     ctx.save();
-    ctx.clip();                            // le chemin arrondi sert de masque
-
-    ctx.fillStyle = C.dehors;              // au-dela des bords de la carte
-    ctx.fillRect(mX, mY, mW, mH);
-
-    ctx.translate(mX + mW / 2, mY + mH / 2);
-    ctx.scale(k, k);
-    ctx.translate(-suivi.x, -suivi.y);
-
-    var g = suivi.x - large / 2, d = suivi.x + large / 2;
-    var h2 = suivi.y - large / 2, b = suivi.y + large / 2;
-
-    // sol : seulement l'intersection de la fenetre et de la carte
-    var sx = Math.max(0, g), sy = Math.max(0, h2);
-    var sw = Math.min(MONDE, d) - sx, sh = Math.min(MONDE, b) - sy;
-    if (sw > 0 && sh > 0) { ctx.fillStyle = C.sol; ctx.fillRect(sx, sy, sw, sh); }
-
-    // Quadrillage : une ligne toutes les MM_GROUPE cases du sol, et un peu
-    // plus discret que celui de la vraie carte.
-    var pasG = CELL * MM_GROUPE;
-    ctx.beginPath();
-    for (var gx = Math.ceil(Math.max(0, g) / pasG) * pasG; gx <= Math.min(MONDE, d); gx += pasG) {
-      ctx.moveTo(gx, Math.max(0, h2)); ctx.lineTo(gx, Math.min(MONDE, b));
-    }
-    for (var gy = Math.ceil(Math.max(0, h2) / pasG) * pasG; gy <= Math.min(MONDE, b); gy += pasG) {
-      ctx.moveTo(Math.max(0, g), gy); ctx.lineTo(Math.min(MONDE, d), gy);
-    }
-    ctx.globalAlpha = 0.45;                // un cran sous la grille du jeu
-    ctx.strokeStyle = C.ligne;
-    ctx.lineWidth = 3 / k;                 // epaisseur constante a l'ecran
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    // Decor : uniquement ce qui tombe dans la fenetre, et en version
-    // allegee. cheminBlob trace 48 segments par forme, ce qui est inutile
-    // a cette taille : 12 suffisent, et un seul trace au lieu de trois.
-    ctx.lineJoin = 'round';
-    for (var i = 0; i < localObs.length; i++) {
-      var o = localObs[i];
-      if (o.x < g - o.r || o.x > d + o.r || o.y < h2 - o.r || o.y > b + o.r) continue;
-      if (o.type === 'souche') {
-        ctx.fillStyle = C.souche;
-        ctx.beginPath(); ctx.arc(o.x, o.y, o.r * 0.55, 0, 6.2832); ctx.fill();
-        continue;
-      }
-      var arbre = o.type === 'arbre';
-      blobLeger(o.x, o.y, o.r * 0.92, o.lobes, o.phase);
-      ctx.lineWidth = o.r * 0.15;
-      ctx.strokeStyle = arbre ? C.traitArbre : C.buisson.trait;
-      ctx.stroke();
-      ctx.fillStyle = (arbre ? C.arbres[o.teinte] : C.buisson).ext;
-      ctx.fill();
-    }
+    ctx.clip();
+    ctx.drawImage(_mmCv, ox, oy, large * px, large * px, mX, mY, mW, mH);
     ctx.restore();
   }
 
@@ -1055,7 +1079,7 @@ function dessineNom(x, y, nom, alpha) {
 }
 
 // ===================== barre de vie =====================
-function dessineBarrePV(pv) {
+function dessineBarrePV(pv, nom) {
   const larg = 312, haut = 45, rc = 9;
   const x = 28, y = HAUT - haut - 52;
   const bas = pv < 30;
@@ -1109,17 +1133,19 @@ function dessineBarrePV(pv) {
 
   ctx.textBaseline = 'alphabetic';
 
-  // Propre pseudo au-dessus de la barre de PV
-  if (myName) {
+  // Pseudo au-dessus de la barre : celui du joueur affiche, qui n'est pas
+  // forcement nous quand on est spectateur.
+  var pseudo = nom || myName;
+  if (pseudo) {
     ctx.font = 'bold 30px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
     // Ombre décalée
     ctx.fillStyle = 'rgba(0,0,0,0.9)';
-    ctx.fillText(myName, x + 22, y - 20);
+    ctx.fillText(pseudo, x + 22, y - 20);
     // Texte blanc
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(myName, x + 20, y - 22);
+    ctx.fillText(pseudo, x + 20, y - 22);
     ctx.textBaseline = 'alphabetic';
   }
 }
@@ -1337,9 +1363,16 @@ function ligneDeuxTons(g, d, y, taille, coulG, coulD, alpha) {
   texteOmbre(d, x + lg, y, taille, coulD, alpha);
 }
 
+// Vrai des que l'ecran de mort est visible : il masque la minimap et ses
+// compteurs, et modifie ce que le HUD affiche.
+function ecranMortVisible() {
+  if (etatJeu !== 'mort' && etatJeu !== 'fin') return false;
+  if (etatJeu === 'mort' && Date.now() - tMortVue < MORT_DELAI) return false;
+  return true;
+}
+
 function dessineEcranMort(vue) {
-  if (etatJeu !== 'mort' && etatJeu !== 'fin') return;
-  if (etatJeu === 'mort' && Date.now() - tMortVue < MORT_DELAI) return;
+  if (!ecranMortVisible()) return;
 
   var ags = (vue && vue.agents) || (snapDernier && snapDernier.agents) || {};
   var monA = ags[pid];
@@ -1358,7 +1391,7 @@ function dessineEcranMort(vue) {
 
   // Ligne 2 : le placement
   var place = gagne ? 1 : (monA && monA.place ? monA.place : 0);
-  if (place > 0) ligneDeuxTons('You placed ', '#' + place, HAUT * 0.27 + 52, 38, '#ffffff', '#ffd23f');
+  if (place > 0) ligneDeuxTons('You placed ', '#' + place, HAUT * 0.27 + 70, 33, '#ffffff', '#ffd23f');
 
   // Bouton Continue
   var sp = SPRITES.continue_button;
@@ -1373,7 +1406,7 @@ function dessineEcranMort(vue) {
 
   // Ligne "Watching" juste au-dessus, sauf si on a gagne
   if (!gagne && idSpectate && ags[idSpectate]) {
-    ligneDeuxTons('Watching ', ags[idSpectate].name, by - 18, 32, '#ffffff', '#ff4d5a', 0.5);
+    ligneDeuxTons('Watching ', ags[idSpectate].name, by - 18, 32, '#ffffff', '#ff4d5a', 0.75);
   }
 
   var enfonce = btnContinue.presse ? 4 : 0;
@@ -1678,11 +1711,11 @@ function dessine(p, moi, viseur, drag) {
 
   // ---- interface ----
   repereEcran();
-  dessineBarrePV(a.pv);
+  dessineBarrePV(a.pv, a.name);
   // En spectateur l'inventaire n'a pas lieu d'etre : on garde la barre de vie
   if (a.inv && etatJeu !== 'mort' && etatJeu !== 'fin') dessineInventaire(a, a.slot, drag);
   if (viseur) dessineViseur(viseur.x, viseur.y);
-  dessineMinimap();
+  if (!ecranMortVisible()) dessineMinimap();
 
 
 }
@@ -1742,7 +1775,7 @@ var localParticules = [];
 var _deathFades = {};
 
 // ─── Ecran de mort / spectateur ────────────────────────────────────
-var MORT_DELAI = 1500;      // on laisse voir sa propre mort avant l'ecran
+var MORT_DELAI = 500;       // on laisse voir sa propre mort avant l'ecran
 var tMortVue = 0;           // instant ou le client a constate la mort
 var idSpectate = null;      // agent suivi une fois mort
 var agentVue = null;        // agent dont on affiche la vue (soi, ou le suivi)
@@ -1950,6 +1983,7 @@ function initObs(decor) {
 
 function majObs(decorMaj, mapVer) {
   if (!decorMaj || !decorMaj.length) return;
+  marqueMinimapSale();
   // Snapshot en vol emis avant un changement de carte : les index ne
   // correspondent plus a localObs, on jette plutot que de corrompre.
   if (mapVer && mapVerLocal && mapVer !== mapVerLocal) return;
@@ -2532,6 +2566,7 @@ function connect() {
       if (SIM.MONDE) MONDE = SIM.MONDE;
       mapVerLocal = msg.mapVer || (mapVerLocal + 1);
       initObs(msg.decor);                    // decor + index repartis a neuf
+      _mmCv = null; _mmCle = '';             // la minimap repart de zero
       localParticules.length = 0;
       _deathFades = {};
       alphaVisJoueurs = {};
