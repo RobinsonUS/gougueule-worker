@@ -943,7 +943,7 @@ function peintMinimap(cx, cy, large, taillePx) {
   _mmSale = false;
 }
 
-function dessineMinimap() {
+function dessineMinimap(zone, tPartie) {
   var mW = 220, mH = 220;
   var mX = LARG - mW - 12;
   var mY = 12;
@@ -992,6 +992,61 @@ function dessineMinimap() {
     ctx.save();
     ctx.clip();
     ctx.drawImage(_mmCv, ox, oy, large * px, large * px, mX, mY, mW, mH);
+    ctx.restore();
+  }
+
+  // ── Oeil du cyclone et cercle d'arrivee ──────────────────────────
+  if (enJeu && zone && zone.r > 0) {
+    var largeZ = MM_CASES * CELL;
+    var kz = mW / largeZ;                       // monde -> pixels minimap
+    var cxE = mX + mW / 2, cyE = mY + mH / 2;   // le joueur suivi est au centre
+    var zxE = cxE + (zone.x - suivi.x) * kz;    // centre de la zone, a l'ecran
+    var zyE = cyE + (zone.y - suivi.y) * kz;
+
+    ctx.save();
+    cadre();
+    ctx.clip();
+
+    // Tout ce que le cyclone a deja avale passe en bleu
+    ctx.beginPath();
+    ctx.rect(mX, mY, mW, mH);
+    ctx.arc(zxE, zyE, zone.r * kz, 0, Math.PI * 2, true);
+    ctx.fillStyle = C.horsZone;
+    ctx.fill('evenodd');
+
+    // Bord actuel du cyclone
+    ctx.beginPath();
+    ctx.arc(zxE, zyE, zone.r * kz, 0, Math.PI * 2);
+    ctx.strokeStyle = C.zone;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Cercle d'arrivee, une fois que le cyclone s'est mis en marche
+    var attente = SIM.ZONE_ATTENTE === undefined ? 12 : SIM.ZONE_ATTENTE;
+    var rFin = SIM.ZONE_R1 === undefined ? 320 : SIM.ZONE_R1;
+    if ((tPartie || 0) > attente && zone.r > rFin + 1) {
+      ctx.beginPath();
+      ctx.arc(zxE, zyE, rFin * kz, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Hors du cercle d'arrivee : le chemin le plus court pour y entrer
+      var dx = zone.x - suivi.x, dy = zone.y - suivi.y;
+      var dist = Math.hypot(dx, dy);
+      if (dist > rFin) {
+        var bx = zxE - dx / dist * rFin * kz;
+        var by = zyE - dy / dist * rFin * kz;
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(cxE, cyE);
+        ctx.lineTo(bx, by);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
     ctx.restore();
   }
 
@@ -1724,7 +1779,7 @@ function dessine(p, moi, viseur, drag) {
   // En spectateur l'inventaire n'a pas lieu d'etre : on garde la barre de vie
   if (a.inv && etatJeu !== 'mort' && etatJeu !== 'fin') dessineInventaire(a, a.slot, drag);
   if (viseur) dessineViseur(viseur.x, viseur.y);
-  if (!ecranMortVisible()) dessineMinimap();
+  if (!ecranMortVisible()) dessineMinimap(p.zone, p.t);
 
 
 }
