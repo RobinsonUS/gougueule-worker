@@ -860,8 +860,17 @@ var MM_CASES = 64, MM_GROUPE = 8;
 // reste dans cette marge, chaque image se contente d'un drawImage.
 var MM_MARGE = 1.6;          // le cache couvre 1.6 fois la fenetre
 var _mmCv = null, _mmCx = 0, _mmCy = 0, _mmLarge = 0, _mmCle = '', _mmSale = false;
+var _mmProchain = 0;
 
 function marqueMinimapSale() { _mmSale = true; }
+// Un arbre qui tombe est rare, mais plusieurs peuvent tomber d'affilee :
+// on ne repeint au plus qu'une fois par seconde pour ce motif.
+function minimapAPeindre() {
+  if (!_mmSale) return false;
+  if (Date.now() < _mmProchain) return false;
+  _mmProchain = Date.now() + 1000;
+  return true;
+}
 
 function blobSur(c, x, y, r, lobes, phase, amp) {
   c.beginPath();
@@ -973,7 +982,7 @@ function dessineMinimap() {
     var taillePx = Math.round(mW * MM_MARGE * 2);   // 2x pour rester net
     var cle = MONDE + ':' + mapVerLocal + ':' + localObs.length;
     var marge = (large * MM_MARGE - large) / 2;     // de quoi bouger sans repeindre
-    if (!_mmCv || cle !== _mmCle || _mmSale || large !== _mmLarge ||
+    if (!_mmCv || cle !== _mmCle || minimapAPeindre() || large !== _mmLarge ||
         Math.abs(suivi.x - _mmCx) > marge * 0.9 || Math.abs(suivi.y - _mmCy) > marge * 0.9) {
       peintMinimap(suivi.x, suivi.y, large, taillePx);
     }
@@ -1983,14 +1992,18 @@ function initObs(decor) {
 
 function majObs(decorMaj, mapVer) {
   if (!decorMaj || !decorMaj.length) return;
-  marqueMinimapSale();
   // Snapshot en vol emis avant un changement de carte : les index ne
   // correspondent plus a localObs, on jette plutot que de corrompre.
   if (mapVer && mapVerLocal && mapVer !== mapVerLocal) return;
   for (var i = 0; i < decorMaj.length; i++) {
     var m = decorMaj[i], o = localObs[m.idx];
     if (!o) continue;
-    if (prevObsTypes[m.idx] === 'arbre' && m.type === 'souche') genTreeDebris(o);
+    var etait = prevObsTypes[m.idx];
+    if (etait === 'arbre' && m.type === 'souche') genTreeDebris(o);
+    // Le serveur renvoie un objet des qu'il TREMBLE, pas seulement quand il
+    // tombe. Repeindre la minimap la-dessus revenait a la refaire a chaque
+    // tick pendant une fusillade : on ne la salit que sur un vrai changement.
+    if (etait !== m.type) marqueMinimapSale();
     o.type = m.type; o.pv = m.pv; o.secousse = m.secousse || 0;
     prevObsTypes[m.idx] = m.type;
   }
