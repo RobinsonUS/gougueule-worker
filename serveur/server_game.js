@@ -35,6 +35,7 @@ const R_BALLE = R_JOUEUR * 0.17;
 const N_ARBRES = 26, N_BUISSONS = 32;
 const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
+const ZONE_TIC = 0.75;   // les degats de zone tombent par paliers, pas en continu
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
 const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
 
@@ -128,13 +129,30 @@ function valideMap(brut, nom) {
   }
 
   const z = brut.zone || {};
+  // Une vague = un resserrement vers un nouveau centre, puis une pause.
+  // Une carte sans 'vagues' garde l'ancien comportement : un seul
+  // resserrement au centre, decrit par r1 et duree.
+  let vagues = Array.isArray(z.vagues) ? z.vagues.filter(v => v && Number.isFinite(Number(v.r))) : [];
+  if (!vagues.length) {
+    vagues = [{ r: nombre(z.r1, monde * 0.10), duree: nombre(z.duree, ZONE_DUREE),
+                pause: 0, degats: ZONE_DEGATS, fixe: true }];
+  }
+  vagues = vagues.map(v => ({
+    r: Math.max(0, nombre(v.r, 0)),
+    duree: Math.max(0.5, nombre(v.duree, ZONE_DUREE)),
+    pause: Math.max(0, nombre(v.pause, 0)),
+    degats: Math.max(0, nombre(v.degats, ZONE_DEGATS)),
+    fixe: !!v.fixe,
+  }));
+
   const zone = {
     cx: nombre(z.cx, monde / 2),
     cy: nombre(z.cy, monde / 2),
     r0: nombre(z.r0, monde * 0.60),
-    r1: nombre(z.r1, monde * 0.10),
+    r1: vagues[vagues.length - 1].r,     // rayon final, pour le client
     attente: nombre(z.attente, ZONE_ATTENTE),
     duree: Math.max(1, nombre(z.duree, ZONE_DUREE)),
+    vagues,
   };
 
   const spawns = Array.isArray(brut.spawns)
@@ -151,7 +169,9 @@ function mapSecours(nom) {
   const monde = MONDE_DEFAUT;
   return {
     nom: nom + '(secours)', monde,
-    zone: { cx: monde / 2, cy: monde / 2, r0: ZONE_R0, r1: ZONE_R1, attente: ZONE_ATTENTE, duree: ZONE_DUREE },
+    zone: { cx: monde / 2, cy: monde / 2, r0: ZONE_R0, r1: ZONE_R1,
+            attente: ZONE_ATTENTE, duree: ZONE_DUREE,
+            vagues: [{ r: ZONE_R1, duree: ZONE_DUREE, pause: 0, degats: ZONE_DEGATS, fixe: true }] },
     spawns: [], obs: genereDecor(rng, monde),
   };
 }
@@ -218,6 +238,8 @@ function creePartie(nomMap) {
     t: 0, tick: 0, fini: false, vainqueur: null,
     demarree: false, nbMax: 0, balleId: 0,
     zone: { x: map.zone.cx, y: map.zone.cy, r: map.zone.r0 },
+    zoneCible: null, zoneDepart: null, zoneDegats: 0, zoneT: 0,
+    _bornes: null, _cibleIdx: -1,
     balles: [], agents: {}, kills: [], evts: [],
   };
 }
@@ -282,6 +304,91 @@ function majBalles(p, arr) {
     if (mort) p.balles.splice(k, 1); else { b.x = nx; b.y = ny; }
   }
 
+}
+
+// ─────────────── Cyclone ───────────────────────────────────────────
+// Une vague = la pause qui la precede, puis son resserrement. Rattacher
+// la pause a la vague QUI SUIT permet d'annoncer le prochain cercle des
+// le debut de cette pause, au lieu de le reveler au dernier moment.
+function bornesVagues(zc) {
+  const b = []; let t = 0;
+  for (let i = 0; i < zc.vagues.length; i++) {
+    const pause = i === 0 ? zc.attente : zc.vagues[i - 1].pause;
+    b.push({ tDebut: t + pause, tFin: t + pause + zc.vagues[i].duree });
+    t += pause + zc.vagues[i].duree;
+  }
+  return b;
+}
+
+// Nouveau centre : entierement dans la carte, et entierement dans le
+// cercle precedent pour que le cyclone ne recrache jamais de terrain.
+function choisitCentreZone(rng, monde, prec, rNew) {
+  if (rNew <= 0) return { x: prec.x, y: prec.y };   // la vague finale ferme le dernier cercle
+  const dMax = Math.max(0, prec.r - rNew);
+  for (let i = 0; i < 300; i++) {
+    const ang = rng() * Math.PI * 2;
+    const dist = Math.sqrt(rng()) * dMax;
+    const x = prec.x + Math.cos(ang) * dist;
+    const y = prec.y + Math.sin(ang) * dist;
+    if (x >= rNew && x <= monde - rNew && y >= rNew && y <= monde - rNew) return { x, y };
+  }
+  // Repli : le centre precedent, ramene dans la carte
+  return { x: Math.min(monde - rNew, Math.max(rNew, prec.x)),
+           y: Math.min(monde - rNew, Math.max(rNew, prec.y)) };
+}
+
+function majZone(p) {
+  const zc = p.map.zone;
+  if (!p._bornes) p._bornes = bornesVagues(zc);
+  const B = p._bornes, t = p.t;
+
+  if (!p.demarree) {
+    p.zoneCible = null; p.zoneDegats = zc.vagues[0].degats; p.zoneT = zc.attente;
+    return;
+  }
+
+  // Vague courante : la premiere dont le resserrement n'est pas fini
+  let idx = -1;
+  for (let i = 0; i < B.length; i++) if (t < B[i].tFin) { idx = i; break; }
+
+  if (idx === -1) {                      // plus rien a jouer : carte entierement avalee
+    if (p.zoneCible) { p.zone.x = p.zoneCible.x; p.zone.y = p.zoneCible.y; }
+    p.zone.r = 0;
+    p.zoneCible = null;
+    p.zoneDegats = zc.vagues[zc.vagues.length - 1].degats;
+    p.zoneT = 0;
+    return;
+  }
+
+  // La cible est tiree des l'entree dans la phase, donc pendant la pause
+  // qui precede : les joueurs voient ou aller avant que ca bouge.
+  if (p._cibleIdx !== idx) {
+    // Le dernier tick d'un resserrement tombe avant sa borne de fin : sans
+    // ce recalage le cercle s'arrete quelques unites trop grand, et peut
+    // alors depasser de la carte.
+    if (p.zoneCible) {
+      p.zone.x = p.zoneCible.x; p.zone.y = p.zoneCible.y; p.zone.r = p.zoneCible.r;
+    }
+    p._cibleIdx = idx;
+    p.zoneDepart = { x: p.zone.x, y: p.zone.y, r: p.zone.r };
+    const v0 = zc.vagues[idx];
+    const c = v0.fixe ? { x: zc.cx, y: zc.cy }
+                      : choisitCentreZone(p.rng, p.monde, p.zoneDepart, v0.r);
+    p.zoneCible = { x: c.x, y: c.y, r: v0.r };
+  }
+
+  const v = zc.vagues[idx], b = B[idx];
+  if (t < b.tDebut) {                    // pause : le cercle suivant est deja annonce
+    p.zoneDegats = idx === 0 ? v.degats : zc.vagues[idx - 1].degats;
+    p.zoneT = b.tDebut - t;
+  } else {                               // resserrement en cours
+    const w = Math.min(1, (t - b.tDebut) / v.duree);
+    p.zone.x = p.zoneDepart.x + (p.zoneCible.x - p.zoneDepart.x) * w;
+    p.zone.y = p.zoneDepart.y + (p.zoneCible.y - p.zoneDepart.y) * w;
+    p.zone.r = p.zoneDepart.r + (p.zoneCible.r - p.zoneDepart.r) * w;
+    p.zoneDegats = v.degats;
+    p.zoneT = b.tFin - t;
+  }
 }
 
 // ─────────────── Deplacement ───────────────────────────────────────
@@ -435,12 +542,7 @@ function pas(p) {
     if (p.demarree) p.t += DT;
   }
 
-  const zc = p.map.zone;
-  const t = p.t - zc.attente;
-  p.zone.x = zc.cx; p.zone.y = zc.cy;
-  p.zone.r = (!p.demarree || t <= 0)
-    ? zc.r0
-    : zc.r0 + (zc.r1 - zc.r0) * Math.min(1, t / zc.duree);
+  majZone(p);
 
   for (const o of p.obs) if (o.secousse > 0) o.secousse = Math.max(0, o.secousse - DT);
   for (const a of arr) {
@@ -520,10 +622,14 @@ function pas(p) {
   for (const a of arr) {
     if (!a.vivant || !p.demarree) continue;
     if (Math.hypot(a.x - p.zone.x, a.y - p.zone.y) > p.zone.r) {
-      a.pv -= ZONE_DEGATS * DT; a.touche = 0.30; a.revele = 0.35;
+      // Un palier toutes les ZONE_TIC secondes, d'un coup
       a.ticZone -= DT;
-      if (a.ticZone <= 0) { a.ticZone = 0.45; a.secousse = 0.14; }
-      if (a.pv <= 0) tue(p, a, null, 'Zone');
+      if (a.ticZone <= 0) {
+        a.ticZone = ZONE_TIC;
+        a.pv -= (p.zoneDegats === undefined ? ZONE_DEGATS : p.zoneDegats);
+        a.touche = 0.30; a.revele = 0.35; a.secousse = 0.14;
+        if (a.pv <= 0) tue(p, a, null, 'Zone');
+      }
     }
   }
 
@@ -712,6 +818,8 @@ function changeMap(p, nomMap) {
   p.balles = [];          // balles encore en vol sur l'ancienne carte
   p.evts = [];            // impacts rattaches a l'ancien decor
   p.zone = { x: map.zone.cx, y: map.zone.cy, r: map.zone.r0 };
+  p.zoneCible = null; p.zoneDepart = null; p.zoneDegats = 0; p.zoneT = 0;
+  p._bornes = null; p._cibleIdx = -1;   // la nouvelle carte a ses propres vagues
 }
 
 function demarrePartie(room, gid) {
@@ -983,6 +1091,7 @@ function envoieSnapshot(room) {
   const base = {
     type: 'snap', tick: p.tick, t: p.t, st: Date.now(), attente: !p.demarree, mapVer: p.mapVer,
     fini: p.fini, vainqueur: p.vainqueur, zone: p.zone,
+    zoneCible: p.zoneCible, zoneT: p.zoneT,
     phaseLobby, compteARebours, nbJoueursLobby,
     balles: p.balles.map(b => ({ id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par })),
     kills: p.kills, evts: p.evts, decorMaj,
