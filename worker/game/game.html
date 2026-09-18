@@ -102,7 +102,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // weapon_XM8 : supprimer le fond blanc
 (function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
   var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
@@ -1498,11 +1498,93 @@ function dessineEcranMort(vue) {
   ctx.restore();
 }
 
+// ============ largage : parachute, jauge, avion ====================
+var PARA_DUREE_DEF = 11;
+var PARA_LARGE = R_JOUEUR * 5.4;   // largeur du dome une fois au sol
+var PARA_ECH0 = 1.75;              // agrandissement au moment du saut
+
+// Hauteur restante, de 1 (sous l'avion) a 0 (au sol)
+function paraHaut(j) {
+  var d = (snapDernier && snapDernier.paraDuree) || PARA_DUREE_DEF;
+  return Math.max(0, Math.min(1, (j.para || 0) / d));
+}
+
+function dessineParachute(j) {
+  var sp = SPRITES.parachute;
+  var h = paraHaut(j);
+  var ech = 1 + (PARA_ECH0 - 1) * h;      // on retrecit en descendant
+  var L = PARA_LARGE * ech;
+  var H = sp && (sp.naturalWidth || sp.width)
+    ? L * ((sp.naturalHeight || sp.height) / (sp.naturalWidth || sp.width))
+    : L * 0.45;
+
+  // Ombre portee : discrete, et d'autant plus pale qu'on est haut
+  ctx.save();
+  ctx.globalAlpha = 0.04 + 0.14 * (1 - h);   // jamais au-dela de 0.18
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(j.x, j.y + R_JOUEUR * 0.3, R_JOUEUR * 1.25, R_JOUEUR * 0.95, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  if (sp && (sp.naturalWidth || sp.width)) {
+    ctx.drawImage(sp, j.x - L / 2, j.y - H / 2, L, H);
+  } else {
+    ctx.fillStyle = '#7ac943';
+    ctx.beginPath(); ctx.ellipse(j.x, j.y, L / 2, H / 2, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Jauge de descente, a droite du dome : elle se remplit par le bas
+  var gx = j.x + L * 0.61, gw = L * 0.036, gh = L * 0.39;
+  var gy = j.y - gh / 2, r = gw / 2;
+  var rond = function (x, y, w, hh) {
+    var rr = Math.min(r, w / 2, hh / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + rr, rr);
+    ctx.lineTo(x + w, y + hh - rr);
+    ctx.arcTo(x + w, y + hh, x + w - rr, y + hh, rr);
+    ctx.lineTo(x + rr, y + hh);
+    ctx.arcTo(x, y + hh, x, y + hh - rr, rr);
+    ctx.lineTo(x, y + rr);
+    ctx.arcTo(x, y, x + rr, y, rr);
+    ctx.closePath();
+  };
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  rond(gx, gy, gw, gh); ctx.fill();
+  var rempli = gh * (1 - h);                 // pleine = descente terminee
+  if (rempli > 0.5) {
+    ctx.save();
+    rond(gx, gy, gw, gh); ctx.clip();
+    ctx.fillStyle = '#ffffff';
+    rond(gx, gy + gh - rempli, gw, rempli); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function dessineAvion(av) {
+  var sp = SPRITES.avion;
+  if (!sp || !(sp.naturalWidth || sp.width)) return;
+  var L = R_JOUEUR * 13;
+  var H = L * ((sp.naturalHeight || sp.height) / (sp.naturalWidth || sp.width));
+  ctx.save();
+  ctx.translate(av.x, av.y);
+  ctx.rotate(av.angle + Math.PI / 2);      // le sprite pointe vers le haut
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.ellipse(0, H * 0.06, L * 0.30, H * 0.30, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.drawImage(sp, -L / 2, -H / 2, L, H);
+  ctx.restore();
+}
+
 // ===================== scene =====================
 function dessine(p, moi, viseur, drag) {
   const a = p.agents[moi];
   if (!a) return;
   agentVue = a;               // la minimap et le HUD suivent cet agent
+  // Dans l'avion, le joueur EST a la position de l'avion : la camera le
+  // suit donc naturellement, sans traitement particulier.
   cam.x = a.x;
   cam.y = a.y;
 
@@ -1563,6 +1645,7 @@ function dessine(p, moi, viseur, drag) {
   const agentsArr = Object.values(p.agents);
   for (const j of agentsArr) {
     if (!j.vivant) continue;
+    if (j.enAvion || (j.para || 0) > 0) { j.alphaVis = 1; j._dessus = false; continue; }
     const sien = (j.id === moi);
     if (j.alphaVis === undefined) j.alphaVis = (alphaVisJoueurs[j.id] !== undefined) ? alphaVisJoueurs[j.id] : 1;
 
@@ -1633,6 +1716,7 @@ function dessine(p, moi, viseur, drag) {
   const pose = (dessus, texture) => {
     for (const j of agentsArr) {
       if (!j.vivant || !!j._dessus !== dessus) continue;
+      if (j.enAvion || (j.para || 0) > 0) continue;   // en l'air : rendu a part
       // Culling viewport : ne pas rendre les agents hors caméra
       if (j.x < gch - MARGE_AGENT || j.x > drt + MARGE_AGENT ||
           j.y < hau - MARGE_AGENT || j.y > bas + MARGE_AGENT) continue;
@@ -1754,6 +1838,18 @@ function dessine(p, moi, viseur, drag) {
   pose(true, false);
   pose(true, true);
 
+  // Parachutistes : au-dessus du decor, mais sous l'avion
+  for (const j of agentsArr) {
+    if (!j.vivant || j.enAvion || (j.para || 0) <= 0) continue;
+    if (j.x < gch - 600 || j.x > drt + 600 || j.y < hau - 600 || j.y > bas + 600) continue;
+    dessineParachute(j);
+    dessineNom(j.x, j.y - R_JOUEUR * 1.6, j.id === moi ? '' : (j.name || ''), 1);
+  }
+
+  // L'avion survole tout le reste
+  const _av = snapDernier && snapDernier.avion;
+  if (_av && _av.vol) dessineAvion(_av);
+
   // Pseudos au-dessus des têtes (visibilité = même alpha que le joueur)
   for (var _ni = 0; _ni < agentsArr.length; _ni++) {
     var _nj = agentsArr[_ni];
@@ -1854,6 +1950,42 @@ var tMortVue = 0;           // instant ou le client a constate la mort
 var idSpectate = null;      // agent suivi une fois mort
 var agentVue = null;        // agent dont on affiche la vue (soi, ou le suivi)
 var btnContinue = { x: 0, y: 0, w: 0, h: 0, presse: false };
+var btnSaut = { x: 0, y: 0, r: 0, presse: false };
+
+// Vrai tant que le joueur est passager de l'avion
+function dansAvion() {
+  if (!snapDernier || !pid) return false;
+  var m = snapDernier.agents && snapDernier.agents[pid];
+  return !!(m && m.vivant && m.enAvion);
+}
+function enParachute() {
+  if (!snapDernier || !pid) return false;
+  var m = snapDernier.agents && snapDernier.agents[pid];
+  return !!(m && m.vivant && (m.para || 0) > 0);
+}
+function envoieSaut() {
+  if (!dansAvion()) return;
+  if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify({ type: 'saut' })); } catch (e) {} }
+}
+
+// Bouton rond, a la place du stick de tir pendant le vol
+function dessineBoutonSaut() {
+  var c = joyDroitePos();
+  btnSaut.x = c.x; btnSaut.y = c.y; btnSaut.r = JOY_R * 0.92;
+  var sp = SPRITES.bouton_para;
+  var d = btnSaut.presse ? 4 : 0;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = btnSaut.presse ? 5 : 13;
+  ctx.shadowOffsetY = btnSaut.presse ? 2 : 6;
+  if (sp && (sp.naturalWidth || sp.width)) {
+    ctx.drawImage(sp, c.x - btnSaut.r, c.y - btnSaut.r + d, btnSaut.r * 2, btnSaut.r * 2);
+  } else {
+    ctx.beginPath(); ctx.arc(c.x, c.y + d, btnSaut.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#f5a623'; ctx.fill();
+  }
+  ctx.restore();
+}
 
 // Fin de partie : on laisse les dernieres balles finir leur course, puis on
 // fige la vue pour de bon. A partir de la, l'ecran n'est plus qu'une image :
@@ -2211,6 +2343,8 @@ function dessineUnStick(centre, st, couleurStick) {
 function dessineJoysticks() {
   if (!isMobile) return;
   dessineUnStick(joyGauchePos(), joyG, 'rgba(255,255,255,0.34)');
+  // Pendant le vol, le stick de tir cede la place au bouton de saut
+  if (dansAvion()) return;
   dessineUnStick(joyDroitePos(), joyD, viseStick() ? 'rgba(240,146,47,0.62)' : 'rgba(255,255,255,0.34)');
 }
 
@@ -2284,6 +2418,12 @@ function posEcran(e) {
   return { x: (t.clientX - r.left) / r.width * LARG,
            y: (t.clientY - r.top) / r.height * HAUT };
 }
+function surSaut(e) {
+  if (etatJeu !== 'jeu' || !dansAvion()) return false;
+  var q = posEcran(e);
+  return Math.hypot(q.x - btnSaut.x, q.y - btnSaut.y) <= btnSaut.r;
+}
+
 function surContinue(e) {
   if (etatJeu !== 'mort' && etatJeu !== 'fin') return false;
   if (etatJeu === 'mort' && Date.now() - tMortVue < MORT_DELAI) return false;
@@ -2293,24 +2433,40 @@ function surContinue(e) {
 }
 // window et non cv : le canevas n'existe pas encore a ce stade
 window.addEventListener('mousedown', function (e) {
-  if (surContinue(e)) { btnContinue.presse = true; e.preventDefault(); }
+  if (surContinue(e)) { btnContinue.presse = true; e.preventDefault(); return; }
+  if (surSaut(e)) { btnSaut.presse = true; e.preventDefault(); }
 });
 window.addEventListener('mouseup', function (e) {
   if (btnContinue.presse) {
     btnContinue.presse = false;
     if (surContinue(e)) rejouer();
+    return;
+  }
+  if (btnSaut.presse) {
+    btnSaut.presse = false;
+    if (surSaut(e)) envoieSaut();
   }
 });
 window.addEventListener('touchstart', function (e) {
-  if (surContinue(e)) { btnContinue.presse = true; e.preventDefault(); }
+  if (surContinue(e)) { btnContinue.presse = true; e.preventDefault(); return; }
+  if (surSaut(e)) { btnSaut.presse = true; e.preventDefault(); }
 }, { passive: false });
 window.addEventListener('touchend', function (e) {
+  var t = e.changedTouches && e.changedTouches[0];
   if (btnContinue.presse) {
     btnContinue.presse = false;
-    var t = e.changedTouches && e.changedTouches[0];
     if (t && surContinue({ clientX: t.clientX, clientY: t.clientY })) rejouer();
+    return;
+  }
+  if (btnSaut.presse) {
+    btnSaut.presse = false;
+    if (t && surSaut({ clientX: t.clientX, clientY: t.clientY })) envoieSaut();
   }
 }, { passive: false });
+// Raccourci clavier, pratique sur ordinateur
+window.addEventListener('keydown', function (e) {
+  if (e.code === 'Space' && dansAvion()) { e.preventDefault(); envoieSaut(); }
+});
 
 // =================== WebSocket + état ===================
 // ═══════════════════════════════════════════════════════════════════
@@ -2363,6 +2519,8 @@ function borneLoc(a) {
 function deplaceLoc(a, dx, dy) {
   var R = SIM.R_JOUEUR;
   a.x += dx; a.y += dy; borneLoc(a);
+  // En l'air on survole tout : aucune collision avec le decor
+  if (dansAvion() || enParachute()) return;
   for (var it = 0; it < 3; it++) {
     var hit = false;
     for (var i = 0; i < localObs.length; i++) {
@@ -2421,7 +2579,9 @@ function appliqueLoc(a, cmd) {
   }
   a.recharge -= dt;
   var _phLobby = !!(snapDernier && snapDernier.phaseLobby);
-  var _itemEnMain = (a.slot > 0) && a.inv && a.inv[a.slot] && !_phLobby;
+  // En vol ou sous parachute, ni tir ni poing : le serveur les refuse aussi
+  var _enLAir = dansAvion() || enParachute();
+  var _itemEnMain = (a.slot > 0) && a.inv && a.inv[a.slot] && !_phLobby && !_enLAir;
   if (cmd.tire && _itemEnMain && a.recharge <= 0 && a.rechargement <= 0 && a.munitions > 0) {
     a.recharge = SIM.CADENCE; a.tirTimer = 0.35; a.recul = 0.08;
     a.munitions--;
@@ -3092,9 +3252,11 @@ function boucle(maintenant) {
 
   if (isMobile && etatJeu === 'jeu') {
     repereEcran();
-    if (viseeActive) dessineLigneTir(viseeAngle);
+    if (viseeActive && !dansAvion() && !enParachute()) dessineLigneTir(viseeAngle);
     dessineJoysticks();
   }
+  // Le bouton de saut s'affiche aussi sur ordinateur : un clic suffit
+  if (etatJeu === 'jeu' && dansAvion()) { repereEcran(); dessineBoutonSaut(); }
 
   dessineEcranMort(vue);
 
