@@ -36,6 +36,10 @@ const N_ARBRES = 26, N_BUISSONS = 32;
 const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const ZONE_TIC = 0.75;   // les degats de zone tombent par paliers, pas en continu
+// Largage : l'avion traverse la carte, les joueurs sautent quand ils veulent
+const AVION_V = 700;        // unites par seconde
+const PARA_DUREE = 11;      // duree de la descente en parachute
+const PARA_ESPACE = 260;    // ecart entre deux joueurs largues de force
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
 const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
 
@@ -241,6 +245,7 @@ function creePartie(nomMap) {
     zoneCible: null, zoneDepart: null, zoneDegats: 0, zoneT: 0, zoneBouge: false,
     _bornes: null, _cibleIdx: -1,
     balles: [], agents: {}, kills: [], evts: [],
+    avion: null, tVol: 0, phaseVol: false,
   };
 }
 
@@ -255,6 +260,7 @@ function ajouteJoueur(partie, pid, name, avecArme = true) {
     poingTimer: 0, punchSide: 0, _pCd: 0,
     inv: avecArme ? [null, 'fusil', null, null, null, null] : [null, null, null, null, null, null],
     ticZone: 0, lastSeq: 0, file: [], rtt: 120,
+    enAvion: false, para: 0,
   };
 }
 
@@ -294,6 +300,7 @@ function majBalles(p, arr) {
     // Partie finie : les balles finissent leur trajet mais ne blessent plus
     if (!mort && !p.fini) for (const c of arr) {
       if (!c.vivant || c.id === b.par) continue;
+      if (c.enAvion || c.para > 0) continue;      // un parachutiste est hors d'atteinte
       if (Math.hypot(c.x - nx, c.y - ny) < R_JOUEUR + R_BALLE) {
         c.pv -= p.rng() < 0.5 ? 10 : 11;
         c.secousse = 0.16; c.touche = 0.30; c.revele = 0.35;
@@ -304,6 +311,79 @@ function majBalles(p, arr) {
     if (mort) p.balles.splice(k, 1); else { b.x = nx; b.y = ny; }
   }
 
+}
+
+// ─────────────── Avion de largage ──────────────────────────────────
+// Un point au hasard sur un cote, un autre sur le cote oppose : la
+// droite qui les relie est le couloir de vol.
+function creeAvion(rng, monde) {
+  const marge = monde * 0.12;
+  const surCote = (cote, u) => {
+    const v = marge + u * (monde - 2 * marge);
+    if (cote === 0) return { x: v, y: 0 };
+    if (cote === 1) return { x: monde, y: v };
+    if (cote === 2) return { x: v, y: monde };
+    return { x: 0, y: v };
+  };
+  const cote = (rng() * 4) | 0;
+  let a = surCote(cote, rng());
+  let b = surCote((cote + 2) % 4, rng());
+  if (rng() < 0.5) { const t = a; a = b; b = t; }   // sens de parcours
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  return { x0: a.x, y0: a.y, x1: b.x, y1: b.y, len,
+           duree: Math.max(1, len / AVION_V),
+           angle: Math.atan2(b.y - a.y, b.x - a.x),
+           x: a.x, y: a.y };
+}
+
+function posAvion(p) {
+  const av = p.avion;
+  if (!av) return { x: p.monde / 2, y: p.monde / 2 };
+  const w = Math.min(1, av.duree > 0 ? p.tVol / av.duree : 1);
+  return { x: av.x0 + (av.x1 - av.x0) * w, y: av.y0 + (av.y1 - av.y0) * w };
+}
+
+// Fait sauter un agent depuis la position courante de l'avion.
+function largue(p, a, decalage) {
+  if (!a.enAvion) return;
+  a.enAvion = false;
+  a.para = PARA_DUREE;
+  const av = p.avion;
+  const d = decalage || 0;
+  // Decalage perpendiculaire au couloir, pour ne pas empiler les largages
+  a.x = a.x + Math.cos(av.angle + Math.PI / 2) * d;
+  a.y = a.y + Math.sin(av.angle + Math.PI / 2) * d;
+  a.x = Math.min(p.monde - R_JOUEUR, Math.max(R_JOUEUR, a.x));
+  a.y = Math.min(p.monde - R_JOUEUR, Math.max(R_JOUEUR, a.y));
+  a._px = a.x; a._py = a.y;
+}
+
+function majVol(p) {
+  if (!p.phaseVol) return;
+  p.tVol += DT;
+  const pos = posAvion(p);
+  p.avion.x = pos.x; p.avion.y = pos.y;
+
+  // Les passagers suivent l'avion tant qu'ils n'ont pas saute
+  const dedans = [];
+  for (const a of Object.values(p.agents)) {
+    if (!a.enAvion) continue;
+    a.x = pos.x; a.y = pos.y; a._px = pos.x; a._py = pos.y;
+    dedans.push(a);
+  }
+
+  // Bout du couloir : tout le monde saute, espace le long de la trajectoire
+  if (p.tVol >= p.avion.duree && dedans.length) {
+    dedans.forEach((a, i) => {
+      const k = i - (dedans.length - 1) / 2;
+      largue(p, a, k * PARA_ESPACE);
+    });
+  }
+
+  // Le vol s'acheve quand l'avion est au bout, ou quand il est vide
+  let reste = 0;
+  for (const a of Object.values(p.agents)) if (a.enAvion) reste++;
+  if (reste === 0 || p.tVol >= p.avion.duree) p.phaseVol = false;
 }
 
 // ─────────────── Cyclone ───────────────────────────────────────────
@@ -342,7 +422,7 @@ function majZone(p) {
   if (!p._bornes) p._bornes = bornesVagues(zc);
   const B = p._bornes, t = p.t;
 
-  if (!p.demarree) {
+  if (!p.demarree || p.phaseVol) {
     p.zoneCible = null; p.zoneBouge = false;
     p.zoneDegats = zc.vagues[0].degats; p.zoneT = zc.attente;
     return;
@@ -425,9 +505,9 @@ function deplaceSolo(a, dx, dy, obs, maxIter, monde, grid) {
 
 function separeJoueurs(arr, monde) {
   for (const a of arr) {
-    if (!a.vivant) continue;
+    if (!a.vivant || a.enAvion || a.para > 0) continue;
     for (const b of arr) {
-      if (b === a || !b.vivant) continue;
+      if (b === a || !b.vivant || b.enAvion || b.para > 0) continue;
       const nx = a.x - b.x, ny = a.y - b.y;
       const d = Math.hypot(nx, ny), min = R_JOUEUR * 2;
       if (d >= min) continue;
@@ -445,10 +525,21 @@ function separeJoueurs(arr, monde) {
 
 // ─────────────── Commande d'un joueur ─────────────────────────────
 function appliqueCommande(p, a, cmd, mouvSeulement = false) {
+  // Dans l'avion : le joueur n'a pas encore de prise sur le monde
+  if (a.enAvion) { a.lastSeq = cmd.seq; if (typeof cmd.angle === 'number') a.angle = cmd.angle; return; }
   let dt = Math.min(DT_MAX_INPUT, Math.max(0, cmd.dt || DT));
   let mx = cmd.mx || 0, my = cmd.my || 0;
   const n = Math.hypot(mx, my);
   if (n > 1) { mx /= n; my /= n; }
+
+  // En parachute on survole le decor : deplacement libre, juste borne
+  if (a.para > 0) {
+    a.x += mx * VITESSE * dt; a.y += my * VITESSE * dt;
+    borne(a, p.monde);
+    if (typeof cmd.angle === 'number') a.angle = cmd.angle;
+    a.lastSeq = cmd.seq;
+    return;
+  }
 
   // Bots : 1 itération de collision (précision réduite mais 3× plus rapide)
   deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3, p.monde, p.arbresGrid);
@@ -541,14 +632,17 @@ function pas(p) {
   p.tick++;
 
   const arr = Object.values(p.agents);
+  majVol(p);
   if (!p.fini) {
-    if (p.demarree) p.t += DT;
+    // L'horloge de partie ne demarre qu'une fois l'avion vide ou arrive
+    if (p.demarree && !p.phaseVol) p.t += DT;
   }
 
   majZone(p);
 
   for (const o of p.obs) if (o.secousse > 0) o.secousse = Math.max(0, o.secousse - DT);
   for (const a of arr) {
+    if (a.para > 0) a.para = Math.max(0, a.para - DT);
     if (a.secousse > 0) a.secousse = Math.max(0, a.secousse - DT);
     if (a.touche > 0)   a.touche   = Math.max(0, a.touche - DT);
     if (a.tirTimer > 0) a.tirTimer = Math.max(0, a.tirTimer - DT);
@@ -598,6 +692,10 @@ function pas(p) {
   }
 
   for (const a of arr) {
+    if (a.estBot && a.vivant && a.enAvion && p.phaseVol && p.tVol >= (a._tSaut || 0)) largue(p, a, 0);
+  }
+
+  for (const a of arr) {
     if (a.estBot && a.vivant) {
       if (p.tick % 3 === 0) {
         a._dernCmd = calculeBotCmd(p, a, arr);
@@ -624,6 +722,7 @@ function pas(p) {
 
   for (const a of arr) {
     if (!a.vivant || !p.demarree) continue;
+    if (a.enAvion || a.para > 0) continue;        // en l'air, le cyclone n'atteint personne
     if (Math.hypot(a.x - p.zone.x, a.y - p.zone.y) > p.zone.r) {
       // Un palier toutes les ZONE_TIC secondes, d'un coup
       a.ticZone -= DT;
@@ -836,6 +935,11 @@ function demarrePartie(room, gid) {
   // On quitte la carte d'attente pour la carte de partie
   changeMap(p, 'partie');
 
+  // Couloir de vol et embarquement
+  p.avion = creeAvion(p.rng, p.monde);
+  p.tVol = 0;
+  p.phaseVol = true;
+
   // Téléporter + équiper chaque joueur vivant (sur la NOUVELLE carte)
   for (const a of Object.values(p.agents)) {
     if (!a.vivant) continue;
@@ -849,6 +953,11 @@ function demarrePartie(room, gid) {
     a.inv = [null, 'fusil', null, null, null, null];
     a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
     a.tueurId = null; a.place = 0;
+    // Tout le monde part dans l'avion, personne n'est encore sur la carte
+    a.enAvion = true; a.para = 0;
+    a.x = p.avion.x0; a.y = p.avion.y0;
+    // Les bots sautent chacun a un moment different du trajet
+    if (a.estBot) a._tSaut = p.avion.duree * (0.15 + p.rng() * 0.7);
     p._figes = false;
     if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._tick = 0; a._dernCmd = null; }
   }
@@ -951,6 +1060,14 @@ wss.on('connection', (ws) => {
       }
 
       // ── inputs de jeu ─────────────────────────────────────────────
+      // ── saut : quitter l'avion ────────────────────────────────────
+      if (msg.type === 'saut' && pid && rooms[gid] && rooms[gid].partie) {
+        const p2 = rooms[gid].partie;
+        const a2 = p2.agents[pid];
+        if (a2 && a2.enAvion && p2.phaseVol) largue(p2, a2, 0);
+        return;
+      }
+
       if (msg.type === 'in' && pid && rooms[gid] && rooms[gid].partie) {
         const a = rooms[gid].partie.agents[pid];
         if (!a) return;
@@ -1097,6 +1214,9 @@ function envoieSnapshot(room) {
     // Le cercle d'arrivee n'est revele qu'au moment ou le cyclone se met
     // en marche, pas pendant la pause qui precede.
     zoneCible: p.zoneBouge ? p.zoneCible : null, zoneT: p.zoneT,
+    avion: p.avion ? { x: p.avion.x, y: p.avion.y, angle: p.avion.angle,
+                       vol: p.phaseVol, fin: p.tVol >= p.avion.duree } : null,
+    paraDuree: PARA_DUREE,
     phaseLobby, compteARebours, nbJoueursLobby,
     balles: p.balles.map(b => ({ id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par })),
     kills: p.kills, evts: p.evts, decorMaj,
@@ -1105,6 +1225,7 @@ function envoieSnapshot(room) {
   for (const [id, a] of Object.entries(p.agents)) {
     agents[id] = { id: a.id, name: a.name, x: a.x, y: a.y, angle: a.angle, pv: a.pv, vivant: a.vivant,
       tueurId: a.tueurId || null, place: a.place || 0,
+      enAvion: !!a.enAvion, para: a.para || 0,
       munitions: a.munitions, rechargement: a.rechargement, dureeRechargeMax: a.dureeRechargeMax,
       secousse: a.secousse, touche: a.touche, tirTimer: a.tirTimer, recul: a.recul,
       revele: a.revele, slot: a.slot, inv: a.inv,
