@@ -160,7 +160,7 @@
   <input type="number" id="monde" value="12800" step="100">
   <div class="ligne">Zone de depart <b id="vR0">9200</b></div>
   <input type="range" id="r0" min="200" max="20000" step="100" value="9200">
-  <div class="ligne">Zone finale <b id="vR1">400</b></div>
+  <div class="ligne">Dernier cercle <b id="vR1">300</b></div>
   <input type="range" id="r1" min="50" max="4000" step="50" value="400">
   <div class="duo" style="margin-top:11px">
     <div><div class="ligne" style="margin-top:0">Attente (s)</div>
@@ -400,7 +400,11 @@ function dessineBuissonTexture(o) {
 // ═══ etat ══════════════════════════════════════════════════════════
 let carte = {
   nom: 'partie', monde: 12800,
-  zone: { cx: 6400, cy: 6400, r0: 9200, r1: 400, attente: 20, duree: 160 },
+  zone: { cx: 6400, cy: 6400, r0: 9200, attente: 20,
+          vagues: [ { r: 2900, duree: 30, pause: 30, degats: 2 },
+                    { r: 950,  duree: 20, pause: 15, degats: 5 },
+                    { r: 300,  duree: 10, pause: 20, degats: 10 },
+                    { r: 0,    duree: 45, pause: 0,  degats: 10 } ] },
   spawns: [], obs: []
 };
 let vue = { x: 6400, y: 6400, z: 0.06 };
@@ -437,6 +441,13 @@ const versMonde = (x, y) => ({ x: (x - innerWidth / 2) / vue.z + vue.x,
                                y: (y - innerHeight / 2) / vue.z + vue.y });
 
 // ═══ rendu ═════════════════════════════════════════════════════════
+// Rayon du dernier cercle utile, pour l'apercu des cercles de zone
+function rayonFinal() {
+  const v = carte.zone.vagues || [];
+  for (let i = v.length - 1; i >= 0; i--) if (v[i].r > 0) return v[i].r;
+  return 0;
+}
+
 function dessine() {
   const d = window.devicePixelRatio || 1;
   ctx.setTransform(d, 0, 0, d, 0, 0);
@@ -468,7 +479,8 @@ function dessine() {
   // cercles de zone
   ctx.strokeStyle = 'rgba(90,150,255,.75)'; ctx.lineWidth = 3 / vue.z;
   ctx.setLineDash([14 / vue.z, 10 / vue.z]);
-  for (const r of [carte.zone.r0, carte.zone.r1]) {
+  for (const r of [carte.zone.r0, rayonFinal()]) {
+    if (!(r > 0)) continue;
     ctx.beginPath(); ctx.arc(carte.zone.cx, carte.zone.cy, r, 0, 6.2832); ctx.stroke();
   }
   ctx.setLineDash([]);
@@ -739,7 +751,10 @@ curseur('gomme', 'vGom', v => rGomme = v);
 curseur('portee', 'vPort', v => portee = v);
 curseur('densite', 'vDens', v => densite = v);
 curseur('r0', 'vR0', v => carte.zone.r0 = v);
-curseur('r1', 'vR1', v => carte.zone.r1 = v);
+curseur('r1', 'vR1', v => {
+  const va = carte.zone.vagues || [];
+  for (let i = va.length - 1; i >= 0; i--) if (va[i].r > 0) { va[i].r = v; return; }
+});
 
 document.getElementById('nom').oninput = e => carte.nom = e.target.value.trim() || 'carte';
 document.getElementById('monde').onchange = e => {
@@ -770,9 +785,9 @@ function synchronisePanneau() {
   const t = (id, val) => document.getElementById(id).textContent = val;
   v('nom', carte.nom); v('monde', carte.monde);
   document.getElementById('r0').max = Math.round(carte.monde * 1.6);
-  v('r0', carte.zone.r0); v('r1', carte.zone.r1);
+  v('r0', carte.zone.r0); v('r1', rayonFinal());
   v('att', carte.zone.attente); v('dur', carte.zone.duree);
-  t('vR0', Math.round(carte.zone.r0)); t('vR1', Math.round(carte.zone.r1));
+  t('vR0', Math.round(carte.zone.r0)); t('vR1', Math.round(rayonFinal()));
   t('vGom', rGomme); t('vPort', portee); t('vDens', densite);
 }
 
@@ -781,8 +796,8 @@ function versJson() {
   return JSON.stringify({
     nom: carte.nom, monde: carte.monde,
     zone: { cx: Math.round(carte.zone.cx), cy: Math.round(carte.zone.cy),
-            r0: Math.round(carte.zone.r0), r1: Math.round(carte.zone.r1),
-            attente: carte.zone.attente, duree: carte.zone.duree },
+            r0: Math.round(carte.zone.r0), attente: carte.zone.attente,
+            vagues: carte.zone.vagues },
     spawns: carte.spawns, obs: carte.obs
   }, null, 1);
 }
@@ -797,10 +812,19 @@ function depuisJson(txt) {
   memorise();
   carte = {
     nom: (m.nom || 'carte') + '', monde: Math.round(monde),
+    // Les vagues du cyclone se reglent dans le JSON, pas dans l'editeur :
+    // on les recopie telles quelles pour ne jamais les perdre.
     zone: { cx: +z.cx || monde / 2, cy: +z.cy || monde / 2,
-            r0: +z.r0 || Math.round(monde * 0.6), r1: +z.r1 || Math.round(monde * 0.1),
+            r0: +z.r0 || Math.round(monde * 0.6),
             attente: z.attente == null ? 12 : Math.max(0, +z.attente || 0),
-            duree: z.duree == null ? 70 : Math.max(1, +z.duree || 1) },
+            vagues: Array.isArray(z.vagues) && z.vagues.length
+              ? z.vagues.map(v => ({ r: Math.max(0, +v.r || 0),
+                  duree: Math.max(0.5, +v.duree || 30),
+                  pause: Math.max(0, +v.pause || 0),
+                  degats: Math.max(0, +v.degats || 0) }))
+              : [ { r: +z.r1 || Math.round(monde * 0.1),
+                    duree: z.duree == null ? 70 : Math.max(1, +z.duree || 1),
+                    pause: 0, degats: 6 } ] },
     spawns: Array.isArray(m.spawns)
       ? m.spawns.filter(s => s && isFinite(+s.x) && isFinite(+s.y))
                 .map(s => ({ x: Math.round(+s.x), y: Math.round(+s.y) })) : [],
