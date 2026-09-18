@@ -5,9 +5,33 @@
   "cx": 6400,
   "cy": 6400,
   "r0": 9500,
-  "r1": 500,
   "attente": 20,
-  "duree": 160
+  "vagues": [
+   {
+    "r": 2900,
+    "duree": 30,
+    "pause": 30,
+    "degats": 2
+   },
+   {
+    "r": 950,
+    "duree": 20,
+    "pause": 15,
+    "degats": 5
+   },
+   {
+    "r": 300,
+    "duree": 10,
+    "pause": 20,
+    "degats": 10
+   },
+   {
+    "r": 0,
+    "duree": 45,
+    "pause": 0,
+    "degats": 10
+   }
+  ]
  },
  "spawns": [
   {
