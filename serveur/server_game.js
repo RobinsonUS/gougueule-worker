@@ -238,7 +238,7 @@ function creePartie(nomMap) {
     t: 0, tick: 0, fini: false, vainqueur: null,
     demarree: false, nbMax: 0, balleId: 0,
     zone: { x: map.zone.cx, y: map.zone.cy, r: map.zone.r0 },
-    zoneCible: null, zoneDepart: null, zoneDegats: 0, zoneT: 0,
+    zoneCible: null, zoneDepart: null, zoneDegats: 0, zoneT: 0, zoneBouge: false,
     _bornes: null, _cibleIdx: -1,
     balles: [], agents: {}, kills: [], evts: [],
   };
@@ -343,7 +343,8 @@ function majZone(p) {
   const B = p._bornes, t = p.t;
 
   if (!p.demarree) {
-    p.zoneCible = null; p.zoneDegats = zc.vagues[0].degats; p.zoneT = zc.attente;
+    p.zoneCible = null; p.zoneBouge = false;
+    p.zoneDegats = zc.vagues[0].degats; p.zoneT = zc.attente;
     return;
   }
 
@@ -354,7 +355,7 @@ function majZone(p) {
   if (idx === -1) {                      // plus rien a jouer : carte entierement avalee
     if (p.zoneCible) { p.zone.x = p.zoneCible.x; p.zone.y = p.zoneCible.y; }
     p.zone.r = 0;
-    p.zoneCible = null;
+    p.zoneCible = null; p.zoneBouge = false;
     p.zoneDegats = zc.vagues[zc.vagues.length - 1].degats;
     p.zoneT = 0;
     return;
@@ -378,10 +379,12 @@ function majZone(p) {
   }
 
   const v = zc.vagues[idx], b = B[idx];
-  if (t < b.tDebut) {                    // pause : le cercle suivant est deja annonce
+  if (t < b.tDebut) {                    // pause : la cible existe mais reste secrete
+    p.zoneBouge = false;
     p.zoneDegats = idx === 0 ? v.degats : zc.vagues[idx - 1].degats;
     p.zoneT = b.tDebut - t;
   } else {                               // resserrement en cours
+    p.zoneBouge = true;
     const w = Math.min(1, (t - b.tDebut) / v.duree);
     p.zone.x = p.zoneDepart.x + (p.zoneCible.x - p.zoneDepart.x) * w;
     p.zone.y = p.zoneDepart.y + (p.zoneCible.y - p.zoneDepart.y) * w;
@@ -818,7 +821,7 @@ function changeMap(p, nomMap) {
   p.balles = [];          // balles encore en vol sur l'ancienne carte
   p.evts = [];            // impacts rattaches a l'ancien decor
   p.zone = { x: map.zone.cx, y: map.zone.cy, r: map.zone.r0 };
-  p.zoneCible = null; p.zoneDepart = null; p.zoneDegats = 0; p.zoneT = 0;
+  p.zoneCible = null; p.zoneDepart = null; p.zoneDegats = 0; p.zoneT = 0; p.zoneBouge = false;
   p._bornes = null; p._cibleIdx = -1;   // la nouvelle carte a ses propres vagues
 }
 
@@ -1091,7 +1094,9 @@ function envoieSnapshot(room) {
   const base = {
     type: 'snap', tick: p.tick, t: p.t, st: Date.now(), attente: !p.demarree, mapVer: p.mapVer,
     fini: p.fini, vainqueur: p.vainqueur, zone: p.zone,
-    zoneCible: p.zoneCible, zoneT: p.zoneT,
+    // Le cercle d'arrivee n'est revele qu'au moment ou le cyclone se met
+    // en marche, pas pendant la pause qui precede.
+    zoneCible: p.zoneBouge ? p.zoneCible : null, zoneT: p.zoneT,
     phaseLobby, compteARebours, nbJoueursLobby,
     balles: p.balles.map(b => ({ id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par })),
     kills: p.kills, evts: p.evts, decorMaj,
