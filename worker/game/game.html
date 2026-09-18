@@ -996,7 +996,9 @@ function dessineMinimap(zone, tPartie) {
   }
 
   // ── Oeil du cyclone et cercle d'arrivee ──────────────────────────
-  if (enJeu && zone && zone.r > 0) {
+  // r = 0 signifie que la carte est entierement avalee : il faut encore
+  // peindre le filtre bleu, c'est seulement le bord qui disparait.
+  if (enJeu && zone && zone.r >= 0) {
     var largeZ = MM_CASES * CELL;
     var kz = mW / largeZ;                       // monde -> pixels minimap
     var cxE = mX + mW / 2, cyE = mY + mH / 2;   // le joueur suivi est au centre
@@ -1014,29 +1016,33 @@ function dessineMinimap(zone, tPartie) {
     ctx.fillStyle = C.horsZone;
     ctx.fill('evenodd');
 
-    // Bord actuel du cyclone
-    ctx.beginPath();
-    ctx.arc(zxE, zyE, zone.r * kz, 0, Math.PI * 2);
-    ctx.strokeStyle = C.zone;
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-
-    // Cercle d'arrivee, une fois que le cyclone s'est mis en marche
-    var attente = SIM.ZONE_ATTENTE === undefined ? 12 : SIM.ZONE_ATTENTE;
-    var rFin = SIM.ZONE_R1 === undefined ? 320 : SIM.ZONE_R1;
-    if ((tPartie || 0) > attente && zone.r > rFin + 1) {
+    // Bord actuel du cyclone, sauf si tout est deja recouvert
+    if (zone.r > 0.5) {
       ctx.beginPath();
-      ctx.arc(zxE, zyE, rFin * kz, 0, Math.PI * 2);
+      ctx.arc(zxE, zyE, zone.r * kz, 0, Math.PI * 2);
+      ctx.strokeStyle = C.zone;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+
+    // Cercle d'arrivee de la vague en cours : le serveur en donne le
+    // centre et le rayon, car il change a chaque vague.
+    var cible = snapDernier && snapDernier.zoneCible;
+    if (cible && cible.r > 0 && zone.r > cible.r + 1) {
+      var txE = cxE + (cible.x - suivi.x) * kz;
+      var tyE = cyE + (cible.y - suivi.y) * kz;
+      ctx.beginPath();
+      ctx.arc(txE, tyE, cible.r * kz, 0, Math.PI * 2);
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2.5;
       ctx.stroke();
 
       // Hors du cercle d'arrivee : le chemin le plus court pour y entrer
-      var dx = zone.x - suivi.x, dy = zone.y - suivi.y;
+      var dx = cible.x - suivi.x, dy = cible.y - suivi.y;
       var dist = Math.hypot(dx, dy);
-      if (dist > rFin) {
-        var bx = zxE - dx / dist * rFin * kz;
-        var by = zyE - dy / dist * rFin * kz;
+      if (dist > cible.r) {
+        var bx = txE - dx / dist * cible.r * kz;
+        var by = tyE - dy / dist * cible.r * kz;
         ctx.globalAlpha = 0.5;
         ctx.beginPath();
         ctx.moveTo(cxE, cyE);
@@ -1088,9 +1094,10 @@ function dessineMinimap(zone, tPartie) {
       timeStr = '--:--'; // en attente d'adversaire
     }
   } else {
-    var t = snapDernier ? snapDernier.t || 0 : 0;
-    var att = SIM.ZONE_ATTENTE || 12, dur = SIM.ZONE_DUREE || 70;
-    var secs = Math.max(0, t < att ? att - t : (att + dur) - t);
+    // Le serveur donne le temps restant avant le prochain evenement du
+    // cyclone : debut d'un resserrement, ou fin de celui en cours.
+    var secs = (snapDernier && typeof snapDernier.zoneT === 'number')
+      ? Math.max(0, snapDernier.zoneT) : 0;
     var mm = Math.floor(secs / 60), ss = Math.floor(secs % 60);
     timeStr = mm + ':' + (ss < 10 ? '0' : '') + ss;
   }
@@ -1766,11 +1773,14 @@ function dessine(p, moi, viseur, drag) {
     ctx.fill('evenodd');
     ctx.restore();
 
-    ctx.strokeStyle = C.zone;
-    ctx.lineWidth = 7;
-    ctx.beginPath();
-    ctx.arc(p.zone.x, p.zone.y, p.zone.r, 0, Math.PI * 2);
-    ctx.stroke();
+    // Carte entierement recouverte : plus de bord a montrer
+    if (p.zone.r > 0.5) {
+      ctx.strokeStyle = C.zone;
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.arc(p.zone.x, p.zone.y, p.zone.r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   // ---- interface ----
