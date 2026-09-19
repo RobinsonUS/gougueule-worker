@@ -40,6 +40,7 @@ const ZONE_TIC = 0.75;   // les degats de zone tombent par paliers, pas en conti
 const AVION_V = 420;      // vitesse de l'avion, en unites par seconde
 const PARA_DUREE = 10;      // duree de la descente en parachute
 const PARA_ESPACE = 260;    // ecart entre deux joueurs largues de force
+const PARA_PLONGE = 2;      // bouton de plongee maintenu : descente x2
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
 const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
 
@@ -260,7 +261,7 @@ function ajouteJoueur(partie, pid, name, avecArme = true) {
     poingTimer: 0, punchSide: 0, _pCd: 0,
     inv: avecArme ? [null, 'fusil', null, null, null, null] : [null, null, null, null, null, null],
     ticZone: 0, lastSeq: 0, file: [], rtt: 120,
-    enAvion: false, para: 0,
+    enAvion: false, para: 0, plonge: false,
   };
 }
 
@@ -341,6 +342,13 @@ function posAvion(p) {
   if (!av) return { x: p.monde / 2, y: p.monde / 2 };
   const w = Math.min(1, av.duree > 0 ? p.tVol / av.duree : 1);
   return { x: av.x0 + (av.x1 - av.x0) * w, y: av.y0 + (av.y1 - av.y0) * w };
+}
+
+// Point de chute d'un bot : tire au hasard dans la carte, loin des bords.
+function choisitChute(p, a) {
+  const m = p.monde, marge = m * 0.10;
+  a._chute = { x: marge + Math.random() * (m - 2 * marge),
+               y: marge + Math.random() * (m - 2 * marge) };
 }
 
 // Fait sauter un agent depuis la position courante de l'avion.
@@ -537,6 +545,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
     a.x += mx * VITESSE * dt; a.y += my * VITESSE * dt;
     borne(a, p.monde);
     if (typeof cmd.angle === 'number') a.angle = cmd.angle;
+    a.plonge = !!cmd.plonge;      // bouton maintenu : on tombe deux fois plus vite
     a.lastSeq = cmd.seq;
     return;
   }
@@ -642,7 +651,10 @@ function pas(p) {
 
   for (const o of p.obs) if (o.secousse > 0) o.secousse = Math.max(0, o.secousse - DT);
   for (const a of arr) {
-    if (a.para > 0) a.para = Math.max(0, a.para - DT);
+    if (a.para > 0) {
+      a.para = Math.max(0, a.para - DT * (a.plonge ? PARA_PLONGE : 1));
+      if (a.para === 0) a.plonge = false;
+    } else a.plonge = false;
     if (a.secousse > 0) a.secousse = Math.max(0, a.secousse - DT);
     if (a.touche > 0)   a.touche   = Math.max(0, a.touche - DT);
     if (a.tirTimer > 0) a.tirTimer = Math.max(0, a.tirTimer - DT);
@@ -691,8 +703,19 @@ function pas(p) {
     return;
   }
 
+  // Saut des bots : chacun quitte l'avion au plus pres de SON point de
+  // chute, tire au hasard sur la carte. Aucun ne suit le joueur.
   for (const a of arr) {
-    if (a.estBot && a.vivant && a.enAvion && p.phaseVol && p.tVol >= (a._tSaut || 0)) largue(p, a, 0);
+    if (!a.estBot || !a.vivant || !a.enAvion || !p.phaseVol) continue;
+    if (!a._chute) choisitChute(p, a);
+    const d = Math.hypot(a._chute.x - a.x, a._chute.y - a.y);
+    const sEloigne = a._dChute !== undefined && d > a._dChute + 1;
+    a._dChute = d;
+    // Il saute des que l'avion s'eloigne de sa cible, ou quand le parachute
+    // suffit a l'atteindre. La minuterie reste un garde-fou.
+    if (sEloigne || d < VITESSE * PARA_DUREE * 0.75 || p.tVol >= (a._tSaut || 0)) {
+      largue(p, a, 0);
+    }
   }
 
   for (const a of arr) {
@@ -838,6 +861,19 @@ function calculeBotCmd(p, bot, arr) {
     if (d < nearestDist) { nearestDist = d; nearest = a; }
   }
 
+  // 0. En parachute : cap sur son propre point de chute, sans se soucier
+  //    des autres. Un bot ne doit pas descendre sur le dos du joueur.
+  if (bot.para > 0) {
+    if (!bot._chute) choisitChute(p, bot);
+    const cx = bot._chute.x - bot.x, cy = bot._chute.y - bot.y;
+    const cd = Math.hypot(cx, cy);
+    const ca = cd > 1 ? Math.atan2(cy, cx) : bot.angle;
+    const v = cd > 40 ? 1 : 0;              // arrive : il se laisse tomber
+    return { seq: bot.lastSeq + 1, mx: cx / (cd || 1) * v, my: cy / (cd || 1) * v,
+             angle: lerpAngle(bot.angle, ca, 6 * DT), tire: false, recharger: false,
+             plonge: false, dt: DT };
+  }
+
   let tmx = 0, tmy = 0, angle = bot.angle, tire = false;
 
   // 1. Fuir la zone si dehors
@@ -957,7 +993,11 @@ function demarrePartie(room, gid) {
     a.enAvion = true; a.para = 0;
     a.x = p.avion.x0; a.y = p.avion.y0;
     // Les bots sautent chacun a un moment different du trajet
-    if (a.estBot) a._tSaut = p.avion.duree * (0.15 + p.rng() * 0.7);
+    if (a.estBot) {
+      a._tSaut = p.avion.duree * (0.15 + p.rng() * 0.85);
+      a._dChute = undefined;
+      choisitChute(p, a);
+    }
     p._figes = false;
     if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._tick = 0; a._dernCmd = null; }
   }
@@ -1225,7 +1265,7 @@ function envoieSnapshot(room) {
   for (const [id, a] of Object.entries(p.agents)) {
     agents[id] = { id: a.id, name: a.name, x: a.x, y: a.y, angle: a.angle, pv: a.pv, vivant: a.vivant,
       tueurId: a.tueurId || null, place: a.place || 0,
-      enAvion: !!a.enAvion, para: a.para || 0,
+      enAvion: !!a.enAvion, para: a.para || 0, plonge: !!a.plonge,
       munitions: a.munitions, rechargement: a.rechargement, dureeRechargeMax: a.dureeRechargeMax,
       secousse: a.secousse, touche: a.touche, tirTimer: a.tirTimer, recul: a.recul,
       revele: a.revele, slot: a.slot, inv: a.inv,
