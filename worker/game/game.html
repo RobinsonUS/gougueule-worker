@@ -2083,13 +2083,13 @@ function dessineBoutonSaut() {
   if (!mode) { btnSaut.presse = false; btnSaut.id = -1; return; }
   btnSaut.mode = mode;
   var c = joyDroitePos();
-  btnSaut.x = c.x; btnSaut.y = c.y; btnSaut.r = JOY_R * 0.92;
+  btnSaut.x = c.x; btnSaut.y = c.y; btnSaut.r = JOY_STICK * 1.18;
   var sp = mode === 'plonge' ? SPRITES.bouton_plonge : SPRITES.bouton_para;
-  var d = btnSaut.presse ? 4 : 0;
+  var d = btnSaut.presse ? 3 : 0;
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,0.45)';
-  ctx.shadowBlur = btnSaut.presse ? 5 : 13;
-  ctx.shadowOffsetY = btnSaut.presse ? 2 : 6;
+  ctx.shadowBlur = btnSaut.presse ? 4 : 9;
+  ctx.shadowOffsetY = btnSaut.presse ? 1 : 4;
   if (sp && (sp.naturalWidth || sp.width)) {
     ctx.drawImage(sp, c.x - btnSaut.r, c.y - btnSaut.r + d, btnSaut.r * 2, btnSaut.r * 2);
   } else {
@@ -2443,11 +2443,12 @@ function calcInput() {
 // vise-t-on avec le stick droit ?
 function viseStick() { return joyD.actif && Math.hypot(joyD.dx, joyD.dy) > 0.18; }
 
-function dessineUnStick(centre, st, couleurStick) {
+function dessineUnStick(centre, st, couleurStick, sansBoule) {
   ctx.save();
   ctx.beginPath(); ctx.arc(centre.x, centre.y, JOY_R, 0, Math.PI*2);
   ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fill();
   ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.stroke();
+  if (sansBoule) { ctx.restore(); return; }   // la boule cede la place au bouton
   var sx = centre.x + st.dx * JOY_R, sy = centre.y + st.dy * JOY_R;
   ctx.beginPath(); ctx.arc(sx, sy, JOY_STICK, 0, Math.PI*2);
   ctx.fillStyle = couleurStick; ctx.fill();
@@ -2458,8 +2459,9 @@ function dessineUnStick(centre, st, couleurStick) {
 function dessineJoysticks() {
   if (!isMobile) return;
   dessineUnStick(joyGauchePos(), joyG, 'rgba(255,255,255,0.34)');
-  // En l'air, le stick de tir cede la place au bouton (saut, puis plongee)
-  if (modeBoutonAir()) return;
+  // En l'air, seule la boule du stick de tir cede la place au bouton :
+  // le socle, lui, reste dessine.
+  if (modeBoutonAir()) { dessineUnStick(joyDroitePos(), joyD, '', true); return; }
   dessineUnStick(joyDroitePos(), joyD, viseStick() ? 'rgba(240,146,47,0.62)' : 'rgba(255,255,255,0.34)');
 }
 
@@ -2536,7 +2538,7 @@ function posEcran(e) {
 function surSaut(e) {
   if (!modeBoutonAir() || btnSaut.r <= 0) return false;
   var q = posEcran(e);
-  return Math.hypot(q.x - btnSaut.x, q.y - btnSaut.y) <= btnSaut.r * 1.15;
+  return Math.hypot(q.x - btnSaut.x, q.y - btnSaut.y) <= btnSaut.r * 1.6;
 }
 
 function surContinue(e) {
@@ -2806,29 +2808,54 @@ function pousseSnap(snap) {
   while (buffer.length > 25) buffer.shift(); // 25 snaps ≈ 0.83s d'historique
 }
 
-// Trajet parfaitement rectiligne et regulier : quand l'instantane suivant
-// n'est pas encore arrive, on prolonge le vol plutot que de figer l'avion,
-// sinon il avance par a-coups des que la camera, elle, bouge en continu.
-function avionExtrapole(sn, cible) {
-  var a = sn && sn.avion;
-  if (!a) return null;
-  if (!a.vol || !a.v) return a;
-  var dt = (cible - sn.st) / 1000;
-  if (!isFinite(dt)) return a;
-  if (dt > 0.5) dt = 0.5;                  // jamais de fuite en avant
-  if (dt < -0.5) dt = -0.5;
-  return { x: a.x + Math.cos(a.angle) * a.v * dt,
-           y: a.y + Math.sin(a.angle) * a.v * dt,
-           angle: a.angle, v: a.v, vol: a.vol, fin: a.fin };
+// L'avion partage exactement la meme horloge que les joueurs : il est
+// interpole entre les deux memes instantanes, avec le meme poids. Le placer
+// par le calcul sur l'horloge murale paraissait plus juste, mais le serveur
+// avance, lui, sur son horloge de simulation : les deux derivent, et chaque
+// instantane venait corriger l'ecart. D'ou un avion saccade vu du parachute,
+// et un decor saccade vu de l'avion, puisque la camera y est accrochee.
+function avionEntre(a, b, w) {
+  if (!a || !b) return a || b || null;
+  return { x: a.x + (b.x - a.x) * w, y: a.y + (b.y - a.y) * w,
+           angle: angleLerp(a.angle, b.angle, w),
+           v: b.v, vol: b.vol, fin: b.fin };
+}
+
+// ─── Horloge de lecture ────────────────────────────────────────────
+// On ne lit PAS les instantanes sur l'horloge murale : le serveur avance sur
+// son horloge de simulation (un pas fixe par tick) mais les estampille a
+// l'heure qu'il est. Les deux derivent et tremblent l'une par rapport a
+// l'autre, et interpoler sur l'heure murale donnait une vitesse de lecture
+// qui variait a chaque instantane. On avance donc un compteur de ticks a
+// cadence nominale, doucement ramene vers le dernier tick recu.
+var tickVue = null, tVueDerniere = 0;
+var TICKS_S = 30;                 // cadence des instantanes serveur
+function majTickVue() {
+  var now = Date.now();
+  var vise = snapDernier.tick - (RETARD / 1000) * TICKS_S;
+  if (tickVue === null || Math.abs(vise - tickVue) > TICKS_S) {
+    tickVue = vise; tVueDerniere = now; return tickVue;
+  }
+  var dt = (now - tVueDerniere) / 1000;
+  tVueDerniere = now;
+  if (!(dt > 0)) dt = 0;
+  if (dt > 0.25) dt = 0.25;
+  // Le rattrapage joue sur la VITESSE, jamais sur la position : corriger la
+  // position ferait sauter la lecture a chaque instantane recu, puisque la
+  // cible, elle, avance par paliers d'un tick.
+  var corr = (vise - tickVue) * 0.5;           // ticks par seconde
+  if (corr > 6) corr = 6; else if (corr < -6) corr = -6;
+  tickVue += dt * (TICKS_S + corr);
+  return tickVue;
 }
 
 function etatAffiche() {
   if (!snapDernier) return null;
-  var cible = Date.now() - deltaHorloge - RETARD;   // instant serveur a afficher
+  var tv = majTickVue();                 // tick serveur a afficher, en continu
 
   var av = null, ap = null;
   for (var i = buffer.length - 1; i >= 0; i--) {
-    if (buffer[i].st <= cible) { av = buffer[i]; ap = buffer[i + 1] || null; break; }
+    if (buffer[i].tick <= tv) { av = buffer[i]; ap = buffer[i + 1] || null; break; }
   }
   if (!av) { av = buffer[0] || snapDernier; ap = buffer[1] || null; }
 
@@ -2837,9 +2864,11 @@ function etatAffiche() {
     zone: snapDernier.zone, avion: snapDernier.avion, agents: {}, balles: [],
   };
 
-  if (ap && ap.st > av.st) {
-    var w = (cible - av.st) / (ap.st - av.st);
+  if (ap && ap.tick > av.tick) {
+    var w = (tv - av.tick) / (ap.tick - av.tick);
     if (w < 0) w = 0; if (w > 1) w = 1;
+    var cible = av.st + (ap.st - av.st) * w;   // instant murale correspondant
+    vue.avion = avionEntre(av.avion, ap.avion, w);
     vue.zone = { x: av.zone.x + (ap.zone.x - av.zone.x) * w,
                  y: av.zone.y + (ap.zone.y - av.zone.y) * w,
                  r: av.zone.r + (ap.zone.r - av.zone.r) * w };
@@ -2877,12 +2906,10 @@ function etatAffiche() {
     }
     vue.balles = av.balles.slice();
     vue.zone = av.zone;
+    // Pas d'instantane suivant : tout se fige ensemble, joueurs et avion.
+    // Un seul element qui continuerait d'avancer suffirait a tout saccader.
+    vue.avion = av.avion || snapDernier.avion;
   }
-  // L'avion suit une droite a vitesse constante : on le place par le calcul,
-  // sur l'horloge serveur. C'est exact, et surtout continu quoi qu'il arrive
-  // au rythme des instantanes.
-  vue.avion = avionExtrapole(av, cible) || snapDernier.avion;
-
   // Post-correction : forcer vivant=false sur quiconque est mort dans le dernier snap
   for (var zid in vue.agents) {
     var zSnap = snapDernier.agents[zid];
@@ -2983,7 +3010,7 @@ function connect() {
               munitions: SIM.CHARGEUR, rechargement: 0, dureeRechargeMax: 0,
               tirTimer: 0, recul: 0,
               slot: 1, inv: [null, 'fusil', null, null, null, null] };
-      pendantes = []; seq = 0; buffer = [];
+      pendantes = []; seq = 0; buffer = []; tickVue = null;
       erreurLissage.x = 0; erreurLissage.y = 0;
       document.getElementById('lobby').style.display = 'none';
       etatJeu = 'jeu';
@@ -3003,7 +3030,7 @@ function connect() {
       localParticules.length = 0;
       _deathFades = {};
       alphaVisJoueurs = {};
-      buffer = [];                           // interpolation de l'ancienne carte
+      buffer = []; tickVue = null;           // interpolation de l'ancienne carte
       snapDernier = null;                    // une image blanche vaut mieux qu'une fausse
       pendantes = [];        // commandes non confirmees : caduques
       // seq n'est PAS remis a zero : le serveur le veut monotone
@@ -3159,7 +3186,7 @@ function connect() {
     } else if (etatJeu === 'jeu' || etatJeu === 'mort' || etatJeu === 'fin') {
       // Déconnexion en cours de partie → retour au lobby propre
       pid = null; moi = null; snapDernier = null;
-      buffer = []; pendantes = []; seq = 0;
+      buffer = []; pendantes = []; seq = 0; tickVue = null;
       ws = null;
       setLobbyMsg('Connexion perdue', 'Le serveur s\'est déconnecté');
       etatJeu = 'lobby';
@@ -3245,7 +3272,7 @@ function rejouer() {
   if (ws) { try { ws.close(); } catch {} ws = null; }
   etatJeu = 'lobby';
   pid = null; moi = null; snapDernier = null;
-  buffer = []; pendantes = []; seq = 0; aEnvoyer = [];
+  buffer = []; pendantes = []; seq = 0; aEnvoyer = []; tickVue = null;
   nbPings = 0; pingEnvoi = {};
   myKills = 0; nbVivants = 0; alphaVisJoueurs = {};
   tMortVue = 0; idSpectate = null; agentVue = null;
