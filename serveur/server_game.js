@@ -1214,7 +1214,7 @@ function envoieSnapshot(room) {
     // Le cercle d'arrivee n'est revele qu'au moment ou le cyclone se met
     // en marche, pas pendant la pause qui precede.
     zoneCible: p.zoneBouge ? p.zoneCible : null, zoneT: p.zoneT,
-    avion: p.avion ? { x: p.avion.x, y: p.avion.y, angle: p.avion.angle,
+    avion: p.avion ? { x: p.avion.x, y: p.avion.y, angle: p.avion.angle, v: AVION_V,
                        vol: p.phaseVol, fin: p.tVol >= p.avion.duree } : null,
     paraDuree: PARA_DUREE,
     phaseLobby, compteARebours, nbJoueursLobby,
