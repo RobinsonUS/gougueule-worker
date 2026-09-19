@@ -102,7 +102,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // weapon_XM8 : supprimer le fond blanc
 (function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
   var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
@@ -1649,10 +1649,11 @@ function dessineParachute(j) {
   ctx.fillStyle = 'rgba(255,255,255,0.25)';
   rond(gx, gy, gw, gh); ctx.fill();
   var rempli = gh * paraReste(j);            // elle se vide pendant la descente
+  var plonge = (j.id === pid) ? (plongeActive() || !!j.plonge) : !!j.plonge;
   if (rempli > 0.5) {
     ctx.save();
     rond(gx, gy, gw, gh); ctx.clip();
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = plonge ? '#7ad7ff' : '#ffffff';
     rond(gx, gy + gh - rempli, gw, rempli); ctx.fill();
     ctx.restore();
   }
@@ -2045,7 +2046,7 @@ var tMortVue = 0;           // instant ou le client a constate la mort
 var idSpectate = null;      // agent suivi une fois mort
 var agentVue = null;        // agent dont on affiche la vue (soi, ou le suivi)
 var btnContinue = { x: 0, y: 0, w: 0, h: 0, presse: false };
-var btnSaut = { x: 0, y: 0, r: 0, presse: false };
+var btnSaut = { x: 0, y: 0, r: 0, presse: false, mode: '', id: -1 };
 
 // Vrai tant que le joueur est passager de l'avion
 function dansAvion() {
@@ -2058,6 +2059,19 @@ function enParachute() {
   var m = snapDernier.agents && snapDernier.agents[pid];
   return !!(m && m.vivant && (m.para || 0) > 0);
 }
+// Quel bouton occupe la place du stick de tir : aucun au sol.
+function modeBoutonAir() {
+  if (etatJeu !== 'jeu') return '';
+  if (dansAvion()) return 'saut';
+  if (enParachute()) return 'plonge';
+  return '';
+}
+// Vrai tant que le bouton de plongee est tenu
+function plongeActive() {
+  return modeBoutonAir() === 'plonge' &&
+         (btnSaut.presse || !!keys['plonge']);
+}
+
 function envoieSaut() {
   if (!dansAvion()) return;
   if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify({ type: 'saut' })); } catch (e) {} }
@@ -2065,9 +2079,12 @@ function envoieSaut() {
 
 // Bouton rond, a la place du stick de tir pendant le vol
 function dessineBoutonSaut() {
+  var mode = modeBoutonAir();
+  if (!mode) { btnSaut.presse = false; btnSaut.id = -1; return; }
+  btnSaut.mode = mode;
   var c = joyDroitePos();
   btnSaut.x = c.x; btnSaut.y = c.y; btnSaut.r = JOY_R * 0.92;
-  var sp = SPRITES.bouton_para;
+  var sp = mode === 'plonge' ? SPRITES.bouton_plonge : SPRITES.bouton_para;
   var d = btnSaut.presse ? 4 : 0;
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,0.45)';
@@ -2077,7 +2094,7 @@ function dessineBoutonSaut() {
     ctx.drawImage(sp, c.x - btnSaut.r, c.y - btnSaut.r + d, btnSaut.r * 2, btnSaut.r * 2);
   } else {
     ctx.beginPath(); ctx.arc(c.x, c.y + d, btnSaut.r, 0, Math.PI * 2);
-    ctx.fillStyle = '#f5a623'; ctx.fill();
+    ctx.fillStyle = mode === 'plonge' ? '#e8342f' : '#f5a623'; ctx.fill();
   }
   ctx.restore();
 }
@@ -2354,6 +2371,9 @@ function initTouchControls() {
       var p = versJeu(t.clientX, t.clientY);
       // Inventaire : vérifier ce touch même si joystick actif
       if (debuteInvDragTouch(t)) { continue; }
+      // Le bouton d'air occupe la place du stick de tir : ce doigt lui
+      // appartient, le stick ne doit pas s'en emparer.
+      if (surSaut({ clientX: t.clientX, clientY: t.clientY })) continue;
       var cg = joyGauchePos(), cd = joyDroitePos();
       var dG = Math.hypot(p.x - cg.x, p.y - cg.y);
       var dD = Math.hypot(p.x - cd.x, p.y - cd.y);
@@ -2438,8 +2458,8 @@ function dessineUnStick(centre, st, couleurStick) {
 function dessineJoysticks() {
   if (!isMobile) return;
   dessineUnStick(joyGauchePos(), joyG, 'rgba(255,255,255,0.34)');
-  // Pendant le vol, le stick de tir cede la place au bouton de saut
-  if (dansAvion()) return;
+  // En l'air, le stick de tir cede la place au bouton (saut, puis plongee)
+  if (modeBoutonAir()) return;
   dessineUnStick(joyDroitePos(), joyD, viseStick() ? 'rgba(240,146,47,0.62)' : 'rgba(255,255,255,0.34)');
 }
 
@@ -2514,9 +2534,9 @@ function posEcran(e) {
            y: (t.clientY - r.top) / r.height * HAUT };
 }
 function surSaut(e) {
-  if (etatJeu !== 'jeu' || !dansAvion()) return false;
+  if (!modeBoutonAir() || btnSaut.r <= 0) return false;
   var q = posEcran(e);
-  return Math.hypot(q.x - btnSaut.x, q.y - btnSaut.y) <= btnSaut.r;
+  return Math.hypot(q.x - btnSaut.x, q.y - btnSaut.y) <= btnSaut.r * 1.15;
 }
 
 function surContinue(e) {
@@ -2529,7 +2549,7 @@ function surContinue(e) {
 // window et non cv : le canevas n'existe pas encore a ce stade
 window.addEventListener('mousedown', function (e) {
   if (surContinue(e)) { btnContinue.presse = true; e.preventDefault(); return; }
-  if (surSaut(e)) { btnSaut.presse = true; e.preventDefault(); }
+  if (surSaut(e)) { btnSaut.presse = true; btnSaut.mode = modeBoutonAir(); e.preventDefault(); }
 });
 window.addEventListener('mouseup', function (e) {
   if (btnContinue.presse) {
@@ -2538,29 +2558,63 @@ window.addEventListener('mouseup', function (e) {
     return;
   }
   if (btnSaut.presse) {
-    btnSaut.presse = false;
-    if (surSaut(e)) envoieSaut();
+    var etait = btnSaut.mode;
+    btnSaut.presse = false; btnSaut.id = -1;
+    if (etait === 'saut' && surSaut(e)) envoieSaut();
   }
 });
+// La souris peut quitter la fenetre en restant enfoncee : on relache.
+window.addEventListener('blur', function () { btnSaut.presse = false; btnSaut.id = -1; });
 window.addEventListener('touchstart', function (e) {
   if (surContinue(e)) { btnContinue.presse = true; e.preventDefault(); return; }
-  if (surSaut(e)) { btnSaut.presse = true; e.preventDefault(); }
+  for (var i = 0; i < (e.changedTouches ? e.changedTouches.length : 0); i++) {
+    var t = e.changedTouches[i];
+    if (surSaut({ clientX: t.clientX, clientY: t.clientY })) {
+      btnSaut.presse = true; btnSaut.mode = modeBoutonAir(); btnSaut.id = t.identifier;
+      e.preventDefault();
+      break;
+    }
+  }
 }, { passive: false });
-window.addEventListener('touchend', function (e) {
+function finTouchAir(e) {
   var t = e.changedTouches && e.changedTouches[0];
   if (btnContinue.presse) {
     btnContinue.presse = false;
     if (t && surContinue({ clientX: t.clientX, clientY: t.clientY })) rejouer();
     return;
   }
-  if (btnSaut.presse) {
-    btnSaut.presse = false;
-    if (t && surSaut({ clientX: t.clientX, clientY: t.clientY })) envoieSaut();
+  if (!btnSaut.presse) return;
+  for (var i = 0; i < (e.changedTouches ? e.changedTouches.length : 0); i++) {
+    var q = e.changedTouches[i];
+    if (btnSaut.id !== -1 && q.identifier !== btnSaut.id) continue;
+    var etait = btnSaut.mode;
+    btnSaut.presse = false; btnSaut.id = -1;
+    if (etait === 'saut' && surSaut({ clientX: q.clientX, clientY: q.clientY })) envoieSaut();
+    return;
+  }
+}
+window.addEventListener('touchend', finTouchAir, { passive: false });
+window.addEventListener('touchcancel', finTouchAir, { passive: false });
+// Le doigt glisse hors du bouton : la plongee s'arrete, comme un vrai appui
+window.addEventListener('touchmove', function (e) {
+  if (!btnSaut.presse || btnSaut.id === -1) return;
+  for (var i = 0; i < e.changedTouches.length; i++) {
+    var q = e.changedTouches[i];
+    if (q.identifier !== btnSaut.id) continue;
+    if (!surSaut({ clientX: q.clientX, clientY: q.clientY })) {
+      btnSaut.presse = false; btnSaut.id = -1;
+    }
+    return;
   }
 }, { passive: false });
 // Raccourci clavier, pratique sur ordinateur
 window.addEventListener('keydown', function (e) {
-  if (e.code === 'Space' && dansAvion()) { e.preventDefault(); envoieSaut(); }
+  if (e.code !== 'Space') return;
+  if (dansAvion()) { e.preventDefault(); envoieSaut(); }
+  else if (enParachute()) { e.preventDefault(); keys['plonge'] = true; }
+});
+window.addEventListener('keyup', function (e) {
+  if (e.code === 'Space') keys['plonge'] = false;
 });
 
 // =================== WebSocket + état ===================
@@ -2642,8 +2696,11 @@ function appliqueLoc(a, cmd) {
   if (n > 1) { mx /= n; my /= n; }
   deplaceLoc(a, mx * SIM.VITESSE * dt, my * SIM.VITESSE * dt);
 
-  // Séparation joueur-joueur : comme separeJoueurs() côté serveur
-  if (snapDernier) {
+  // Separation joueur-joueur : comme separeJoueurs() cote serveur. En l'air
+  // le serveur ne separe personne : si le client le faisait quand meme, il
+  // se corrigeait a chaque instantane et tout sautillait des qu'on volait
+  // au milieu des autres parachutistes.
+  if (snapDernier && !dansAvion() && !enParachute()) {
     var R2 = SIM.R_JOUEUR * 2;
     for (var otherId in snapDernier.agents) {
       if (otherId === pid) continue;
@@ -2715,6 +2772,15 @@ function reconcilie(snap) {
   moi.munitions = s.munitions;
   moi.rechargement = s.rechargement;
   moi.dureeRechargeMax = s.dureeRechargeMax;
+
+  // Dans l'avion, rien n'est predit : le serveur colle le joueur a l'avion.
+  // On prend sa position telle quelle, sans rejeu ni correction en attente,
+  // sinon il reste un reliquat d'erreur au moment du saut.
+  if (s.enAvion) {
+    pendantes.length = 0;
+    erreurLissage.x = 0; erreurLissage.y = 0;
+    return;
+  }
 
   // on jette ce que le serveur a deja pris en compte
   var reste = [];
@@ -3159,6 +3225,7 @@ function produitCommande(dt) {
   seq++;
   var cmd = { seq: seq, mx: mouvement.mx, my: mouvement.my,
               angle: angle, tire: tire, poing: poing, recharger: !!keys['r'],
+              plonge: plongeActive(),
               dt: Math.min(0.05, dt) };
 
   appliqueLoc(moi, cmd);        // effet immediat a l'ecran
@@ -3385,7 +3452,7 @@ function boucle(maintenant) {
     dessineJoysticks();
   }
   // Le bouton de saut s'affiche aussi sur ordinateur : un clic suffit
-  if (etatJeu === 'jeu' && dansAvion()) { repereEcran(); dessineBoutonSaut(); }
+  if (etatJeu === 'jeu' && modeBoutonAir()) { repereEcran(); dessineBoutonSaut(); }
 
   dessineEcranMort(vue);
 
