@@ -38,7 +38,7 @@ const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DE
 const ZONE_TIC = 0.75;   // les degats de zone tombent par paliers, pas en continu
 // Largage : l'avion traverse la carte, les joueurs sautent quand ils veulent
 const AVION_V = 700;        // unites par seconde
-const PARA_DUREE = 11;      // duree de la descente en parachute
+const PARA_DUREE = 10;      // duree de la descente en parachute
 const PARA_ESPACE = 260;    // ecart entre deux joueurs largues de force
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
 const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
