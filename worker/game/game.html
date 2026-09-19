@@ -1499,14 +1499,23 @@ function dessineEcranMort(vue) {
 }
 
 // ============ largage : parachute, jauge, avion ====================
-var PARA_DUREE_DEF = 11;
+var PARA_DUREE_DEF = 10;
 var PARA_LARGE = R_JOUEUR * 5.4;   // largeur du dome une fois au sol
 var PARA_ECH0 = 1.75;              // agrandissement au moment du saut
+var PARA_FIN_PLAT = 1;             // derniere seconde : plus aucun dezoom
 
-// Hauteur restante, de 1 (sous l'avion) a 0 (au sol)
-function paraHaut(j) {
+// Part de descente restante, de 1 (sous l'avion) a 0 (au sol) : sert a la jauge
+function paraReste(j) {
   var d = (snapDernier && snapDernier.paraDuree) || PARA_DUREE_DEF;
   return Math.max(0, Math.min(1, (j.para || 0) / d));
+}
+
+// Hauteur restante, de 1 a 0 : atteint 0 une seconde avant l'atterrissage,
+// pour que la derniere seconde se passe deja a la bonne taille.
+function paraHaut(j) {
+  var d = (snapDernier && snapDernier.paraDuree) || PARA_DUREE_DEF;
+  var fin = Math.max(0.001, d - PARA_FIN_PLAT);
+  return Math.max(0, Math.min(1, ((j.para || 0) - PARA_FIN_PLAT) / fin));
 }
 
 function dessineParachute(j) {
@@ -1527,12 +1536,17 @@ function dessineParachute(j) {
   ctx.fill();
   ctx.restore();
 
+  // Le dome suit la direction du deplacement, comme le personnage au sol
+  ctx.save();
+  ctx.translate(j.x, j.y);
+  ctx.rotate((j.angle || 0) + Math.PI / 2);   // le sprite pointe vers le haut
   if (sp && (sp.naturalWidth || sp.width)) {
-    ctx.drawImage(sp, j.x - L / 2, j.y - H / 2, L, H);
+    ctx.drawImage(sp, -L / 2, -H / 2, L, H);
   } else {
     ctx.fillStyle = '#7ac943';
-    ctx.beginPath(); ctx.ellipse(j.x, j.y, L / 2, H / 2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 0, L / 2, H / 2, 0, 0, Math.PI * 2); ctx.fill();
   }
+  ctx.restore();
 
   // Jauge de descente, a droite du dome : elle se remplit par le bas
   var gx = j.x + L * 0.61, gw = L * 0.036, gh = L * 0.39;
@@ -1552,7 +1566,7 @@ function dessineParachute(j) {
   };
   ctx.fillStyle = 'rgba(255,255,255,0.25)';
   rond(gx, gy, gw, gh); ctx.fill();
-  var rempli = gh * (1 - h);                 // pleine = descente terminee
+  var rempli = gh * (1 - paraReste(j));      // pleine = descente terminee
   if (rempli > 0.5) {
     ctx.save();
     rond(gx, gy, gw, gh); ctx.clip();
@@ -1843,17 +1857,17 @@ function dessine(p, moi, viseur, drag) {
     if (!j.vivant || j.enAvion || (j.para || 0) <= 0) continue;
     if (j.x < gch - 600 || j.x > drt + 600 || j.y < hau - 600 || j.y > bas + 600) continue;
     dessineParachute(j);
-    dessineNom(j.x, j.y - R_JOUEUR * 1.6, j.id === moi ? '' : (j.name || ''), 1);
   }
 
   // L'avion survole tout le reste
-  const _av = snapDernier && snapDernier.avion;
+  const _av = (p && p.avion) || (snapDernier && snapDernier.avion);
   if (_av && _av.vol) dessineAvion(_av);
 
   // Pseudos au-dessus des têtes (visibilité = même alpha que le joueur)
   for (var _ni = 0; _ni < agentsArr.length; _ni++) {
     var _nj = agentsArr[_ni];
     if (!_nj.vivant || _nj.id === pid) continue;
+    if (_nj.enAvion || (_nj.para || 0) > 0) continue;   // en l'air : aucun pseudo
     var _na = alphaVisJoueurs[_nj.id];
     if (_na === undefined) _na = 1;
     dessineNom(_nj.x, _nj.y, _nj.name || '?', _na);
@@ -2657,7 +2671,7 @@ function etatAffiche() {
 
   var vue = {
     t: snapDernier.t, fini: snapDernier.fini, vainqueur: snapDernier.vainqueur,
-    zone: snapDernier.zone, agents: {}, balles: [],
+    zone: snapDernier.zone, avion: snapDernier.avion, agents: {}, balles: [],
   };
 
   if (ap && ap.st > av.st) {
@@ -2666,6 +2680,13 @@ function etatAffiche() {
     vue.zone = { x: av.zone.x + (ap.zone.x - av.zone.x) * w,
                  y: av.zone.y + (ap.zone.y - av.zone.y) * w,
                  r: av.zone.r + (ap.zone.r - av.zone.r) * w };
+    // L'avion aussi : sans cela il avance par paliers de 30 Hz et parait vibrer
+    if (av.avion && ap.avion && ap.avion.vol) {
+      vue.avion = { x: av.avion.x + (ap.avion.x - av.avion.x) * w,
+                    y: av.avion.y + (ap.avion.y - av.avion.y) * w,
+                    angle: angleLerp(av.avion.angle, ap.avion.angle, w),
+                    vol: ap.avion.vol, fin: ap.avion.fin };
+    }
     for (var id in ap.agents) {
       var b = ap.agents[id], a2 = av.agents[id];
       if (!a2) { vue.agents[id] = b; continue; }
@@ -2700,6 +2721,7 @@ function etatAffiche() {
     }
     vue.balles = av.balles.slice();
     vue.zone = av.zone;
+    if (av.avion) vue.avion = av.avion;
   }
   // Post-correction : forcer vivant=false sur quiconque est mort dans le dernier snap
   for (var zid in vue.agents) {
@@ -3026,6 +3048,15 @@ function produitCommande(dt) {
   // Poing : desktop=clic, mobile=joyD. Autorisé aussi en lobby (arbres seulement)
   var poing = false;
   if (!itemEnMain && !enPause && (isMobile ? joyD.actif : shooting) && (moi.poingTimer||0) < 0.02) poing = true;
+
+  // En l'air (avion ou parachute) : on ne vise pas, on s'oriente simplement
+  // vers la direction du deplacement, comme le personnage au sol.
+  if (dansAvion() || enParachute()) {
+    if (mouvement.mx !== 0 || mouvement.my !== 0) angle = Math.atan2(mouvement.my, mouvement.mx);
+    else angle = moi.angle;
+    tire = false; poing = false;
+    viseeAngle = angle; viseeActive = false;
+  }
 
   seq++;
   var cmd = { seq: seq, mx: mouvement.mx, my: mouvement.my,
