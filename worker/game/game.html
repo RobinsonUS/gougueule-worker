@@ -219,7 +219,7 @@ let ZOOM = 1, PX = 1;          // PX = ZOOM * DPR : pixels reels par unite monde
 // Zoom de vue : 1 au sol, plus petit en l'air (on voit le paysage de plus haut).
 // PXV = PX * VUE_Z : pixels reels par unite monde, zoom de vue compris.
 let VUE_Z = 1, PXV = 1;
-const ZOOM_AIR = 0.55;         // vue depuis l'avion : le paysage est 2x plus petit
+const ZOOM_AIR = 0.75;         // vue depuis l'avion : le paysage est vu d'un peu plus haut
 let calque, cctx;
 const cam = { x: MONDE / 2, y: MONDE / 2 };
 const ecranJoueur = { x: 0, y: 0 };
@@ -872,6 +872,7 @@ var MM_CASES = 64, MM_GROUPE = 8;
 // reste dans cette marge, chaque image se contente d'un drawImage.
 var MM_MARGE = 1.6;          // le cache couvre 1.6 fois la fenetre
 var _mmCv = null, _mmCx = 0, _mmCy = 0, _mmLarge = 0, _mmCle = '', _mmSale = false;
+var _mmPeint = null;   // la toile dont le contenu est effectivement a jour
 var _mmProchain = 0;
 
 function marqueMinimapSale() { _mmSale = true; }
@@ -895,21 +896,14 @@ function blobSur(c, x, y, r, lobes, phase, amp) {
   c.closePath();
 }
 
-function peintMinimap(cx, cy, large, taillePx) {
-  if (!_mmCv) _mmCv = document.createElement('canvas');
-  if (_mmCv.width !== taillePx) { _mmCv.width = taillePx; _mmCv.height = taillePx; }
-  var c = _mmCv.getContext('2d');
-  var lc = large * MM_MARGE;               // cote couvert par le cache
-  var k = taillePx / lc;
+// Peint une portion du cache : fond, quadrillage et vegetation, bornes au
+// rectangle monde demande. Le contexte est deja au repere monde.
+function _mmBande(c, g, h2, d, b, large, taillePx) {
+  c.save();
+  c.beginPath(); c.rect(g, h2, d - g, b - h2); c.clip();
 
-  c.setTransform(1, 0, 0, 1, 0, 0);
   c.fillStyle = C.dehors;
-  c.fillRect(0, 0, taillePx, taillePx);
-  c.translate(taillePx / 2, taillePx / 2);
-  c.scale(k, k);
-  c.translate(-cx, -cy);
-
-  var g = cx - lc / 2, d = cx + lc / 2, h2 = cy - lc / 2, b = cy + lc / 2;
+  c.fillRect(g, h2, d - g, b - h2);
   var sx = Math.max(0, g), sy = Math.max(0, h2);
   var sw = Math.min(MONDE, d) - sx, sh = Math.min(MONDE, b) - sy;
   if (sw > 0 && sh > 0) { c.fillStyle = C.sol; c.fillRect(sx, sy, sw, sh); }
@@ -930,29 +924,80 @@ function peintMinimap(cx, cy, large, taillePx) {
 
   c.lineJoin = 'round';
   for (var i = 0; i < localObs.length; i++) {
-    var o = localObs[i];
-    if (o.x < g - o.r || o.x > d + o.r || o.y < h2 - o.r || o.y > b + o.r) continue;
-    if (o.type === 'souche') {
+    var ob = localObs[i];
+    if (ob.x < g - ob.r || ob.x > d + ob.r || ob.y < h2 - ob.r || ob.y > b + ob.r) continue;
+    if (ob.type === 'souche') {
       c.fillStyle = C.souche;
-      c.beginPath(); c.arc(o.x, o.y, o.r * 0.55, 0, 6.2832); c.fill();
+      c.beginPath(); c.arc(ob.x, ob.y, ob.r * 0.55, 0, 6.2832); c.fill();
       continue;
     }
-    var arbre = o.type === 'arbre';
-    var pal = arbre ? C.arbres[o.teinte] : C.buisson;
-    c.lineWidth = o.r * 0.15;
+    var arbre = ob.type === 'arbre';
+    var pal = arbre ? C.arbres[ob.teinte] : C.buisson;
+    c.lineWidth = ob.r * 0.15;
     c.strokeStyle = arbre ? C.traitArbre : C.buisson.trait;
-    blobSur(c, o.x, o.y, o.r * 0.92, o.lobes, o.phase, 0.075);
+    blobSur(c, ob.x, ob.y, ob.r * 0.92, ob.lobes, ob.phase, 0.075);
     c.stroke();
     c.fillStyle = pal.ext;
-    blobSur(c, o.x, o.y, o.r * 0.92, o.lobes, o.phase, 0.075);
+    blobSur(c, ob.x, ob.y, ob.r * 0.92, ob.lobes, ob.phase, 0.075);
     c.fill();
     c.fillStyle = pal.int;
-    blobSur(c, o.x, o.y, o.r * (arbre ? 0.58 : 0.55), o.lobes, o.phase, 0.105);
+    blobSur(c, ob.x, ob.y, ob.r * (arbre ? 0.58 : 0.55), ob.lobes, ob.phase, 0.105);
     c.fill();
   }
+  c.restore();
+}
+
+function peintMinimap(cx, cy, large, taillePx) {
+  if (!_mmCv) _mmCv = document.createElement('canvas');
+  var intact = (_mmPeint === _mmCv);       // la toile porte-t-elle encore son dessin ?
+  if (_mmCv.width !== taillePx) { _mmCv.width = taillePx; _mmCv.height = taillePx; intact = false; }
+  var c = _mmCv.getContext('2d');
+  var lc = large * MM_MARGE;               // cote couvert par le cache
+  var k = taillePx / lc;
+  var cle = MONDE + ':' + mapVerLocal + ':' + localObs.length;
+  var g = cx - lc / 2, d = cx + lc / 2, h2 = cy - lc / 2, b = cy + lc / 2;
+
+  // Recentrage : le decor n'a pas change, seul le cadrage glisse. On decale
+  // l'image deja peinte et on ne repeint que la bande qui vient d'entrer.
+  // Sans cela, courir ou survoler la carte fait repeindre 200 arbres d'un
+  // coup, et l'image saute.
+  var mx = cx - _mmCx, my = cy - _mmCy;
+  var glisse = intact && _mmCle === cle && !_mmSale &&
+               _mmLarge === large && (mx !== 0 || my !== 0) &&
+               Math.abs(mx) < lc * 0.9 && Math.abs(my) < lc * 0.9;
+
+  if (glisse) {
+    // Decalage arrondi au pixel du cache : une recopie fractionnaire
+    // reechantillonne l'image, et au bout de quelques dizaines de pas le
+    // decor devient flou.
+    mx = Math.round(mx * k) / k;
+    my = Math.round(my * k) / k;
+    cx = _mmCx + mx; cy = _mmCy + my;
+    g = cx - lc / 2; d = cx + lc / 2; h2 = cy - lc / 2; b = cy + lc / 2;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalCompositeOperation = 'copy';   // ce qui sort du cadre est efface
+    c.drawImage(_mmCv, -mx * k, -my * k);
+    c.globalCompositeOperation = 'source-over';
+  }
+
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.translate(taillePx / 2, taillePx / 2);
+  c.scale(k, k);
+  c.translate(-cx, -cy);
+
+  if (!glisse) {
+    _mmBande(c, g, h2, d, b, large, taillePx);
+  } else {
+    if (mx > 0) _mmBande(c, d - mx, h2, d, b, large, taillePx);
+    else if (mx < 0) _mmBande(c, g, h2, g - mx, b, large, taillePx);
+    if (my > 0) _mmBande(c, g, b - my, d, b, large, taillePx);
+    else if (my < 0) _mmBande(c, g, h2, d, h2 - my, large, taillePx);
+  }
+
   _mmCx = cx; _mmCy = cy; _mmLarge = large;
-  _mmCle = MONDE + ':' + mapVerLocal + ':' + localObs.length;
+  _mmCle = cle;
   _mmSale = false;
+  _mmPeint = _mmCv;
 }
 
 function dessineMinimap(zone, tPartie) {
@@ -994,8 +1039,11 @@ function dessineMinimap(zone, tPartie) {
     var taillePx = Math.round(mW * MM_MARGE * 2);   // 2x pour rester net
     var cle = MONDE + ':' + mapVerLocal + ':' + localObs.length;
     var marge = (large * MM_MARGE - large) / 2;     // de quoi bouger sans repeindre
+    // Le recentrage ne repeint qu'une fine bande : on le declenche souvent,
+    // pour repartir le cout au lieu de le prendre d'un bloc tous les 800
+    // unites parcourues.
     if (!_mmCv || cle !== _mmCle || minimapAPeindre() || large !== _mmLarge ||
-        Math.abs(suivi.x - _mmCx) > marge * 0.9 || Math.abs(suivi.y - _mmCy) > marge * 0.9) {
+        Math.abs(suivi.x - _mmCx) > marge * 0.12 || Math.abs(suivi.y - _mmCy) > marge * 0.12) {
       peintMinimap(suivi.x, suivi.y, large, taillePx);
     }
     var px = taillePx / (large * MM_MARGE);         // pixels du cache par unite monde
@@ -1530,6 +1578,23 @@ function paraHaut(j) {
   return Math.max(0, Math.min(1, ((j.para || 0) - PARA_FIN_PLAT) / fin));
 }
 
+// Les gros sprites (avion, parachute) sont redimensionnes une fois pour
+// toutes dans une toile a la taille de l'ecran, au lieu d'etre remis a
+// l'echelle a chaque image : c'est ce qui coutait cher pendant le largage.
+var _spEch = {};
+function spriteEchelle(sp, cle, largeurPx) {
+  var w = Math.max(16, Math.round(largeurPx / 16) * 16);
+  var e = _spEch[cle];
+  if (e && e.w === w && e.src === sp) return e;
+  var rw = sp.naturalWidth || sp.width, rh = sp.naturalHeight || sp.height;
+  var hh = Math.max(1, Math.round(w * (rh / rw)));
+  var cv = document.createElement('canvas');
+  cv.width = w; cv.height = hh;
+  cv.getContext('2d').drawImage(sp, 0, 0, w, hh);
+  e = _spEch[cle] = { cv: cv, w: w, src: sp };
+  return e;
+}
+
 function dessineParachute(j) {
   var sp = SPRITES.parachute;
   var h = paraHaut(j);
@@ -1553,7 +1618,7 @@ function dessineParachute(j) {
   ctx.translate(j.x, j.y);
   ctx.rotate((j.angle || 0) + Math.PI / 2);   // le sprite pointe vers le haut
   if (sp && (sp.naturalWidth || sp.width)) {
-    ctx.drawImage(sp, -L / 2, -H / 2, L, H);
+    ctx.drawImage(spriteEchelle(sp, 'parachute', L * PXV).cv, -L / 2, -H / 2, L, H);
   } else {
     ctx.fillStyle = '#7ac943';
     ctx.beginPath(); ctx.ellipse(0, 0, L / 2, H / 2, 0, 0, Math.PI * 2); ctx.fill();
@@ -1580,7 +1645,7 @@ function dessineParachute(j) {
   };
   ctx.fillStyle = 'rgba(255,255,255,0.25)';
   rond(gx, gy, gw, gh); ctx.fill();
-  var rempli = gh * (1 - paraReste(j));      // pleine = descente terminee
+  var rempli = gh * paraReste(j);            // elle se vide pendant la descente
   if (rempli > 0.5) {
     ctx.save();
     rond(gx, gy, gw, gh); ctx.clip();
@@ -1593,12 +1658,12 @@ function dessineParachute(j) {
 function dessineAvion(av) {
   var sp = SPRITES.avion;
   if (!sp || !(sp.naturalWidth || sp.width)) return;
-  var L = R_JOUEUR * 13;
+  var L = R_JOUEUR * 22.75;
   var H = L * ((sp.naturalHeight || sp.height) / (sp.naturalWidth || sp.width));
   ctx.save();
   ctx.translate(av.x, av.y);
   ctx.rotate(av.angle + Math.PI / 2);      // le sprite pointe vers le haut
-  ctx.drawImage(sp, -L / 2, -H / 2, L, H);
+  ctx.drawImage(spriteEchelle(sp, 'avion', L * PXV).cv, -L / 2, -H / 2, L, H);
   ctx.restore();
 }
 
@@ -2670,6 +2735,22 @@ function pousseSnap(snap) {
   while (buffer.length > 25) buffer.shift(); // 25 snaps ≈ 0.83s d'historique
 }
 
+// Trajet parfaitement rectiligne et regulier : quand l'instantane suivant
+// n'est pas encore arrive, on prolonge le vol plutot que de figer l'avion,
+// sinon il avance par a-coups des que la camera, elle, bouge en continu.
+function avionExtrapole(sn, cible) {
+  var a = sn && sn.avion;
+  if (!a) return null;
+  if (!a.vol || !a.v) return a;
+  var dt = (cible - sn.st) / 1000;
+  if (!isFinite(dt)) return a;
+  if (dt > 0.5) dt = 0.5;                  // jamais de fuite en avant
+  if (dt < -0.5) dt = -0.5;
+  return { x: a.x + Math.cos(a.angle) * a.v * dt,
+           y: a.y + Math.sin(a.angle) * a.v * dt,
+           angle: a.angle, v: a.v, vol: a.vol, fin: a.fin };
+}
+
 function etatAffiche() {
   if (!snapDernier) return null;
   var cible = Date.now() - deltaHorloge - RETARD;   // instant serveur a afficher
@@ -2691,13 +2772,6 @@ function etatAffiche() {
     vue.zone = { x: av.zone.x + (ap.zone.x - av.zone.x) * w,
                  y: av.zone.y + (ap.zone.y - av.zone.y) * w,
                  r: av.zone.r + (ap.zone.r - av.zone.r) * w };
-    // L'avion aussi : sans cela il avance par paliers de 30 Hz et parait vibrer
-    if (av.avion && ap.avion && ap.avion.vol) {
-      vue.avion = { x: av.avion.x + (ap.avion.x - av.avion.x) * w,
-                    y: av.avion.y + (ap.avion.y - av.avion.y) * w,
-                    angle: angleLerp(av.avion.angle, ap.avion.angle, w),
-                    vol: ap.avion.vol, fin: ap.avion.fin };
-    }
     for (var id in ap.agents) {
       var b = ap.agents[id], a2 = av.agents[id];
       if (!a2) { vue.agents[id] = b; continue; }
@@ -2732,8 +2806,12 @@ function etatAffiche() {
     }
     vue.balles = av.balles.slice();
     vue.zone = av.zone;
-    if (av.avion) vue.avion = av.avion;
   }
+  // L'avion suit une droite a vitesse constante : on le place par le calcul,
+  // sur l'horloge serveur. C'est exact, et surtout continu quoi qu'il arrive
+  // au rythme des instantanes.
+  vue.avion = avionExtrapole(av, cible) || snapDernier.avion;
+
   // Post-correction : forcer vivant=false sur quiconque est mort dans le dernier snap
   for (var zid in vue.agents) {
     var zSnap = snapDernier.agents[zid];
