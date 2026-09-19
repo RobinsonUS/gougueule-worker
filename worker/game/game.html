@@ -216,6 +216,10 @@ const C = {
 
 let cv, ctx, LARG = LARG_JEU, HAUT = HAUT_JEU, ECH = 1, DPR = 1;
 let ZOOM = 1, PX = 1;          // PX = ZOOM * DPR : pixels reels par unite monde
+// Zoom de vue : 1 au sol, plus petit en l'air (on voit le paysage de plus haut).
+// PXV = PX * VUE_Z : pixels reels par unite monde, zoom de vue compris.
+let VUE_Z = 1, PXV = 1;
+const ZOOM_AIR = 0.55;         // vue depuis l'avion : le paysage est 2x plus petit
 let calque, cctx;
 const cam = { x: MONDE / 2, y: MONDE / 2 };
 const ecranJoueur = { x: 0, y: 0 };
@@ -245,6 +249,7 @@ function redimensionne() {
   ZOOM = Math.min(1, window.innerWidth / LARG_JEU,
                      window.innerHeight / HAUT_JEU);
   PX = ZOOM * DPR;
+  PXV = PX * VUE_Z;
 
   cv.style.width  = Math.round(LARG_JEU * ZOOM) + 'px';
   cv.style.height = Math.round(HAUT_JEU * ZOOM) + 'px';
@@ -253,9 +258,16 @@ function redimensionne() {
 }
 
 function repereMonde() {
-  ctx.setTransform(PX, 0, 0, PX,
-                   PX * (LARG / 2 - cam.x),
-                   PX * (HAUT / 2 - cam.y));
+  ctx.setTransform(PXV, 0, 0, PXV,
+                   PX * (LARG / 2) - PXV * cam.x,
+                   PX * (HAUT / 2) - PXV * cam.y);
+}
+// Zoom de vue vise par l'agent suivi : reduit en l'air, normal au sol
+function zoomVue(a) {
+  if (!a) return 1;
+  if (a.enAvion) return ZOOM_AIR;
+  if ((a.para || 0) > 0) return 1 - (1 - ZOOM_AIR) * paraHaut(a);
+  return 1;
 }
 function repereEcran() { ctx.setTransform(PX, 0, 0, PX, 0, 0); }
 
@@ -787,11 +799,11 @@ function dessineJoueur(p, j, coul, alpha, decoupe, gch, hau, demiL, demiH, arme,
   if (!direct) {
     // calque a la taille du personnage, pas de l'ecran :
     // sinon on recopie 3 millions de pixels quatre fois par image
-    px = Math.max(2, Math.ceil(2 * R_SPRITE * PX));
+    px = Math.max(2, Math.ceil(2 * R_SPRITE * PXV));
     if (calque.width !== px) { calque.width = px; calque.height = px; }
     cctx.setTransform(1, 0, 0, 1, 0, 0);
     cctx.clearRect(0, 0, px, px);
-    cctx.setTransform(PX, 0, 0, PX, px / 2 - j.x * PX, px / 2 - j.y * PX);
+    cctx.setTransform(PXV, 0, 0, PXV, px / 2 - j.x * PXV, px / 2 - j.y * PXV);
     ctx = cctx;
   }
 
@@ -816,8 +828,8 @@ function dessineJoueur(p, j, coul, alpha, decoupe, gch, hau, demiL, demiH, arme,
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = alpha;
     ctx.drawImage(calque,
-                  PX * (LARG / 2 - cam.x) + j.x * PX - px / 2,
-                  PX * (HAUT / 2 - cam.y) + j.y * PX - px / 2);
+                  PX * (LARG / 2) + PXV * (j.x - cam.x) - px / 2,
+                  PX * (HAUT / 2) + PXV * (j.y - cam.y) - px / 2);
     ctx.restore();
     repereMonde();
   }
@@ -1500,7 +1512,7 @@ function dessineEcranMort(vue) {
 
 // ============ largage : parachute, jauge, avion ====================
 var PARA_DUREE_DEF = 10;
-var PARA_LARGE = R_JOUEUR * 5.4;   // largeur du dome une fois au sol
+var PARA_LARGE = R_JOUEUR * 6.4;   // largeur du dome une fois au sol
 var PARA_ECH0 = 1.75;              // agrandissement au moment du saut
 var PARA_FIN_PLAT = 1;             // derniere seconde : plus aucun dezoom
 
@@ -1548,7 +1560,9 @@ function dessineParachute(j) {
   }
   ctx.restore();
 
-  // Jauge de descente, a droite du dome : elle se remplit par le bas
+  // Jauge de descente, a droite du dome : elle se remplit par le bas.
+  // Chacun ne voit que la sienne.
+  if (j.id !== pid) return;
   var gx = j.x + L * 0.61, gw = L * 0.036, gh = L * 0.39;
   var gy = j.y - gh / 2, r = gw / 2;
   var rond = function (x, y, w, hh) {
@@ -1584,10 +1598,6 @@ function dessineAvion(av) {
   ctx.save();
   ctx.translate(av.x, av.y);
   ctx.rotate(av.angle + Math.PI / 2);      // le sprite pointe vers le haut
-  ctx.globalAlpha = 0.22;
-  ctx.fillStyle = '#000';
-  ctx.beginPath(); ctx.ellipse(0, H * 0.06, L * 0.30, H * 0.30, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.globalAlpha = 1;
   ctx.drawImage(sp, -L / 2, -H / 2, L, H);
   ctx.restore();
 }
@@ -1597,6 +1607,7 @@ function dessine(p, moi, viseur, drag) {
   const a = p.agents[moi];
   if (!a) return;
   agentVue = a;               // la minimap et le HUD suivent cet agent
+  VUE_Z = zoomVue(a); PXV = PX * VUE_Z;   // vue reduite tant qu'on est en l'air
   // Dans l'avion, le joueur EST a la position de l'avion : la camera le
   // suit donc naturellement, sans traitement particulier.
   cam.x = a.x;
@@ -1610,7 +1621,7 @@ function dessine(p, moi, viseur, drag) {
   ecranJoueur.x = LARG / 2;
   ecranJoueur.y = HAUT / 2;
 
-  const demiL = LARG / 2, demiH = HAUT / 2;
+  const demiL = (LARG / 2) / VUE_Z, demiH = (HAUT / 2) / VUE_Z;
   const gch = cam.x - demiL, drt = cam.x + demiL;
   const hau = cam.y - demiH, bas = cam.y + demiH;
 
@@ -3057,6 +3068,10 @@ function produitCommande(dt) {
     tire = false; poing = false;
     viseeAngle = angle; viseeActive = false;
   }
+  // Dans l'avion, le stick de deplacement ne repond pas : le serveur ignore
+  // deja le mouvement, la prediction locale doit l'ignorer aussi, sinon la
+  // vue derive alors que le joueur ne bouge pas.
+  if (dansAvion()) { mouvement.mx = 0; mouvement.my = 0; angle = moi.angle; }
 
   seq++;
   var cmd = { seq: seq, mx: mouvement.mx, my: mouvement.my,
