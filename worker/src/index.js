@@ -11,6 +11,7 @@ import continueBtn from '../game/continue_button.png';
 import avion from '../game/avion.png';
 import parachute from '../game/parachute.png';
 import boutonPara from '../game/bouton_para.png';
+import boutonPlonge from '../game/bouton_plonge.png';
 import arm          from '../game/arm.png';
 import hand         from '../game/hand.png';
 import head         from '../game/head.png';
@@ -161,6 +162,7 @@ export default {
       '/game/avion.png':          avion,
       '/game/parachute.png':      parachute,
       '/game/bouton_para.png':    boutonPara,
+      '/game/bouton_plonge.png':  boutonPlonge,
       '/game/arm.png':          arm,
       '/game/hand.png':         hand,
       '/game/head.png':         head,
