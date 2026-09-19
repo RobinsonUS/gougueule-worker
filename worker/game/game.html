@@ -1026,6 +1026,9 @@ function dessineMinimap(zone, tPartie) {
   cadre();
 
   var suivi = agentVue || moi;
+  // En vol, on suit la camera : la position du passager ne vaut que par
+  // paliers de 30 Hz et ferait trembler la fenetre de la minimap.
+  if (suivi && suivi.enAvion) suivi = { x: cam.x, y: cam.y };
   var enJeu = snapDernier && !snapDernier.phaseLobby && suivi;
 
   if (!enJeu) {
@@ -1561,7 +1564,7 @@ function dessineEcranMort(vue) {
 // ============ largage : parachute, jauge, avion ====================
 var PARA_DUREE_DEF = 10;
 var PARA_LARGE = R_JOUEUR * 6.4;   // largeur du dome une fois au sol
-var PARA_ECH0 = 1.75;              // agrandissement au moment du saut
+var PARA_ECH0 = 1.15;              // agrandissement au moment du saut
 var PARA_FIN_PLAT = 1;             // derniere seconde : plus aucun dezoom
 
 // Part de descente restante, de 1 (sous l'avion) a 0 (au sol) : sert a la jauge
@@ -1658,7 +1661,7 @@ function dessineParachute(j) {
 function dessineAvion(av) {
   var sp = SPRITES.avion;
   if (!sp || !(sp.naturalWidth || sp.width)) return;
-  var L = R_JOUEUR * 22.75;
+  var L = R_JOUEUR * 15.17;
   var H = L * ((sp.naturalHeight || sp.height) / (sp.naturalWidth || sp.width));
   ctx.save();
   ctx.translate(av.x, av.y);
@@ -1673,10 +1676,12 @@ function dessine(p, moi, viseur, drag) {
   if (!a) return;
   agentVue = a;               // la minimap et le HUD suivent cet agent
   VUE_Z = zoomVue(a); PXV = PX * VUE_Z;   // vue reduite tant qu'on est en l'air
-  // Dans l'avion, le joueur EST a la position de l'avion : la camera le
-  // suit donc naturellement, sans traitement particulier.
-  cam.x = a.x;
-  cam.y = a.y;
+  // Dans l'avion, le joueur EST a la position de l'avion. On accroche la
+  // camera a l'avion calcule plutot qu'a la position du passager, qui ne
+  // vaut que par paliers de 30 Hz : sinon toute la scene avance par a-coups.
+  const _avCam = (p && p.avion) || (snapDernier && snapDernier.avion);
+  if (a.enAvion && _avCam && _avCam.vol) { cam.x = _avCam.x; cam.y = _avCam.y; }
+  else { cam.x = a.x; cam.y = a.y; }
 
   repereEcran();
   ctx.fillStyle = C.dehors;
