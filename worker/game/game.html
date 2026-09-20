@@ -2482,10 +2482,13 @@ function dessineLigneTir(angle) {
   ctx.lineCap = 'round';
   ctx.strokeStyle = 'rgba(150,150,150,0.5)';
   ctx.beginPath();
-  ctx.moveTo(ecranJoueur.x + Math.cos(angle) * R_JOUEUR * 3.2,
-             ecranJoueur.y + Math.sin(angle) * R_JOUEUR * 3.2);
-  ctx.lineTo(ecranJoueur.x + Math.cos(angle) * PORTEE,
-             ecranJoueur.y + Math.sin(angle) * PORTEE);
+  // Meme decalage lateral que la bouche du canon, sinon le trait part a
+  // cote de l'arme alors que les balles, elles, sortent bien du canon.
+  var _ox = -Math.sin(angle) * CANON_PERP, _oy = Math.cos(angle) * CANON_PERP;
+  ctx.moveTo(ecranJoueur.x + _ox + Math.cos(angle) * R_JOUEUR * 3.2,
+             ecranJoueur.y + _oy + Math.sin(angle) * R_JOUEUR * 3.2);
+  ctx.lineTo(ecranJoueur.x + _ox + Math.cos(angle) * PORTEE,
+             ecranJoueur.y + _oy + Math.sin(angle) * PORTEE);
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.restore();
