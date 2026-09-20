@@ -1934,12 +1934,17 @@ function dessine(p, moi, viseur, drag) {
   pose(true, false);
   pose(true, true);
 
-  // Parachutistes : au-dessus du decor, mais sous l'avion
+  // Parachutistes : au-dessus du decor et des joueurs au sol, mais sous
+  // l'avion. Entre eux, c'est l'altitude qui tranche : le plus haut passe
+  // par-dessus, donc on dessine du plus bas au plus haut.
+  const _para = [];
   for (const j of agentsArr) {
     if (!j.vivant || j.enAvion || (j.para || 0) <= 0) continue;
     if (j.x < gch - 600 || j.x > drt + 600 || j.y < hau - 600 || j.y > bas + 600) continue;
-    dessineParachute(j);
+    _para.push(j);
   }
+  _para.sort((u, v) => (u.para || 0) - (v.para || 0));
+  for (const j of _para) dessineParachute(j);
 
   // L'avion survole tout le reste
   const _av = (p && p.avion) || (snapDernier && snapDernier.avion);
