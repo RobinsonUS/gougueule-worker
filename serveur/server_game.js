@@ -695,7 +695,7 @@ function pas(p) {
         // On fige le mouvement et les animations en cours, mais on ne
         // touche pas a l'inventaire : le vainqueur garde l'arme en main
         // s'il en avait une, et reste les mains vides sinon.
-        a.file.length = 0; a._dernCmd = null;
+        a.file.length = 0; a._cible = null;
         a.tirTimer = 0; a.recul = 0; a.poingTimer = 0;
         a.secousse = 0; a.rechargement = 0; a.dureeRechargeMax = 0;
       }
@@ -721,10 +721,8 @@ function pas(p) {
 
   for (const a of arr) {
     if (a.estBot && a.vivant) {
-      if (p.tick % 3 === 0) {
-        a._dernCmd = calculeBotCmd(p, a, arr);
-      }
-      if (a._dernCmd) a.file = [{ ...a._dernCmd, seq: a.lastSeq + 1, dt: DT }];
+      if (p.tick % 3 === 0 || !a._cible) a._cible = calculeBotCmd(p, a, arr);
+      a.file = [commandeBot(a)];
     }
   }
 
@@ -850,8 +848,8 @@ function calculeBotCmd(p, bot, arr) {
   if (p.phaseLobby) {
     if (t % 150 === 1) bot._wA = Math.random() * Math.PI * 2;
     const wa = bot._wA || 0;
-    return { seq: bot.lastSeq + 1, mx: Math.cos(wa), my: Math.sin(wa),
-             angle: lerpAngle(bot.angle, wa, 3 * DT), tire: false, recharger: false, dt: DT };
+    return { mx: Math.cos(wa), my: Math.sin(wa), ang: wa,
+             tire: false, recharger: false, vitesseRot: 3 };
   }
 
   // Ennemi le plus proche
@@ -870,9 +868,8 @@ function calculeBotCmd(p, bot, arr) {
     const cd = Math.hypot(cx, cy);
     const ca = cd > 1 ? Math.atan2(cy, cx) : bot.angle;
     const v = cd > 40 ? 1 : 0;              // arrive : il se laisse tomber
-    return { seq: bot.lastSeq + 1, mx: cx / (cd || 1) * v, my: cy / (cd || 1) * v,
-             angle: lerpAngle(bot.angle, ca, 6 * DT), tire: false, recharger: false,
-             plonge: false, dt: DT };
+    return { mx: cx / (cd || 1) * v, my: cy / (cd || 1) * v, ang: ca,
+             tire: false, recharger: false, vitesseRot: 6 };
   }
 
   let tmx = 0, tmy = 0, angle = bot.angle, tire = false;
@@ -890,7 +887,10 @@ function calculeBotCmd(p, bot, arr) {
     const IDEAL = 380;
     if (nearestDist > IDEAL + 80) { tmx = dx / nearestDist; tmy = dy / nearestDist; }
     else if (nearestDist < IDEAL - 80) { tmx = -dx / nearestDist * 0.5; tmy = -dy / nearestDist * 0.5; }
-    angle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.90;
+    // Le tremblement de visee derive doucement au lieu de sauter a chaque
+    // decision : sinon le bot pivote par a-coups meme avec un cap lisse.
+    bot._jit = (bot._jit || 0) + ((Math.random() - 0.5) * 0.90 - (bot._jit || 0)) * 0.12;
+    angle = Math.atan2(dy, dx) + bot._jit;
     if (nearestDist < 520 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
 
   } else {
@@ -908,11 +908,24 @@ function calculeBotCmd(p, bot, arr) {
   if (!nearest) bot._vu = 0;
   const n = Math.hypot(tmx, tmy);
   if (n > 0.01) { tmx /= n; tmy /= n; }
+  return { mx: tmx, my: tmy, ang: angle, tire, recharger, vitesseRot: 4 };
+}
 
-  bot._smx = (bot._smx || 0) * 0.70 + tmx * 0.30;
-  bot._smy = (bot._smy || 0) * 0.70 + tmy * 0.30;
-  angle = lerpAngle(bot.angle, angle, 4 * DT);
-  return { seq: bot.lastSeq + 1, mx: bot._smx, my: bot._smy, angle, tire, recharger, dt: DT };
+// La decision d'un bot ne se prend que toutes les 3 ticks, mais son cap et
+// sa direction doivent evoluer a CHAQUE tick : sinon il pivote par paliers
+// de 10 Hz, ce qui se voit tout de suite, surtout sous le parachute.
+// 0,888 par tick equivaut au 0,70 d'avant pris une fois sur trois.
+function commandeBot(a) {
+  const c = a._cible;
+  if (!c) return { seq: a.lastSeq + 1, mx: 0, my: 0, angle: a.angle, dt: DT };
+  a._smx = (a._smx || 0) * 0.888 + c.mx * 0.112;
+  a._smy = (a._smy || 0) * 0.888 + c.my * 0.112;
+  // Deux etages : le cap vise glisse vers la consigne, puis le bot glisse
+  // vers ce cap. Un seul etage laisserait passer les sauts de consigne.
+  a._angC = (a._angC === undefined) ? c.ang : lerpAngle(a._angC, c.ang, 6 * DT);
+  const angle = lerpAngle(a.angle, a._angC, (c.vitesseRot || 4) * DT);
+  return { seq: a.lastSeq + 1, mx: a._smx, my: a._smy, angle,
+           tire: c.tire, recharger: c.recharger, plonge: false, dt: DT };
 }
 function spawnBot(partie, nom) {
   const pid = 'bot_' + Math.random().toString(36).slice(2, 7);
@@ -1000,7 +1013,7 @@ function demarrePartie(room, gid) {
       choisitChute(p, a);
     }
     p._figes = false;
-    if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._tick = 0; a._dernCmd = null; }
+    if (a.estBot) { a._smx = 0; a._smy = 0; a._vu = 0; a._tick = 0; a._cible = null; a._angC = undefined; a._jit = 0; }
   }
 
   // Envoyer la nouvelle carte a chaque client, avec son point d'arrivee
