@@ -41,6 +41,7 @@ const AVION_V = 420;      // vitesse de l'avion, en unites par seconde
 const PARA_DUREE = 10;      // duree de la descente en parachute
 const PARA_ESPACE = 260;    // ecart entre deux joueurs largues de force
 const PARA_PLONGE = 2;      // bouton de plongee maintenu : descente x2
+const EAU_LENTEUR = 0.5;    // a pied dans l'eau : deux fois plus lent
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
 const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
 
@@ -160,13 +161,24 @@ function valideMap(brut, nom) {
     vagues,
   };
 
+  // Contour de l'ile : tout ce qui est dehors est de l'eau. Pas de contour
+  // = carte entierement terrestre, comme avant.
+  let ile = null;
+  if (Array.isArray(brut.ile)) {
+    const pts = brut.ile
+      .map(q => Array.isArray(q) ? { x: Number(q[0]), y: Number(q[1]) }
+                                 : { x: Number(q && q.x), y: Number(q && q.y) })
+      .filter(q => Number.isFinite(q.x) && Number.isFinite(q.y));
+    if (pts.length >= 3) ile = pts;
+  }
+
   const spawns = Array.isArray(brut.spawns)
     ? brut.spawns
         .filter(p => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
         .map(p => ({ x: Number(p.x), y: Number(p.y) }))
     : [];
 
-  return { nom: brut.nom || nom, monde, zone, spawns, obs };
+  return { nom: brut.nom || nom, monde, zone, spawns, obs, ile };
 }
 
 function mapSecours(nom) {
@@ -483,6 +495,21 @@ function majZone(p) {
 }
 
 // ─────────────── Deplacement ───────────────────────────────────────
+// Point dans le polygone de l'ile (lancer de rayon). Sans contour, toute
+// la carte est terrestre. Meme fonction, au caractere pres, cote client :
+// une divergence ici ferait sautiller le joueur sur la cote.
+function dansIle(p, x, y) {
+  const c = p.map && p.map.ile;
+  if (!c) return true;
+  let dedans = false;
+  for (let i = 0, j = c.length - 1; i < c.length; j = i++) {
+    const xi = c[i].x, yi = c[i].y, xj = c[j].x, yj = c[j].y;
+    if ((yi > y) !== (yj > y) &&
+        x < (xj - xi) * (y - yi) / (yj - yi) + xi) dedans = !dedans;
+  }
+  return dedans;
+}
+
 function borne(a, monde) {
   a.x = Math.min(monde - R_JOUEUR, Math.max(R_JOUEUR, a.x));
   a.y = Math.min(monde - R_JOUEUR, Math.max(R_JOUEUR, a.y));
@@ -550,8 +577,12 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
     return;
   }
 
+  // Dans l'eau, on avance deux fois moins vite. A pied seulement : en
+  // parachute et en avion la question ne se pose pas, ces branches sont
+  // sorties plus haut.
+  const vit = VITESSE * (dansIle(p, a.x, a.y) ? 1 : EAU_LENTEUR);
   // Bots : 1 itération de collision (précision réduite mais 3× plus rapide)
-  deplaceSolo(a, mx * VITESSE * dt, my * VITESSE * dt, p.arbres || p.obs, a.estBot ? 1 : 3, p.monde, p.arbresGrid);
+  deplaceSolo(a, mx * vit * dt, my * vit * dt, p.arbres || p.obs, a.estBot ? 1 : 3, p.monde, p.arbresGrid);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
   if (cmd.poing && a._pCd < 0.02) {
@@ -1036,6 +1067,7 @@ function payloadCarte(p) {
       MONDE: p.monde,
       ZONE_ATTENTE: zc.attente, ZONE_DUREE: zc.duree, ZONE_R0: zc.r0, ZONE_R1: zc.r1,
     },
+    ile: p.map.ile,
     decor: p.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, seed: o.seed })),
   };
 }
