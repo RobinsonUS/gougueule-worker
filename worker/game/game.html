@@ -163,6 +163,7 @@ const DUREE_MAX = 120;
 
 // ============ inventaire ============
 const NB_SLOTS = 6;
+const EAU_LENTEUR = 0.5;   // a pied dans l'eau : deux fois plus lent
 
 // ============ couleurs ============
 const C = {
@@ -170,6 +171,11 @@ const C = {
   ligne:       '#5f8145',
   dehors:      '#4a6635',
   ligneDehors: '#425c2e',
+  // L'eau qui entoure l'ile, et la meme en plus sombre au-dela des
+  // frontieres du monde. Deux constantes, faciles a retoucher.
+  eau:         '#1073b9',
+  eauLoin:     '#0f5a8e',
+  ligneEau:    '#0f6cae',
   ombre:       'rgba(0,0,0,0.13)',
   buisson: {
     trait: '#3f4a35',
@@ -902,11 +908,15 @@ function _mmBande(c, g, h2, d, b, large, taillePx) {
   c.save();
   c.beginPath(); c.rect(g, h2, d - g, b - h2); c.clip();
 
-  c.fillStyle = C.dehors;
+  c.fillStyle = ILE ? C.eauLoin : C.dehors;
   c.fillRect(g, h2, d - g, b - h2);
   var sx = Math.max(0, g), sy = Math.max(0, h2);
   var sw = Math.min(MONDE, d) - sx, sh = Math.min(MONDE, b) - sy;
-  if (sw > 0 && sh > 0) { c.fillStyle = C.sol; c.fillRect(sx, sy, sw, sh); }
+  if (sw > 0 && sh > 0) {
+    c.fillStyle = ILE ? C.eau : C.sol;
+    c.fillRect(sx, sy, sw, sh);
+    if (ILE) { c.fillStyle = C.sol; cheminIle(c); c.fill(); }
+  }
 
   var pasG = CELL * MM_GROUPE;
   c.beginPath();
@@ -1685,7 +1695,8 @@ function dessine(p, moi, viseur, drag) {
   else { cam.x = a.x; cam.y = a.y; }
 
   repereEcran();
-  ctx.fillStyle = C.dehors;
+  // Au-dela des frontieres du monde, c'est l'ocean : plus sombre.
+  ctx.fillStyle = ILE ? C.eauLoin : C.dehors;
   ctx.fillRect(0, 0, LARG, HAUT);
 
   repereMonde();
@@ -1696,8 +1707,18 @@ function dessine(p, moi, viseur, drag) {
   const gch = cam.x - demiL, drt = cam.x + demiL;
   const hau = cam.y - demiH, bas = cam.y + demiH;
 
-  ctx.fillStyle = C.sol;
-  ctx.fillRect(0, 0, MONDE, MONDE);
+  if (ILE) {
+    // Dans la carte : de l'eau, puis l'ile decoupee par-dessus. Le
+    // quadrillage passera ensuite sur les deux, la cote ne suit donc
+    // aucune case.
+    ctx.fillStyle = C.eau;
+    ctx.fillRect(0, 0, MONDE, MONDE);
+    ctx.fillStyle = C.sol;
+    cheminIle(ctx); ctx.fill();
+  } else {
+    ctx.fillStyle = C.sol;
+    ctx.fillRect(0, 0, MONDE, MONDE);
+  }
 
   const grille = () => {
     ctx.beginPath();
@@ -1710,15 +1731,32 @@ function dessine(p, moi, viseur, drag) {
     ctx.stroke();
   };
   ctx.lineWidth = 2.5;
-  ctx.strokeStyle = C.ligneDehors;
-  grille();
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, MONDE, MONDE);
-  ctx.clip();
-  ctx.strokeStyle = C.ligne;
-  grille();
-  ctx.restore();
+  if (ILE) {
+    // Au large, pas de quadrillage du tout : au-dela des frontieres il n'y
+    // a plus que l'ocean. Dans la carte, deux passes, car la cote ne suit
+    // aucune case : traits verts sur l'ile, bleus sur l'eau.
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, MONDE, MONDE); cheminIle(ctx, true);
+    ctx.clip('evenodd');
+    ctx.strokeStyle = C.ligneEau;
+    grille();
+    ctx.restore();
+    ctx.save();
+    cheminIle(ctx); ctx.clip();
+    ctx.strokeStyle = C.ligne;
+    grille();
+    ctx.restore();
+  } else {
+    ctx.strokeStyle = C.ligneDehors;
+    grille();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, MONDE, MONDE);
+    ctx.clip();
+    ctx.strokeStyle = C.ligne;
+    grille();
+    ctx.restore();
+  }
 
   const visible = (o) =>
     o.x > gch - o.r * 1.4 && o.x < drt + o.r * 1.4 &&
@@ -2313,6 +2351,35 @@ function cosmetiques(seed) {
   };
 }
 
+// Contour de l'ile, en unites monde. Null = carte entierement terrestre.
+var ILE = null;
+function initIle(pts) {
+  ILE = (Array.isArray(pts) && pts.length >= 3)
+    ? pts.map(function (q) {
+        return Array.isArray(q) ? { x: +q[0], y: +q[1] } : { x: +q.x, y: +q.y };
+      })
+    : null;
+}
+// Chemin du contour dans le contexte donne, en coordonnees monde
+function cheminIle(c, suite) {
+  if (!suite) c.beginPath();
+  c.moveTo(ILE[0].x, ILE[0].y);
+  for (var i = 1; i < ILE.length; i++) c.lineTo(ILE[i].x, ILE[i].y);
+  c.closePath();
+}
+// Copie conforme de dansIle() cote serveur : toute difference ferait
+// sautiller le joueur sur la cote, entre prediction et correction.
+function dansIleLoc(x, y) {
+  if (!ILE) return true;
+  var dedans = false;
+  for (var i = 0, j = ILE.length - 1; i < ILE.length; j = i++) {
+    var xi = ILE[i].x, yi = ILE[i].y, xj = ILE[j].x, yj = ILE[j].y;
+    if ((yi > y) !== (yj > y) &&
+        x < (xj - xi) * (y - yi) / (yj - yi) + xi) dedans = !dedans;
+  }
+  return dedans;
+}
+
 function initObs(decor) {
   localObs = (decor || []).map(function (o) {
     return Object.assign({}, o, cosmetiques(o.seed), { alphaVis: 1 });
@@ -2708,7 +2775,9 @@ function appliqueLoc(a, cmd) {
   var mx = cmd.mx || 0, my = cmd.my || 0;
   var n = Math.hypot(mx, my);
   if (n > 1) { mx /= n; my /= n; }
-  deplaceLoc(a, mx * SIM.VITESSE * dt, my * SIM.VITESSE * dt);
+  // Dans l'eau on avance deux fois moins vite, comme cote serveur
+  var _vit = SIM.VITESSE * (dansIleLoc(a.x, a.y) ? 1 : EAU_LENTEUR);
+  deplaceLoc(a, mx * _vit * dt, my * _vit * dt);
 
   // Separation joueur-joueur : comme separeJoueurs() cote serveur. En l'air
   // le serveur ne separe personne : si le client le faisait quand meme, il
@@ -3016,6 +3085,7 @@ function connect() {
       if (msg.cfg) for (var k in msg.cfg) SIM[k] = msg.cfg[k];
       if (SIM.MONDE) MONDE = SIM.MONDE;
       mapVerLocal = msg.mapVer || 1;
+      initIle(msg.ile);
       initObs(msg.decor);
       localParticules.length = 0;
       cam.x = msg.spawn.x; cam.y = msg.spawn.y;
@@ -3038,6 +3108,7 @@ function connect() {
       if (msg.cfg) for (var k2 in msg.cfg) SIM[k2] = msg.cfg[k2];
       if (SIM.MONDE) MONDE = SIM.MONDE;
       mapVerLocal = msg.mapVer || (mapVerLocal + 1);
+      initIle(msg.ile);
       initObs(msg.decor);                    // decor + index repartis a neuf
       _mmCv = null; _mmCle = '';             // la minimap repart de zero
       localParticules.length = 0;
