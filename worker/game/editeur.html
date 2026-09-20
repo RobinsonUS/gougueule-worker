@@ -129,6 +129,7 @@
     <div class="opt" data-outil="pinceau"><div class="ic">~</div>Pinceau</div>
     <div class="opt" data-outil="gomme"><div class="ic">x</div>Gomme</div>
     <div class="opt" data-outil="spawn"><div class="ic">o</div>Apparition</div>
+    <div class="opt" data-outil="cote"><div class="ic">~~</div>Cote</div>
   </div>
 
   <div id="blocObjet">
@@ -138,6 +139,19 @@
       <div class="opt" data-type="buisson"><div class="ic">b</div>Buisson</div>
     </div>
     <div class="note">Taille fixe : arbre 88, buisson 75</div>
+  </div>
+
+  <div id="blocCote">
+    <h2>Contour de l'ile</h2>
+    <div class="note">Clic dans le vide : ajoute un point a la suite.
+      Clic sur un trait : insere un point au milieu. Glisser un point : le
+      deplace. Clic droit sur un point : le supprime.
+      Tout ce qui est hors du contour devient de l'eau, ou l'on avance deux
+      fois moins vite.</div>
+    <div class="ligne"><button id="coteRect">Partir d'un rectangle</button></div>
+    <div class="ligne"><button id="coteUndoPt">Retirer le dernier point</button></div>
+    <div class="ligne"><button id="coteVide">Tout effacer (plus d'eau)</button></div>
+    <div class="ligne">Points <b id="vCote">0</b></div>
   </div>
 
   <div id="blocPinceau">
@@ -215,6 +229,9 @@ const C = {
   ligne:       '#5f8145',
   dehors:      '#4a6635',
   ligneDehors: '#425c2e',
+  eau:         '#1073b9',
+  eauLoin:     '#0f5a8e',
+  ligneEau:    '#0f6cae',
   ombre:       'rgba(0,0,0,0.13)',
   buisson: {
     trait: '#3f4a35',
@@ -405,10 +422,11 @@ let carte = {
                     { r: 950,  duree: 20, pause: 15, degats: 5 },
                     { r: 300,  duree: 10, pause: 20, degats: 10 },
                     { r: 0,    duree: 45, pause: 0,  degats: 10 } ] },
-  spawns: [], obs: []
+  ile: null, spawns: [], obs: []
 };
 let vue = { x: 6400, y: 6400, z: 0.06 };
 let outil = 'placer', typeObj = 'arbre';
+let poignee = null;           // index du point de cote en cours de deplacement
 let portee = 600, densite = 6, rGomme = 300;
 // Un element a toujours sa taille de jeu : elle n'est pas reglable.
 const RAYON = { arbre: Math.round(R_ARBRE), buisson: Math.round(R_BUISSON) };
@@ -423,7 +441,7 @@ function memorise() {
 function annule() {
   if (!histoire.length) return signale('Rien a annuler');
   carte = JSON.parse(histoire.pop());
-  cacheCos.clear(); reindexe(); synchronisePanneau();
+  cacheCos.clear(); reindexe(); majCote(); synchronisePanneau();
   signale('Annule');
 }
 
@@ -451,7 +469,7 @@ function rayonFinal() {
 function dessine() {
   const d = window.devicePixelRatio || 1;
   ctx.setTransform(d, 0, 0, d, 0, 0);
-  ctx.fillStyle = C.dehors;
+  ctx.fillStyle = (carte.ile && carte.ile.length >= 3) ? C.eauLoin : C.dehors;
   ctx.fillRect(0, 0, innerWidth, innerHeight);
 
   ctx.save();
@@ -459,19 +477,43 @@ function dessine() {
   ctx.scale(vue.z, vue.z);
   ctx.translate(-vue.x, -vue.y);
 
-  // sol
-  ctx.fillStyle = C.sol;
+  // sol, ou eau + ile si un contour existe
+  const ile = carte.ile && carte.ile.length >= 3 ? carte.ile : null;
+  const traceIle = (suite) => {
+    if (!suite) ctx.beginPath();
+    ctx.moveTo(ile[0].x, ile[0].y);
+    for (let i = 1; i < ile.length; i++) ctx.lineTo(ile[i].x, ile[i].y);
+    ctx.closePath();
+  };
+  ctx.fillStyle = ile ? C.eau : C.sol;
   ctx.fillRect(0, 0, carte.monde, carte.monde);
+  if (ile) { ctx.fillStyle = C.sol; traceIle(); ctx.fill(); }
   // grille
   let pas = CELL * 4;
   while (pas * vue.z < 6) pas *= 4;          // sinon des milliers de traits confondus
-  ctx.strokeStyle = C.ligne; ctx.lineWidth = 1 / vue.z;
-  ctx.beginPath();
-  for (let i = 0; i <= carte.monde; i += pas) {
-    ctx.moveTo(i, 0); ctx.lineTo(i, carte.monde);
-    ctx.moveTo(0, i); ctx.lineTo(carte.monde, i);
+  ctx.lineWidth = 1 / vue.z;
+  const grille = () => {
+    ctx.beginPath();
+    for (let i = 0; i <= carte.monde; i += pas) {
+      ctx.moveTo(i, 0); ctx.lineTo(i, carte.monde);
+      ctx.moveTo(0, i); ctx.lineTo(carte.monde, i);
+    }
+    ctx.stroke();
+  };
+  if (ile) {
+    // La cote ne suit aucune case : traits bleus sur l'eau, verts sur l'ile
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, carte.monde, carte.monde); traceIle(true);
+    ctx.clip('evenodd');
+    ctx.strokeStyle = C.ligneEau; grille();
+    ctx.restore();
+    ctx.save();
+    traceIle(); ctx.clip();
+    ctx.strokeStyle = C.ligne; grille();
+    ctx.restore();
+  } else {
+    ctx.strokeStyle = C.ligne; grille();
   }
-  ctx.stroke();
   // bordure
   ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 3 / vue.z;
   ctx.strokeRect(0, 0, carte.monde, carte.monde);
@@ -533,6 +575,25 @@ function dessine() {
     ctx.beginPath(); ctx.arc(s.x, s.y, 46, 0, 6.2832); ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 6 / vue.z;
     ctx.beginPath(); ctx.arc(s.x, s.y, 300, 0, 6.2832); ctx.stroke();
+  }
+
+  // contour de l'ile : trait et poignees, seulement avec l'outil Cote
+  if (outil === 'cote' && carte.ile && carte.ile.length) {
+    const pts = carte.ile;
+    ctx.lineWidth = 2.5 / vue.z;
+    ctx.strokeStyle = 'rgba(255,255,255,.9)';
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    if (pts.length >= 3) ctx.closePath();
+    ctx.stroke();
+    const rp = rayonPoignee();
+    for (let i = 0; i < pts.length; i++) {
+      ctx.beginPath(); ctx.arc(pts[i].x, pts[i].y, rp, 0, 6.2832);
+      ctx.fillStyle = (i === poignee) ? '#ffd24a' : '#ffffff';
+      ctx.fill();
+      ctx.lineWidth = 1.5 / vue.z; ctx.strokeStyle = '#1b3a52'; ctx.stroke();
+    }
   }
 
   ctx.restore();
@@ -651,6 +712,14 @@ function debut(e) {
   const p = pointDe(e);
   const m = versMonde(p.x, p.y);
   souris.mx = m.x; souris.my = m.y; souris.dedans = true;
+  // Clic droit sur une poignee de cote : on retire ce point au lieu de
+  // faire glisser la vue.
+  if (outil === 'cote' && e.button === 2 && carte.ile && carte.ile.length) {
+    const ip = poigneeSous(m.x, m.y);
+    if (ip >= 0) { memorise(); carte.ile.splice(ip, 1);
+      if (!carte.ile.length) carte.ile = null;
+      majCote(); return; }
+  }
   if (espace || e.button === 2 || (e.touches && e.touches.length === 2)) { deplace = true; dernier = p; return; }
   appuye = true; aMemorise = false; dernierJet = null;
   agit(m.x, m.y, true);
@@ -665,7 +734,39 @@ function bouge(e) {
   }
   if (appuye) agit(m.x, m.y, false);
 }
-function fin() { appuye = false; deplace = false; dernier = null; }
+function fin() { appuye = false; deplace = false; dernier = null; poignee = null; }
+
+// Taille des poignees a l'ecran, quel que soit le zoom
+function rayonPoignee() { return 8 / vue.z; }
+
+// Point le plus proche du contour, s'il est sous le curseur
+function poigneeSous(x, y) {
+  const pts = carte.ile || [];
+  const r = rayonPoignee() * 1.6;
+  for (let i = 0; i < pts.length; i++)
+    if (Math.hypot(pts[i].x - x, pts[i].y - y) <= r) return i;
+  return -1;
+}
+
+// Segment du contour sous le curseur : renvoie l'indice ou inserer
+function segmentSous(x, y) {
+  const pts = carte.ile || [];
+  if (pts.length < 2) return -1;
+  const seuil = 10 / vue.z;
+  let best = -1, bestD = seuil;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    if (pts.length < 3 && i === pts.length - 1) break;   // pas encore ferme
+    const vx = b.x - a.x, vy = b.y - a.y;
+    const l2 = vx * vx + vy * vy;
+    if (l2 < 1) continue;
+    let t = ((x - a.x) * vx + (y - a.y) * vy) / l2;
+    t = Math.max(0, Math.min(1, t));
+    const d = Math.hypot(x - (a.x + vx * t), y - (a.y + vy * t));
+    if (d < bestD) { bestD = d; best = i + 1; }
+  }
+  return best;
+}
 
 let dernierJet = null;
 function agit(x, y, presse) {
@@ -680,6 +781,20 @@ function agit(x, y, presse) {
   else if (outil === 'gomme') efface(x, y, rGomme);
   // Un point d'apparition se pose au clic, pas en continu pendant le glisser
   else if (outil === 'spawn' && presse) carte.spawns.push({ x: Math.round(x), y: Math.round(y) });
+  else if (outil === 'cote') {
+    const rx = Math.round(x), ry = Math.round(y);
+    if (!presse) {                       // glisser : on deplace la poignee prise
+      if (poignee !== null && carte.ile[poignee]) { carte.ile[poignee] = { x: rx, y: ry }; majCote(); }
+      return;
+    }
+    if (!carte.ile) carte.ile = [];
+    const ip = poigneeSous(x, y);
+    if (ip >= 0) { poignee = ip; return; }          // on attrape un point
+    const seg = segmentSous(x, y);
+    if (seg >= 0) { carte.ile.splice(seg, 0, { x: rx, y: ry }); poignee = seg; }
+    else { carte.ile.push({ x: rx, y: ry }); poignee = carte.ile.length - 1; }
+    majCote();
+  }
 }
 
 cv.addEventListener('mousedown', debut);
@@ -741,7 +856,32 @@ function majBlocs() {
     (outil === 'placer' || outil === 'pinceau') ? 'block' : 'none';
   document.getElementById('blocPinceau').style.display = outil === 'pinceau' ? 'block' : 'none';
   document.getElementById('blocGomme').style.display = outil === 'gomme' ? 'block' : 'none';
+  document.getElementById('blocCote').style.display = outil === 'cote' ? 'block' : 'none';
+  majCote();
 }
+
+// Compteur de points du contour
+function majCote() {
+  const el = document.getElementById('vCote');
+  if (el) el.textContent = (carte.ile || []).length;
+}
+
+// Boutons du contour
+document.getElementById('coteRect').onclick = () => {
+  memorise();
+  const m = carte.monde, k = Math.round(m * 0.12);
+  carte.ile = [{ x: k, y: k }, { x: m - k, y: k }, { x: m - k, y: m - k }, { x: k, y: m - k }];
+  majCote();
+};
+document.getElementById('coteUndoPt').onclick = () => {
+  if (!carte.ile || !carte.ile.length) return;
+  memorise(); carte.ile.pop();
+  if (!carte.ile.length) carte.ile = null;
+  majCote();
+};
+document.getElementById('coteVide').onclick = () => {
+  memorise(); carte.ile = null; majCote();
+};
 
 function curseur(id, span, cb) {
   const el = document.getElementById(id);
@@ -777,7 +917,7 @@ document.getElementById('bVide').onclick = () => {
   if (!carte.obs.length && !carte.spawns.length) return signale('La carte est deja vide');
   if (!confirm('Effacer tous les objets et points d\'apparition ?')) return;
   memorise(); carte.obs = []; carte.spawns = [];
-  cacheCos.clear(); reindexe(); signale('Carte videe');
+  cacheCos.clear(); reindexe(); majCote(); signale('Carte videe');
 };
 
 function synchronisePanneau() {
@@ -798,6 +938,8 @@ function versJson() {
     zone: { cx: Math.round(carte.zone.cx), cy: Math.round(carte.zone.cy),
             r0: Math.round(carte.zone.r0), attente: carte.zone.attente,
             vagues: carte.zone.vagues },
+    ile: (carte.ile && carte.ile.length >= 3)
+      ? carte.ile.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) })) : undefined,
     spawns: carte.spawns, obs: carte.obs
   }, null, 1);
 }
@@ -825,6 +967,15 @@ function depuisJson(txt) {
               : [ { r: +z.r1 || Math.round(monde * 0.1),
                     duree: z.duree == null ? 70 : Math.max(1, +z.duree || 1),
                     pause: 0, degats: 6 } ] },
+    // Contour de l'ile : absent = carte entierement terrestre
+    ile: Array.isArray(m.ile)
+      ? (function () {
+          const pts = m.ile
+            .map(q => Array.isArray(q) ? { x: +q[0], y: +q[1] } : { x: +(q && q.x), y: +(q && q.y) })
+            .filter(q => isFinite(q.x) && isFinite(q.y))
+            .map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }));
+          return pts.length >= 3 ? pts : null;
+        })() : null,
     spawns: Array.isArray(m.spawns)
       ? m.spawns.filter(s => s && isFinite(+s.x) && isFinite(+s.y))
                 .map(s => ({ x: Math.round(+s.x), y: Math.round(+s.y) })) : [],
@@ -836,7 +987,7 @@ function depuisJson(txt) {
       seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0)
     }))
   };
-  cacheCos.clear(); reindexe();
+  cacheCos.clear(); reindexe(); majCote();
   vue = { x: carte.monde / 2, y: carte.monde / 2, z: Math.min(1, 900 / carte.monde) };
   synchronisePanneau();
   return carte.obs.length;
