@@ -1563,8 +1563,8 @@ function dessineEcranMort(vue) {
 
 // ============ largage : parachute, jauge, avion ====================
 var PARA_DUREE_DEF = 10;
-var PARA_LARGE = R_JOUEUR * 6.4;   // largeur du dome une fois au sol
-var PARA_ECH0 = 1.15;              // agrandissement au moment du saut
+var PARA_LARGE = R_JOUEUR * 5.8;   // largeur du dome une fois au sol
+var PARA_ECH0 = 1.7;               // agrandissement au moment du saut
 var PARA_FIN_PLAT = 1;             // derniere seconde : plus aucun dezoom
 
 // Part de descente restante, de 1 (sous l'avion) a 0 (au sol) : sert a la jauge
@@ -2217,10 +2217,14 @@ var alphaVisJoueurs = {};
 var _cptDernier = null; // dernier chiffre countdown affiché
 var prevTirTimer = {};
 
+// L'axe du canon n'est pas centre sur le joueur : mesure sur le rendu, la
+// bouche se trouve a 3,05 R devant et 0,2 R sur le cote. Les particules
+// partaient du centre, donc legerement a cote du canon.
+var CANON_PERP = R_JOUEUR * 0.2;
 function genMuzzleFlash(a) {
   var ang = a.angle;
-  var px = a.x + Math.cos(ang) * (CANON_L + 6);
-  var py = a.y + Math.sin(ang) * (CANON_L + 6);
+  var px = a.x + Math.cos(ang) * (CANON_L + 6) - Math.sin(ang) * CANON_PERP;
+  var py = a.y + Math.sin(ang) * (CANON_L + 6) + Math.cos(ang) * CANON_PERP;
   localParticules.push({type:'flamme', x:px, y:py, vx:0, vy:0, ang:ang, r:17, vie:0.05, vieMax:0.05});
   var nb = 5 + ((Math.random()*4)|0);
   for (var e = 0; e < nb; e++) {
@@ -2708,6 +2712,7 @@ function appliqueLoc(a, cmd) {
       if (otherId === pid) continue;
       var b = snapDernier.agents[otherId];
       if (!b || !b.vivant) continue;
+      if (b.enAvion || (b.para || 0) > 0) continue;   // encore en parachute : on le traverse
       var nx = a.x - b.x, ny = a.y - b.y;
       var d = Math.hypot(nx, ny);
       if (d >= R2) continue;
@@ -3452,6 +3457,7 @@ function boucle(maintenant) {
 
   var vue = vueFigee || etatAffiche();
   if (!vue) return;
+  window._vueDerniere = vue;        // accroche pour les bancs de mesure
   if (doitFiger(vue)) vueFigee = vue;   // plus rien ne bougera
 
   // Mort ou partie finie : la camera suit le joueur observe
@@ -3468,7 +3474,7 @@ function boucle(maintenant) {
   var spectateur = idVue !== pid;
 
   dessine({ agents: vue.agents, balles: vue.balles, particules: localParticules,
-            obs: localObs, zone: vue.zone, t: vue.t,
+            obs: localObs, zone: vue.zone, t: vue.t, avion: vue.avion,
             fini: vue.fini, vainqueur: vue.vainqueur },
           idVue, (!isMobile && souris.vu && !spectateur) ? souris : null,
           spectateur ? null : (invDrag || null));
