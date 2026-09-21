@@ -178,6 +178,7 @@ const C = {
   ligneEau:    '#0f6cae',
   ligneEauLoin:'#0e5383',   // le quadrillage continue au large, tres sombre
   ombre:       'rgba(0,0,0,0.13)',
+  ombreDouce:  'rgba(0,0,0,0.11)',   // arbres, buissons, joueurs
   // Couleurs relevees sur les images des arbres et buissons : la minimap et
   // la carte du monde, qui dessinent des formes simples, restent assorties.
   buisson: {
@@ -317,15 +318,15 @@ var VEG = {
   arbre_orange: { cx: 149.02, cy: 149.01, r: 143.74 },
   arbre_rouge:  { cx: 149.02, cy: 149.01, r: 143.74 },
   arbre_sombre: { cx: 149.02, cy: 149.01, r: 143.74 },
-  buisson:      { cx: 108.22, cy: 101.31, r: 66.35 },   // l'image n'est pas centree
+  buisson:      { cx: 184.68, cy: 196.69, r: 143.78 },  // l'image n'est pas centree
 };
 var VEG_ARBRES = ['arbre_vert', 'arbre_orange', 'arbre_rouge', 'arbre_sombre'];  // index = teinte
-var VEG_ECH = { arbre: 1.0044, buisson: 0.9953 };  // calibre sur le rendu reel (voir plus haut)
+var VEG_ECH = { arbre: 1.0044, buisson: 0.9980 };  // calibre sur le rendu reel (voir plus haut)
 // Debord de l'ombre autour du contour, en unites monde. Calibre pour que
 // l'anneau depasse du feuillage autant que l'ancien (bande de 13,5 dont la
 // moitie interieure etait cachee sous le feuillage).
-var VEG_OMBRE = { arbre: 6.0, buisson: 5.0 };
-var VEG_OMBRE_ALPHA = 0.13;                       // meme valeur que C.ombre
+var VEG_OMBRE = { arbre: 6.0, buisson: 6.3 };
+var VEG_OMBRE_ALPHA = 0.11;                       // meme valeur que C.ombreDouce
 var _vegCache = {};
 
 function vegPret(nom) {
@@ -431,7 +432,7 @@ function dessineOmbreArbreDessin(o) {
 
   ctx.save();
   ctx.lineWidth = epaisseurBande;
-  ctx.strokeStyle = C.ombre;
+  ctx.strokeStyle = C.ombreDouce;
   ctx.lineJoin = 'round';
   cheminBlob(x, y, rayonBase + epaisseurBande / 2, lobes, phase, amp);
   ctx.stroke();
@@ -488,7 +489,7 @@ function dessineOmbreBuissonDessin(o) {
 
   ctx.save();
   ctx.lineWidth = epaisseurBande;
-  ctx.strokeStyle = C.ombre;
+  ctx.strokeStyle = C.ombreDouce;
   ctx.lineJoin = 'round';
   cheminBlob(x, y, rayonBase + epaisseurBande / 2, lobes, phase, amp);
   ctx.stroke();
@@ -661,7 +662,7 @@ function silhouetteXM8() {
 
   // Aplatir en une couleur unique : les recouvrements ne s'additionnent pas
   c.globalCompositeOperation = 'source-in';
-  c.fillStyle = C.ombre;
+  c.fillStyle = C.ombreDouce;
   c.fillRect(0, 0, cv.width, cv.height);
   c.globalCompositeOperation = 'source-over';
 
@@ -771,7 +772,7 @@ function dessineOmbrePerso(x, y, angle, secousse, arme, recul, punchTimer, punch
   } else {
     // Repere de dessinePerso : -y = direction de visee
     ctx.rotate(angle + Math.PI / 2);
-    ctx.fillStyle = C.ombre;
+    ctx.fillStyle = C.ombreDouce;
     ctx.beginPath();
     ctx.arc(0, 0, R * (1 + HALO_TETE), 0, Math.PI * 2);
     cheminMembres(R, punchTimer, punchSide);
