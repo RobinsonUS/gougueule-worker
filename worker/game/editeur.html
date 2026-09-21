@@ -128,7 +128,6 @@
     <div class="opt on" data-outil="placer"><div class="ic">+</div>Placer</div>
     <div class="opt" data-outil="pinceau"><div class="ic">~</div>Pinceau</div>
     <div class="opt" data-outil="gomme"><div class="ic">x</div>Gomme</div>
-    <div class="opt" data-outil="spawn"><div class="ic">o</div>Apparition</div>
     <div class="opt" data-outil="cote"><div class="ic">~~</div>Cote</div>
   </div>
 
@@ -172,18 +171,6 @@
 
   <h2>Carte</h2>
   <input type="text" id="nom" value="partie" placeholder="Nom">
-  <div class="ligne">Taille du monde</div>
-  <input type="number" id="monde" value="12800" step="100">
-  <div class="ligne">Zone de depart <b id="vR0">9200</b></div>
-  <input type="range" id="r0" min="200" max="20000" step="100" value="9200">
-  <div class="ligne">Dernier cercle <b id="vR1">300</b></div>
-  <input type="range" id="r1" min="50" max="4000" step="50" value="400">
-  <div class="duo" style="margin-top:11px">
-    <div><div class="ligne" style="margin-top:0">Attente (s)</div>
-      <input type="number" id="att" value="20"></div>
-    <div><div class="ligne" style="margin-top:0">Duree (s)</div>
-      <input type="number" id="dur" value="160"></div>
-  </div>
 
   <h2>Fichier</h2>
   <button class="act vert" id="bExport">Exporter le JSON</button>
@@ -197,7 +184,6 @@
   <div class="sous">objets</div>
   <div class="st">Arbres <b id="sArb">0</b></div>
   <div class="st">Buissons <b id="sBui">0</b></div>
-  <div class="st">Apparitions <b id="sSpw">0</b></div>
   <div class="sep"></div>
   <div class="st">Densite <b id="sDen">0</b></div>
   <div class="st">Zoom <b id="sZoom">0%</b></div>
@@ -419,7 +405,7 @@ function dessineBuissonTexture(o) {
 // ═══ etat ══════════════════════════════════════════════════════════
 let carte = {
   nom: 'partie', monde: 12800,
-  zone: { cx: 6400, cy: 6400, r0: 9200, attente: 20,
+  zone: { cx: 6400, cy: 6400, r0: 9500, attente: 20,
           vagues: [ { r: 2900, duree: 30, pause: 30, degats: 2 },
                     { r: 950,  duree: 20, pause: 15, degats: 5 },
                     { r: 300,  duree: 10, pause: 20, degats: 10 },
@@ -522,14 +508,6 @@ function dessine() {
   ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 3 / vue.z;
   ctx.strokeRect(0, 0, carte.monde, carte.monde);
 
-  // cercles de zone
-  ctx.strokeStyle = 'rgba(90,150,255,.75)'; ctx.lineWidth = 3 / vue.z;
-  ctx.setLineDash([14 / vue.z, 10 / vue.z]);
-  for (const r of [carte.zone.r0, rayonFinal()]) {
-    if (!(r > 0)) continue;
-    ctx.beginPath(); ctx.arc(carte.zone.cx, carte.zone.cy, r, 0, 6.2832); ctx.stroke();
-  }
-  ctx.setLineDash([]);
 
   // decor : ombres puis feuillages, comme en jeu
   const marge = 200 / vue.z;
@@ -571,14 +549,6 @@ function dessine() {
       const c = cosmo(o);
       if (o.type === 'arbre') dessineArbreTexture(c); else dessineBuissonTexture(c);
     }
-  }
-
-  // points d'apparition
-  for (const s of carte.spawns) {
-    ctx.fillStyle = 'rgba(255,90,90,.85)';
-    ctx.beginPath(); ctx.arc(s.x, s.y, 46, 0, 6.2832); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 6 / vue.z;
-    ctx.beginPath(); ctx.arc(s.x, s.y, 300, 0, 6.2832); ctx.stroke();
   }
 
   // trait a main levee en cours : on montre par ou il se refermera
@@ -663,7 +633,6 @@ function majInfos() {
   p('sNb', carte.obs.length);
   p('sArb', na);
   p('sBui', carte.obs.length - na);
-  p('sSpw', carte.spawns.length);
   p('sDen', dens.toFixed(1) + ' / ecran');
   p('sZoom', (vue.z * 100).toFixed(0) + '%');
 }
@@ -717,10 +686,9 @@ function disperse(cx, cy) {
 }
 // N'efface que ce dont le centre est dans le cercle affiche, rien au-dela.
 function efface(x, y, r) {
-  const avant = carte.obs.length + carte.spawns.length;
+  const avant = carte.obs.length;
   carte.obs = carte.obs.filter(o => Math.hypot(o.x - x, o.y - y) > r);
-  carte.spawns = carte.spawns.filter(s => Math.hypot(s.x - x, s.y - y) > r);
-  const change = carte.obs.length + carte.spawns.length !== avant;
+  const change = carte.obs.length !== avant;
   if (change) reindexe();
   return change;
 }
@@ -911,7 +879,6 @@ function agit(x, y, presse) {
   }
   else if (outil === 'gomme') efface(x, y, rGomme);
   // Un point d'apparition se pose au clic, pas en continu pendant le glisser
-  else if (outil === 'spawn' && presse) carte.spawns.push({ x: Math.round(x), y: Math.round(y) });
   else if (outil === 'cote') {
     if (presse) {
       // Sur une poignee : retouche du contour. Ailleurs : nouveau trait.
@@ -1019,44 +986,20 @@ curseur('gomme', 'vGom', v => rGomme = v);
 curseur('lissage', 'vLiss', v => lissage = v);
 curseur('portee', 'vPort', v => portee = v);
 curseur('densite', 'vDens', v => densite = v);
-curseur('r0', 'vR0', v => carte.zone.r0 = v);
-curseur('r1', 'vR1', v => {
-  const va = carte.zone.vagues || [];
-  for (let i = va.length - 1; i >= 0; i--) if (va[i].r > 0) { va[i].r = v; return; }
-});
 
 document.getElementById('nom').oninput = e => carte.nom = e.target.value.trim() || 'carte';
-document.getElementById('monde').onchange = e => {
-  const v = Math.max(500, Math.round(+e.target.value || 500));
-  e.target.value = v;
-  carte.monde = v; carte.zone.cx = v / 2; carte.zone.cy = v / 2;
-  const r0 = document.getElementById('r0');
-  r0.max = Math.round(v * 1.6);
-  if (carte.zone.r0 > +r0.max) { carte.zone.r0 = +r0.max; }
-  synchronisePanneau();
-};
-document.getElementById('att').onchange = e => {
-  const v = Math.max(0, +e.target.value || 0); e.target.value = v; carte.zone.attente = v;
-};
-document.getElementById('dur').onchange = e => {
-  const v = Math.max(1, +e.target.value || 1); e.target.value = v; carte.zone.duree = v;
-};
 document.getElementById('bAnnuler').onclick = annule;
 document.getElementById('bVide').onclick = () => {
-  if (!carte.obs.length && !carte.spawns.length) return signale('La carte est deja vide');
-  if (!confirm('Effacer tous les objets et points d\'apparition ?')) return;
-  memorise(); carte.obs = []; carte.spawns = [];
+  if (!carte.obs.length) return signale('La carte est deja vide');
+  if (!confirm('Effacer tous les arbres et buissons ?')) return;
+  memorise(); carte.obs = [];
   cacheCos.clear(); reindexe(); majCote(); signale('Carte videe');
 };
 
 function synchronisePanneau() {
   const v = (id, val) => document.getElementById(id).value = val;
   const t = (id, val) => document.getElementById(id).textContent = val;
-  v('nom', carte.nom); v('monde', carte.monde);
-  document.getElementById('r0').max = Math.round(carte.monde * 1.6);
-  v('r0', carte.zone.r0); v('r1', rayonFinal());
-  v('att', carte.zone.attente); v('dur', carte.zone.duree);
-  t('vR0', Math.round(carte.zone.r0)); t('vR1', Math.round(rayonFinal()));
+  v('nom', carte.nom);
   t('vGom', rGomme); t('vPort', portee); t('vDens', densite);
 }
 
@@ -1077,9 +1020,11 @@ function depuisJson(txt) {
   const m = JSON.parse(txt);
   if (!m || typeof m !== 'object' || Array.isArray(m)) throw new Error('racine invalide');
   if (!Array.isArray(m.obs)) throw new Error('champ obs manquant');
-  const monde = +m.monde;
+  // Taille du monde et cyclone ne se reglent plus ici : une carte qui ne les
+  // donne pas prend les valeurs du jeu (celles du depot).
+  const monde = m.monde === undefined ? 12800 : +m.monde;
   if (!isFinite(monde) || monde < 500) throw new Error('champ monde invalide');
-  const z = m.zone || {};
+  const z = m.zone || {"cx": 6400, "cy": 6400, "r0": 9500, "attente": 20, "vagues": [{"r": 2900, "duree": 30, "pause": 30, "degats": 2}, {"r": 950, "duree": 20, "pause": 15, "degats": 5}, {"r": 300, "duree": 10, "pause": 20, "degats": 10}, {"r": 0, "duree": 45, "pause": 0, "degats": 10}]};
   memorise();
   carte = {
     nom: (m.nom || 'carte') + '', monde: Math.round(monde),
