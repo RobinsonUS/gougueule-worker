@@ -222,12 +222,12 @@ const C = {
   ligneEau:    '#0f6cae',
   ombre:       'rgba(0,0,0,0.13)',
   buisson: {
-    trait: '#3f4a35',
-    ext:   '#74ab52',
-    int:   '#8cc069',
-    tache: '#74ab52',
+    trait: '#303030',
+    ext:   '#7cc058',
+    int:   '#9cc85c',
+    tache: '#7cc058',
   },
-  traitArbre: '#33383a',
+  traitArbre: '#303030',
   souche:     'rgba(40,52,32,0.13)',
   aura:       'rgba(230,60,50,0.45)',
   invPlein:   '#d7d9cf',
@@ -239,10 +239,10 @@ const C = {
   eclat:      '#9aa094',
   eclatOmb:   '#6f7569',
   arbres: [
-    { ext: '#3f9e6e', int: '#7fd18f', tache: '#5cb87d' },
-    { ext: '#96602f', int: '#cf9530', tache: '#8a5a2e' },
-    { ext: '#8e2647', int: '#a83a5c', tache: '#75203c' },
-    { ext: '#1f6b4a', int: '#2d8a5f', tache: '#18543a' },
+    { ext: '#348454', int: '#78a854', tache: '#2c7048' },
+    { ext: '#94583c', int: '#c09034', tache: '#7c4a32' },
+    { ext: '#58203c', int: '#843048', tache: '#4a1b33' },
+    { ext: '#08543c', int: '#207c4c', tache: '#064632' },
   ],
   perso:    '#f0cd8f',
   persoEnn: '#f0cd8f',
@@ -305,7 +305,129 @@ function ajouteCheminBlob(x, y, r, lobes, phase, amp) {
   ctx.closePath();
 }
 
+// Les memes images que le jeu, servies par le meme worker
+const SPRITES = {};
+['arbre_vert', 'arbre_orange', 'arbre_rouge', 'arbre_sombre', 'buisson'].forEach(function (n) {
+  const i = new Image(); i.src = '/game/' + n + '.png'; SPRITES[n] = i;
+});
+let PXV = 1;                 // pixels reels par unite monde, mis a jour a chaque image
+
+// ═══ Arbres et buissons en images ═══════════════════════════════════
+// Mesures faites sur les images elles-memes : centre et rayon MOYEN du
+// contour opaque, en pixels. L'echelle est calibree sur le rendu reel pour
+// que le rayon moyen a l'ecran soit exactement celui de l'ancien dessin
+// (88,2 unites pour un arbre, 75,0 pour un buisson) : la hitbox, qui vaut r
+// cote serveur, tombe sur le bord visible comme avant, et rien ne change de
+// place ni de taille.
+var VEG = {
+  // (coordonnees du canevas : le pixel i couvre [i, i+1], son centre est a i+0,5)
+  arbre_vert:   { cx: 149.02, cy: 149.01, r: 143.74 },
+  arbre_orange: { cx: 149.02, cy: 149.01, r: 143.74 },
+  arbre_rouge:  { cx: 149.02, cy: 149.01, r: 143.74 },
+  arbre_sombre: { cx: 149.02, cy: 149.01, r: 143.74 },
+  buisson:      { cx: 108.22, cy: 101.31, r: 66.35 },   // l'image n'est pas centree
+};
+var VEG_ARBRES = ['arbre_vert', 'arbre_orange', 'arbre_rouge', 'arbre_sombre'];  // index = teinte
+var VEG_ECH = { arbre: 1.0044, buisson: 0.9953 };  // calibre sur le rendu reel (voir plus haut)
+// Debord de l'ombre autour du contour, en unites monde. Calibre pour que
+// l'anneau depasse du feuillage autant que l'ancien (bande de 13,5 dont la
+// moitie interieure etait cachee sous le feuillage).
+var VEG_OMBRE = { arbre: 6.0, buisson: 5.0 };
+var VEG_OMBRE_ALPHA = 0.13;                       // meme valeur que C.ombre
+var _vegCache = {};
+
+function vegPret(nom) {
+  var sp = SPRITES[nom];
+  return !!(sp && (sp.naturalWidth || sp.width));
+}
+
+// Image redimensionnee a la taille d'ecran, et son anneau d'ombre : calcules
+// une fois par taille (arrondie a 8 px pres), jamais a chaque image.
+function vegCanevas(nom, largeurEcran, debord) {
+  var sp = SPRITES[nom];
+  var tPx = Math.max(8, Math.round(largeurEcran / 8) * 8);
+  var d = Math.max(1, Math.round(debord * PXV));
+  var cle = nom + ':' + tPx + ':' + d;
+  var e = _vegCache[cle];
+  if (e) return e;
+  var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
+  var k = tPx / sw;
+  var cs = document.createElement('canvas');
+  cs.width = tPx; cs.height = Math.max(1, Math.round(sh * k));
+  cs.getContext('2d').drawImage(sp, 0, 0, cs.width, cs.height);
+  // Anneau d'ombre : la silhouette elargie de d pixels, moins la silhouette
+  // elle-meme. Un buisson estompe laisse ainsi voir le sol intact dessous.
+  var co = document.createElement('canvas');
+  co.width = cs.width + 2 * d; co.height = cs.height + 2 * d;
+  var g = co.getContext('2d');
+  for (var i = 0; i < 24; i++) {
+    var a = i / 24 * Math.PI * 2;
+    g.drawImage(cs, d + Math.cos(a) * d, d + Math.sin(a) * d);
+  }
+  g.drawImage(cs, d, d);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, co.width, co.height);
+  g.globalCompositeOperation = 'destination-out';
+  g.drawImage(cs, d, d);
+  e = { cs: cs, co: co, d: d };
+  _vegCache[cle] = e;
+  return e;
+}
+
+// Dessine l'image (ou son ombre) centree en (x, y), tournee de o.phase pour
+// que deux arbres voisins ne soient jamais identiques. Toujours a la taille
+// monde exacte : la toile en cache n'est qu'un intermediaire, un ecart
+// d'arrondi ne fait donc jamais sauter la taille d'un arbre.
+function dessineVeg(nom, o, x, y, ombre) {
+  var sp = SPRITES[nom], m = VEG[nom];
+  var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
+  var genre = o.type === 'buisson' ? 'buisson' : 'arbre';
+  var ech = (o.r * VEG_ECH[genre]) / m.r;          // unites monde par px image
+  var e = vegCanevas(nom, sw * ech * PXV, VEG_OMBRE[genre]);
+  var f = (sw * ech) / e.cs.width;                 // unites monde par px de la toile
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(o.phase || 0);
+  var ox = -m.cx * ech, oy = -m.cy * ech;
+  if (ombre) {
+    ctx.globalAlpha *= VEG_OMBRE_ALPHA;
+    ctx.drawImage(e.co, ox - e.d * f, oy - e.d * f, e.co.width * f, e.co.height * f);
+  } else {
+    ctx.drawImage(e.cs, ox, oy, e.cs.width * f, e.cs.height * f);
+  }
+  ctx.restore();
+}
+
+// Secousse d'un arbre touche : meme mouvement qu'avant, pour l'ombre et
+// pour le feuillage
+function decalageSecousse(o) {
+  var s = o.secousse || 0, r = o.r;
+  return { x: o.x + (s > 0 ? Math.sin(s * 130) * r * 0.09 * (s / 0.22) : 0),
+           y: o.y + (s > 0 ? Math.cos(s * 155) * r * 0.05 * (s / 0.22) : 0) };
+}
+
 function dessineOmbreArbre(o) {
+  var nom = VEG_ARBRES[o.teinte] || VEG_ARBRES[0];
+  if (vegPret(nom)) { var q = decalageSecousse(o); dessineVeg(nom, o, q.x, q.y, true); return; }
+  dessineOmbreArbreDessin(o);
+}
+function dessineArbreTexture(o) {
+  var nom = VEG_ARBRES[o.teinte] || VEG_ARBRES[0];
+  if (vegPret(nom)) { var q = decalageSecousse(o); dessineVeg(nom, o, q.x, q.y, false); return; }
+  dessineArbreTextureDessin(o);
+}
+function dessineOmbreBuisson(o) {
+  if (vegPret('buisson')) { dessineVeg('buisson', o, o.x, o.y, true); return; }
+  dessineOmbreBuissonDessin(o);
+}
+function dessineBuissonTexture(o) {
+  if (vegPret('buisson')) { dessineVeg('buisson', o, o.x, o.y, false); return; }
+  dessineBuissonTextureDessin(o);
+}
+
+// ─── Ancien dessin, garde en repli tant que les images chargent ───
+function dessineOmbreArbreDessin(o) {
   const { r, lobes, phase } = o;
   const amp = 0.075;
   const s = o.secousse || 0;
@@ -324,7 +446,7 @@ function dessineOmbreArbre(o) {
   ctx.restore();
 }
 
-function dessineOmbreBuisson(o) {
+function dessineOmbreBuissonDessin(o) {
   const { x, y, r, phase } = o;
   const lobes = 8, amp = 0.135;
   const rayonBase = r * 0.90;
@@ -339,7 +461,7 @@ function dessineOmbreBuisson(o) {
   ctx.restore();
 }
 
-function dessineArbreTexture(o) {
+function dessineArbreTextureDessin(o) {
   const { r, lobes, phase } = o;
   const pal = C.arbres[o.teinte];
   const amp = 0.075;
@@ -373,7 +495,7 @@ function dessineArbreTexture(o) {
   }
 }
 
-function dessineBuissonTexture(o) {
+function dessineBuissonTextureDessin(o) {
   const { x, y, r, phase } = o;
   const B = C.buisson;
   const lobes = 8, amp = 0.135;
@@ -458,6 +580,7 @@ function rayonFinal() {
 
 function dessine() {
   const d = window.devicePixelRatio || 1;
+  PXV = vue.z * d;
   ctx.setTransform(d, 0, 0, d, 0, 0);
   ctx.fillStyle = (carte.ile && carte.ile.length >= 3) ? C.eauLoin : C.dehors;
   ctx.fillRect(0, 0, innerWidth, innerHeight);
@@ -521,7 +644,7 @@ function dessine() {
   const tailleEcran = R_ARBRE * vue.z;
   if (tailleEcran < 7) {
     for (const o of visibles) {
-      ctx.fillStyle = o.type === 'arbre' ? '#3b6b36' : '#7fb05a';
+      ctx.fillStyle = o.type === 'arbre' ? C.arbres[cosmo(o).teinte].ext : C.buisson.ext;
       ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, 6.2832); ctx.fill();
     }
   } else if (tailleEcran < 26) {
