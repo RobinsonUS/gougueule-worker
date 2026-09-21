@@ -2352,13 +2352,40 @@ function cosmetiques(seed) {
 }
 
 // Contour de l'ile, en unites monde. Null = carte entierement terrestre.
-var ILE = null;
+// La carte ne transmet que des points de controle ; la cote reelle, arrondie,
+// en est deduite par courbeIle(), identique au serveur et a l'editeur.
+var ILE = null, ILE_BOITE = null;
+var ILE_PASSES = 3;
+function courbeIle(ctrl) {
+  var pts = ctrl;
+  for (var k = 0; k < ILE_PASSES; k++) {
+    var q = [];
+    for (var i = 0; i < pts.length; i++) {
+      var a = pts[i], b = pts[(i + 1) % pts.length];
+      q.push({ x: 0.75 * a.x + 0.25 * b.x, y: 0.75 * a.y + 0.25 * b.y });
+      q.push({ x: 0.25 * a.x + 0.75 * b.x, y: 0.25 * a.y + 0.75 * b.y });
+    }
+    pts = q;
+  }
+  return pts;
+}
 function initIle(pts) {
-  ILE = (Array.isArray(pts) && pts.length >= 3)
+  var ctrl = (Array.isArray(pts) && pts.length >= 3)
     ? pts.map(function (q) {
         return Array.isArray(q) ? { x: +q[0], y: +q[1] } : { x: +q.x, y: +q.y };
       })
     : null;
+  ILE = ctrl ? courbeIle(ctrl) : null;
+  ILE_BOITE = null;
+  if (ILE) {
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (var i = 0; i < ILE.length; i++) {
+      var p = ILE[i];
+      if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
+      if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
+    }
+    ILE_BOITE = { x0: x0, y0: y0, x1: x1, y1: y1 };
+  }
 }
 // Chemin du contour dans le contexte donne, en coordonnees monde
 function cheminIle(c, suite) {
@@ -2371,6 +2398,8 @@ function cheminIle(c, suite) {
 // sautiller le joueur sur la cote, entre prediction et correction.
 function dansIleLoc(x, y) {
   if (!ILE) return true;
+  var b = ILE_BOITE;
+  if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) return false;
   var dedans = false;
   for (var i = 0, j = ILE.length - 1; i < ILE.length; j = i++) {
     var xi = ILE[i].x, yi = ILE[i].y, xj = ILE[j].x, yj = ILE[j].y;
