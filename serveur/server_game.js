@@ -33,7 +33,7 @@ const CANON_L = R_JOUEUR * 3.05, CADENCE = 0.12, V_BALLE = 1500;
 const DISPERSION = 0.10, PORTEE = 800;
 const R_BALLE = R_JOUEUR * 0.17;
 const N_ARBRES = 26, N_BUISSONS = 32;
-const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5, PV_ARBRE = 100;
+const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.36, PV_ARBRE = 100;
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const ZONE_TIC = 0.75;   // les degats de zone tombent par paliers, pas en continu
 // Largage : l'avion traverse la carte, les joueurs sautent quand ils veulent
@@ -144,7 +144,9 @@ function valideMap(brut, nom) {
     const type = o.type === 'buisson' ? 'buisson' : 'arbre';
     const x = nombre(o.x, NaN), y = nombre(o.y, NaN);
     if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('obs[' + i + '] : x/y invalide');
-    const r = Math.max(4, nombre(o.r, R_DEFAUT[type]));
+    // Un buisson a toujours la meme taille : une carte enregistree avant
+    // un changement de R_BUISSON suit donc d'elle-meme.
+    const r = type === 'buisson' ? R_BUISSON : Math.max(4, nombre(o.r, R_DEFAUT[type]));
     let seed = nombre(o.seed, 0) | 0;
     if (!seed) seed = Math.imul(i + 1, 2654435761) | 0;
     obs.push({ x, y, r, type, seed });
