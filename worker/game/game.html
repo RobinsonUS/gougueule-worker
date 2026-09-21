@@ -176,6 +176,7 @@ const C = {
   eau:         '#1073b9',
   eauLoin:     '#0f5a8e',
   ligneEau:    '#0f6cae',
+  ligneEauLoin:'#0e5383',   // le quadrillage continue au large, tres sombre
   ombre:       'rgba(0,0,0,0.13)',
   buisson: {
     trait: '#3f4a35',
@@ -919,15 +920,22 @@ function _mmBande(c, g, h2, d, b, large, taillePx) {
   }
 
   var pasG = CELL * MM_GROUPE;
+  // Avec une ile, le quadrillage s'etend aussi au large ; sinon il s'arrete
+  // aux frontieres, comme avant.
+  var gx0 = ILE ? g : Math.max(0, g), gx1 = ILE ? d : Math.min(MONDE, d);
+  var gy0 = ILE ? h2 : Math.max(0, h2), gy1 = ILE ? b : Math.min(MONDE, b);
   c.beginPath();
-  for (var gx = Math.ceil(Math.max(0, g) / pasG) * pasG; gx <= Math.min(MONDE, d); gx += pasG) {
-    c.moveTo(gx, Math.max(0, h2)); c.lineTo(gx, Math.min(MONDE, b));
+  for (var gx = Math.ceil(gx0 / pasG) * pasG; gx <= gx1; gx += pasG) {
+    c.moveTo(gx, gy0); c.lineTo(gx, gy1);
   }
-  for (var gy = Math.ceil(Math.max(0, h2) / pasG) * pasG; gy <= Math.min(MONDE, b); gy += pasG) {
-    c.moveTo(Math.max(0, g), gy); c.lineTo(Math.min(MONDE, d), gy);
+  for (var gy = Math.ceil(gy0 / pasG) * pasG; gy <= gy1; gy += pasG) {
+    c.moveTo(gx0, gy); c.lineTo(gx1, gy);
   }
-  c.globalAlpha = 0.45;
-  c.strokeStyle = C.ligne;
+  // Sur une ile, un meme trait passe sur la terre, l'eau et le large : un
+  // noir transparent assombrit chacun a sa facon, la ou un trait vert
+  // jurerait sur le bleu.
+  c.globalAlpha = ILE ? 1 : 0.45;
+  c.strokeStyle = ILE ? 'rgba(0,0,0,0.16)' : C.ligne;
   c.lineWidth = 3 / (taillePx / large);    // epaisseur a l'ecran, pas dans le cache
   c.stroke();
   c.globalAlpha = 1;
@@ -1732,9 +1740,11 @@ function dessine(p, moi, viseur, drag) {
   };
   ctx.lineWidth = 2.5;
   if (ILE) {
-    // Au large, pas de quadrillage du tout : au-dela des frontieres il n'y
-    // a plus que l'ocean. Dans la carte, deux passes, car la cote ne suit
-    // aucune case : traits verts sur l'ile, bleus sur l'eau.
+    // Au large, le quadrillage continue, a peine plus sombre que l'ocean.
+    // Dans la carte, deux passes, car la cote ne suit aucune case : traits
+    // verts sur l'ile, bleus sur l'eau.
+    ctx.strokeStyle = C.ligneEauLoin;
+    grille();
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, MONDE, MONDE); cheminIle(ctx, true);
     ctx.clip('evenodd');
