@@ -137,7 +137,7 @@
       <div class="opt on" data-type="arbre"><div class="ic">A</div>Arbre</div>
       <div class="opt" data-type="buisson"><div class="ic">b</div>Buisson</div>
     </div>
-    <div class="note">Taille fixe : arbre 88, buisson 75</div>
+    <div class="note">Taille fixe : arbre 88, buisson 68</div>
   </div>
 
   <div id="blocCote">
@@ -210,11 +210,11 @@
 <script>
 'use strict';
 const CELL = 50;
-const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.5;
+const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.36;
 
 const C = {
-  sol:         '#6a8c45',
-  ligne:       '#638341',
+  sol:         '#698d41',
+  ligne:       '#62843d',
   dehors:      '#4a6635',
   ligneDehors: '#425c2e',
   eau:         '#1073b9',
@@ -224,9 +224,9 @@ const C = {
   ombreDouce:  'rgba(0,0,0,0.11)',   // arbres, buissons, joueurs
   buisson: {
     trait: '#303030',
-    ext:   '#7cc058',
-    int:   '#9cc85c',
-    tache: '#7cc058',
+    ext:   '#77b855',
+    int:   '#96c058',
+    tache: '#77b855',
   },
   traitArbre: '#303030',
   souche:     'rgba(40,52,32,0.13)',
@@ -317,7 +317,7 @@ let PXV = 1;                 // pixels reels par unite monde, mis a jour a chaqu
 // Mesures faites sur les images elles-memes : centre et rayon MOYEN du
 // contour opaque, en pixels. L'echelle est calibree sur le rendu reel pour
 // que le rayon moyen a l'ecran soit exactement celui de l'ancien dessin
-// (88,2 unites pour un arbre, 75,0 pour un buisson) : la hitbox, qui vaut r
+// (88,2 unites pour un arbre, 68,0 pour un buisson) : la hitbox, qui vaut r
 // cote serveur, tombe sur le bord visible comme avant, et rien ne change de
 // place ni de taille.
 var VEG = {
@@ -333,7 +333,7 @@ var VEG_ECH = { arbre: 1.0044, buisson: 0.9980 };  // calibre sur le rendu reel 
 // Debord de l'ombre autour du contour, en unites monde. Calibre pour que
 // l'anneau depasse du feuillage autant que l'ancien (bande de 13,5 dont la
 // moitie interieure etait cachee sous le feuillage).
-var VEG_OMBRE = { arbre: 6.0, buisson: 6.3 };
+var VEG_OMBRE = { arbre: 6.0, buisson: 6.5 };
 var VEG_OMBRE_ALPHA = 0.11;                       // meme valeur que C.ombreDouce
 var _vegCache = {};
 
@@ -1179,8 +1179,8 @@ function depuisJson(txt) {
                 .map(s => ({ x: Math.round(+s.x), y: Math.round(+s.y) })) : [],
     obs: m.obs.filter(o => o && isFinite(+o.x) && isFinite(+o.y)).map((o, i) => ({
       x: Math.round(+o.x), y: Math.round(+o.y),
-      r: Math.round(isFinite(+o.r) && +o.r > 0 ? +o.r
-           : (o.type === 'buisson' ? R_BUISSON : R_ARBRE)),
+      r: Math.round(o.type === 'buisson' ? R_BUISSON          // taille fixe
+           : (isFinite(+o.r) && +o.r > 0 ? +o.r : R_ARBRE)),
       type: o.type === 'buisson' ? 'buisson' : 'arbre',
       seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0)
     }))
