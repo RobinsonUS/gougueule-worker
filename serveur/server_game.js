@@ -42,6 +42,7 @@ const PARA_DUREE = 10;      // duree de la descente en parachute
 const PARA_ESPACE = 260;    // ecart entre deux joueurs largues de force
 const PARA_PLONGE = 2;      // bouton de plongee maintenu : descente x2
 const EAU_LENTEUR = 0.5;    // a pied dans l'eau : deux fois plus lent
+const ILE_PASSES = 3;       // passes d'arrondi de la cote (Chaikin)
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
 const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
 
@@ -178,7 +179,11 @@ function valideMap(brut, nom) {
         .map(p => ({ x: Number(p.x), y: Number(p.y) }))
     : [];
 
-  return { nom: brut.nom || nom, monde, zone, spawns, obs, ile };
+  // La carte ne stocke que des points de controle : la vraie cote, arrondie,
+  // en est deduite ici, exactement comme cote client et dans l'editeur.
+  const ileCourbe = ile ? courbeIle(ile) : null;
+  return { nom: brut.nom || nom, monde, zone, spawns, obs, ile, ileCourbe,
+           ileBoite: ileCourbe ? boiteDe(ileCourbe) : null };
 }
 
 function mapSecours(nom) {
@@ -498,9 +503,37 @@ function majZone(p) {
 // Point dans le polygone de l'ile (lancer de rayon). Sans contour, toute
 // la carte est terrestre. Meme fonction, au caractere pres, cote client :
 // une divergence ici ferait sautiller le joueur sur la cote.
+// Arrondi de la cote : Chaikin, trois passes. Chaque passe coupe tous les
+// coins au quart ; a la limite on obtient une courbe lisse (B-spline
+// quadratique). Meme code, au caractere pres, dans le client et l'editeur :
+// la cote que l'on voit est exactement celle qui ralentit.
+function courbeIle(ctrl) {
+  let pts = ctrl;
+  for (let k = 0; k < ILE_PASSES; k++) {
+    const q = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      q.push({ x: 0.75 * a.x + 0.25 * b.x, y: 0.75 * a.y + 0.25 * b.y });
+      q.push({ x: 0.25 * a.x + 0.75 * b.x, y: 0.25 * a.y + 0.75 * b.y });
+    }
+    pts = q;
+  }
+  return pts;
+}
+function boiteDe(pts) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const q of pts) {
+    if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x;
+    if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+  }
+  return { x0, y0, x1, y1 };
+}
+
 function dansIle(p, x, y) {
-  const c = p.map && p.map.ile;
+  const c = p.map && p.map.ileCourbe;
   if (!c) return true;
+  const b = p.map.ileBoite;
+  if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) return false;
   let dedans = false;
   for (let i = 0, j = c.length - 1; i < c.length; j = i++) {
     const xi = c[i].x, yi = c[i].y, xj = c[j].x, yj = c[j].y;
