@@ -1672,7 +1672,7 @@ function dessineParachute(j) {
 function dessineAvion(av) {
   var sp = SPRITES.avion;
   if (!sp || !(sp.naturalWidth || sp.width)) return;
-  var L = R_JOUEUR * 17.5;
+  var L = R_JOUEUR * 19.5;
   var H = L * ((sp.naturalHeight || sp.height) / (sp.naturalWidth || sp.width));
   ctx.save();
   ctx.translate(av.x, av.y);
