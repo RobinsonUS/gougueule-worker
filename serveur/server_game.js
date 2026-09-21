@@ -41,6 +41,11 @@ const AVION_V = 420;      // vitesse de l'avion, en unites par seconde
 const PARA_DUREE = 10;      // duree de la descente en parachute
 const PARA_ESPACE = 260;    // ecart entre deux joueurs largues de force
 const PARA_PLONGE = 2;      // bouton de plongee maintenu : descente x2
+// Une fois vide ou au bout du couloir, l'avion ne s'evanouit pas : il file
+// jusqu'a cette distance au-dela des frontieres. Plus que ce que couvre la
+// vue la plus large (zoom 0,75 : ~1300 unites du centre au coin) plus la
+// demi-longueur de l'avion, pour que personne ne le voie disparaitre.
+const AVION_SORTIE = 2200;
 const EAU_LENTEUR = 0.5;    // a pied dans l'eau : deux fois plus lent
 const ILE_PASSES = 3;       // passes d'arrondi de la cote (Chaikin)
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
@@ -361,13 +366,14 @@ function creeAvion(rng, monde) {
   return { x0: a.x, y0: a.y, x1: b.x, y1: b.y, len,
            duree: Math.max(1, len / AVION_V),
            angle: Math.atan2(b.y - a.y, b.x - a.x),
-           x: a.x, y: a.y };
+           x: a.x, y: a.y, enVol: true };
 }
 
 function posAvion(p) {
   const av = p.avion;
   if (!av) return { x: p.monde / 2, y: p.monde / 2 };
-  const w = Math.min(1, av.duree > 0 ? p.tVol / av.duree : 1);
+  // Au-dela du bout du couloir, l'avion poursuit tout droit sur sa lancee
+  const w = av.duree > 0 ? p.tVol / av.duree : 1;
   return { x: av.x0 + (av.x1 - av.x0) * w, y: av.y0 + (av.y1 - av.y0) * w };
 }
 
@@ -394,10 +400,18 @@ function largue(p, a, decalage) {
 }
 
 function majVol(p) {
-  if (!p.phaseVol) return;
+  // Deux choses distinctes : le LARGAGE (des passagers peuvent encore etre a
+  // bord, l'horloge de partie attend) et le VOL de l'avion, qui continue
+  // bien apres, meme a vide, jusqu'a sortir de la vue de tout le monde.
+  if (!p.avion || !p.avion.enVol) return;
   p.tVol += DT;
   const pos = posAvion(p);
   p.avion.x = pos.x; p.avion.y = pos.y;
+  const S = AVION_SORTIE;
+  if (pos.x < -S || pos.y < -S || pos.x > p.monde + S || pos.y > p.monde + S) {
+    p.avion.enVol = false;
+  }
+  if (!p.phaseVol) return;
 
   // Les passagers suivent l'avion tant qu'ils n'ont pas saute
   const dedans = [];
@@ -1344,7 +1358,8 @@ function envoieSnapshot(room) {
     // en marche, pas pendant la pause qui precede.
     zoneCible: p.zoneBouge ? p.zoneCible : null, zoneT: p.zoneT,
     avion: p.avion ? { x: p.avion.x, y: p.avion.y, angle: p.avion.angle, v: AVION_V,
-                       vol: p.phaseVol, fin: p.tVol >= p.avion.duree } : null,
+                       vol: !!p.avion.enVol, largage: p.phaseVol,
+                       fin: p.tVol >= p.avion.duree } : null,
     paraDuree: PARA_DUREE,
     phaseLobby, compteARebours, nbJoueursLobby,
     balles: p.balles.map(b => ({ id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par })),
