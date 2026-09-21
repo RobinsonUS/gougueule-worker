@@ -1018,6 +1018,120 @@ function peintMinimap(cx, cy, large, taillePx) {
   _mmPeint = _mmCv;
 }
 
+// ═══ Carte du monde ═══════════════════════════════════════════════
+// Un clic sur la minimap ouvre la carte entiere dans une fenetre bleue (la
+// carte est entouree d'eau). Un clic hors de la fenetre la referme. C'est la carte telle qu'elle a ete dessinee : un arbre
+// abattu n'y change rien, et elle est la meme pour tous. Seul le point du
+// joueur bouge. On la peint donc une fois, puis on ne fait que la recopier.
+var carteOuverte = false;
+var _carteCv = null, _carteCle = '';
+var CARTE_MINI = { x: 0, y: 0, c: 0 };      // zone cliquable de la minimap
+var CARTE_EAU = '#0174c0';                  // bleu de la fenetre, releve sur le vrai jeu
+
+function carteGeom() {
+  var cote = Math.round(Math.min(LARG, HAUT) * 0.88);
+  return { x: Math.round((LARG - cote) / 2), y: Math.round((HAUT - cote) / 2), c: cote };
+}
+function carteDisponible() {
+  return etatJeu === 'jeu' && !!snapDernier && !snapDernier.phaseLobby;
+}
+
+function peintCarte(cotePx) {
+  var cv2 = document.createElement('canvas');
+  cv2.width = cotePx; cv2.height = cotePx;
+  var c = cv2.getContext('2d');
+  c.fillStyle = CARTE_EAU;
+  c.fillRect(0, 0, cotePx, cotePx);
+
+  var k = cotePx / MONDE;
+  c.save();
+  c.scale(k, k);
+  // la terre ; le bleu de la fenetre fait l'eau
+  c.fillStyle = C.sol;
+  if (ILE) { cheminIle(c); c.fill(); }
+  else c.fillRect(0, 0, MONDE, MONDE);
+  // quadrillage discret, sur la terre comme sur l'eau
+  var pas = CELL * MM_GROUPE;
+  c.beginPath();
+  for (var g = pas; g < MONDE; g += pas) {
+    c.moveTo(g, 0); c.lineTo(g, MONDE);
+    c.moveTo(0, g); c.lineTo(MONDE, g);
+  }
+  c.strokeStyle = 'rgba(0,0,0,0.12)';
+  c.lineWidth = 1.5 / k;
+  c.stroke();
+  // vegetation, comme sur la minimap. Une souche est un arbre abattu : la
+  // carte, elle, montre l'arbre d'origine.
+  c.lineJoin = 'round';
+  for (var i = 0; i < localObs.length; i++) {
+    var ob = localObs[i];
+    var arbre = ob.type === 'arbre' || ob.type === 'souche';
+    var pal = arbre ? C.arbres[ob.teinte] : C.buisson;
+    if (!pal) continue;
+    c.lineWidth = ob.r * 0.15;
+    c.strokeStyle = arbre ? C.traitArbre : C.buisson.trait;
+    blobSur(c, ob.x, ob.y, ob.r * 0.92, ob.lobes, ob.phase, 0.075);
+    c.stroke();
+    c.fillStyle = pal.ext;
+    blobSur(c, ob.x, ob.y, ob.r * 0.92, ob.lobes, ob.phase, 0.075);
+    c.fill();
+    c.fillStyle = pal.int;
+    blobSur(c, ob.x, ob.y, ob.r * (arbre ? 0.58 : 0.55), ob.lobes, ob.phase, 0.105);
+    c.fill();
+  }
+  c.restore();
+  return cv2;
+}
+
+function dessineCarte() {
+  if (!carteOuverte) return;
+  if (!carteDisponible()) { carteOuverte = false; return; }
+  var g = carteGeom();
+  var cotePx = Math.max(8, Math.round(g.c * PX));
+  var cle = mapVerLocal + ':' + MONDE + ':' + cotePx + ':' + (ILE ? ILE.length : 0) + ':' +
+            localObs.length;
+  if (!_carteCv || _carteCle !== cle) { _carteCv = peintCarte(cotePx); _carteCle = cle; }
+
+  repereEcran();
+  ctx.save();
+  // le jeu reste visible derriere, assombri
+  ctx.fillStyle = 'rgba(0,0,0,0.42)';
+  ctx.fillRect(0, 0, LARG, HAUT);
+  // ombre franche autour de la fenetre
+  var o = 11;
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  ctx.fillRect(g.x - o, g.y - o, g.c + 2 * o, g.c + 2 * o);
+  ctx.drawImage(_carteCv, g.x, g.y, g.c, g.c);
+
+  // Le joueur (ou celui qu'on suit). Dans l'avion, c'est l'avion.
+  var j = agentVue;
+  if (j) {
+    var px = j.enAvion ? cam.x : j.x, py = j.enAvion ? cam.y : j.y;
+    var sx = g.x + px / MONDE * g.c, sy = g.y + py / MONDE * g.c;
+    ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff'; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = '#1b2a3a'; ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Renvoie vrai si le clic concerne la carte : il est alors garde pour elle
+// et ne doit ni tirer, ni frapper, ni bouger un stick.
+function carteClic(q) {
+  if (!carteOuverte) {
+    if (!carteDisponible() || CARTE_MINI.c <= 0) return false;
+    if (q.x >= CARTE_MINI.x && q.x <= CARTE_MINI.x + CARTE_MINI.c &&
+        q.y >= CARTE_MINI.y && q.y <= CARTE_MINI.y + CARTE_MINI.c) {
+      carteOuverte = true; return true;
+    }
+    return false;
+  }
+  var g = carteGeom();
+  if (q.x >= g.x && q.x <= g.x + g.c && q.y >= g.y && q.y <= g.y + g.c) return true;
+  carteOuverte = false;                   // ailleurs que sur la fenetre : on ferme
+  return true;
+}
+
 function dessineMinimap(zone, tPartie) {
   var mW = 220, mH = 220;
   var mX = LARG - mW - 12;
@@ -1048,6 +1162,8 @@ function dessineMinimap(zone, tPartie) {
   // paliers de 30 Hz et ferait trembler la fenetre de la minimap.
   if (suivi && suivi.enAvion) suivi = { x: cam.x, y: cam.y };
   var enJeu = snapDernier && !snapDernier.phaseLobby && suivi;
+  // Zone ou un clic ouvre la carte du monde, seulement en partie
+  if (enJeu) { CARTE_MINI.x = mX; CARTE_MINI.y = mY; CARTE_MINI.c = mW; }
 
   if (!enJeu) {
     // Salle d'attente : on garde le carre neutre
@@ -2666,6 +2782,22 @@ function surContinue(e) {
   return p.x >= btnContinue.x && p.x <= btnContinue.x + btnContinue.w &&
          p.y >= btnContinue.y && p.y <= btnContinue.y + btnContinue.h;
 }
+// Carte du monde : on intercepte le clic avant tout le reste
+window.addEventListener('mousedown', function (e) {
+  if (carteClic(posEcran(e))) { e.stopPropagation(); e.preventDefault(); }
+}, true);
+window.addEventListener('touchstart', function (e) {
+  var t = e.changedTouches && e.changedTouches[0];
+  if (!t) return;
+  if (carteClic(posEcran({ clientX: t.clientX, clientY: t.clientY }))) {
+    e.stopPropagation(); e.preventDefault();
+  }
+}, { capture: true, passive: false });
+// Echap ferme la carte, comme on s'y attend sur ordinateur
+window.addEventListener('keydown', function (e) {
+  if (e.code === 'Escape' && carteOuverte) carteOuverte = false;
+});
+
 // window et non cv : le canevas n'existe pas encore a ce stade
 window.addEventListener('mousedown', function (e) {
   if (surContinue(e)) { btnContinue.presse = true; e.preventDefault(); return; }
@@ -3561,6 +3693,7 @@ function boucle(maintenant) {
   precedent = maintenant;
 
   if (etatJeu === 'lobby' || etatJeu === 'connecting') return;
+  CARTE_MINI.c = 0;                 // redefinie si la minimap est dessinee
 
   window._lastDt = dt;
   produitCommande(dt);
@@ -3606,6 +3739,7 @@ function boucle(maintenant) {
   if (etatJeu === 'jeu' && modeBoutonAir()) { repereEcran(); dessineBoutonSaut(); }
 
   dessineEcranMort(vue);
+  dessineCarte();                   // la carte du monde passe par-dessus tout
 
   // hud minimap dessiné dans dessine()
   } catch(e) { console.error('boucle:', e); }
