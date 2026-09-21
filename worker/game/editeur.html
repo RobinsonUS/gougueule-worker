@@ -482,7 +482,7 @@ function dessine() {
   ctx.translate(-vue.x, -vue.y);
 
   // sol, ou eau + ile si un contour existe
-  const ile = carte.ile && carte.ile.length >= 3 ? carte.ile : null;
+  const ile = carte.ile && carte.ile.length >= 3 ? courbeIle(carte.ile) : null;
   const traceIle = (suite) => {
     if (!suite) ctx.beginPath();
     ctx.moveTo(ile[0].x, ile[0].y);
@@ -604,12 +604,13 @@ function dessine() {
   if (outil === 'cote' && !traceCote && carte.ile && carte.ile.length) {
     const montrePoignees = poigneesVisibles();
     const pts = carte.ile;
+    const courbe = pts.length >= 3 ? courbeIle(pts) : pts;
     ctx.lineWidth = 2.5 / vue.z;
     ctx.strokeStyle = 'rgba(255,255,255,.9)';
     ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    if (pts.length >= 3) ctx.closePath();
+    ctx.moveTo(courbe[0].x, courbe[0].y);
+    for (let i = 1; i < courbe.length; i++) ctx.lineTo(courbe[i].x, courbe[i].y);
+    if (courbe.length >= 3) ctx.closePath();
     ctx.stroke();
     const rp = rayonPoignee();
     for (let i = 0; montrePoignees && i < pts.length; i++) {
@@ -763,59 +764,130 @@ function fin() {
   appuye = false; deplace = false; dernier = null; poignee = null;
 }
 
-// Douglas-Peucker : on ne garde que les points qui changent la forme. Un
-// tour d'ile a main levee sort a un millier de points, dont l'immense
-// majorite ne dit rien de plus que ses voisins.
-function simplifieTrait(pts, tol) {
-  if (pts.length < 3) return pts.slice();
-  const garde = new Array(pts.length).fill(false);
-  garde[0] = garde[pts.length - 1] = true;
-  const pile = [[0, pts.length - 1]];
-  while (pile.length) {
-    const seg = pile.pop(), i0 = seg[0], i1 = seg[1];
-    const a = pts[i0], b = pts[i1];
-    const vx = b.x - a.x, vy = b.y - a.y, l2 = vx * vx + vy * vy;
-    let pire = -1, pireD = tol;
-    for (let k = i0 + 1; k < i1; k++) {
-      const q = pts[k];
-      let d;
-      if (l2 < 1e-9) d = Math.hypot(q.x - a.x, q.y - a.y);
-      else {
-        let t = ((q.x - a.x) * vx + (q.y - a.y) * vy) / l2;
-        t = Math.max(0, Math.min(1, t));
-        d = Math.hypot(q.x - (a.x + vx * t), q.y - (a.y + vy * t));
-      }
-      if (d > pireD) { pireD = d; pire = k; }
-    }
-    if (pire > 0) { garde[pire] = true; pile.push([i0, pire], [pire, i1]); }
+// Points regulierement espaces le long d'une boucle fermee. Un trait a la
+// main a des points serres ou on ralentit et lointains ou on accelere : le
+// lissage n'a de sens que sur un pas constant.
+function perimetre(pts) {
+  let l = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    l += Math.hypot(b.x - a.x, b.y - a.y);
   }
-  return pts.filter(function (_, i) { return garde[i]; });
+  return l;
 }
 
-// Fin du trait : on simplifie, en serrant la tolerance tant que le contour
-// reste trop lourd pour etre transmis et teste a chaque tick.
-function termineTrait() {
-  const pts = traceCote;
-  traceCote = null;
-  if (!pts || pts.length < 3) return;
-  let tol = Math.max(1, lissage) / vue.z;
-  let out = simplifieTrait(pts, tol);
-  while (out.length > 260 && tol < 1e5) { tol *= 1.6; out = simplifieTrait(pts, tol); }
-  if (out.length >= 4 &&
-      Math.hypot(out[0].x - out[out.length - 1].x, out[0].y - out[out.length - 1].y) < tol * 1.5) {
-    out.pop();                                  // la boucle se referme d'elle-meme
+function reechantillonne(pts, pas) {
+  const n = pts.length, lg = [];
+  let perim = 0;
+  for (let k = 0; k < n; k++) {
+    const a = pts[k], b = pts[(k + 1) % n];
+    const l = Math.hypot(b.x - a.x, b.y - a.y);
+    lg.push(l); perim += l;
   }
-  if (out.length < 3) return;
-  carte.ile = out.map(function (q) { return { x: Math.round(q.x), y: Math.round(q.y) }; });
+  const m = Math.max(8, Math.round(perim / pas));
+  const d = perim / m, out = [];
+  let i = 0, debut = 0;               // debut : abscisse ou commence le segment i
+  for (let k = 0; k < m; k++) {
+    const s = k * d;
+    while (i < n - 1 && debut + lg[i] < s) { debut += lg[i]; i++; }
+    const a = pts[i], b = pts[(i + 1) % n];
+    const t = lg[i] > 1e-9 ? Math.min(1, (s - debut) / lg[i]) : 0;
+    out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  }
+  return out;
+}
+
+// Lissage gaussien le long de la boucle : chaque point devient la moyenne
+// ponderee de ses voisins sur une longueur sigma. Tout ce qui ondule plus
+// court que sigma (le tremblement de la main) disparait ; les grandes formes
+// voulues, elles, restent intactes. L'ile ne retrecit pratiquement pas : de
+// l'ordre de sigma^2 / 2R, soit une fraction d'unite.
+function lisseBoucle(pts, sigma, pas) {
+  const n = pts.length;
+  const demi = Math.max(1, Math.round(3 * sigma / pas));
+  const poids = [];
+  let somme = 0;
+  for (let k = -demi; k <= demi; k++) {
+    const w = Math.exp(-(k * pas) * (k * pas) / (2 * sigma * sigma));
+    poids.push(w); somme += w;
+  }
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    let x = 0, y = 0;
+    for (let k = -demi; k <= demi; k++) {
+      const q = pts[((i + k) % n + n) % n], w = poids[k + demi];
+      x += q.x * w; y += q.y * w;
+    }
+    out[i] = { x: x / somme, y: y / somme };
+  }
+  return out;
+}
+
+// Meme arrondi que le jeu et le serveur (Chaikin, trois passes) : ce qui est
+// dessine ici est exactement la cote que l'on aura en partie.
+const ILE_PASSES = 3;
+function courbeIle(ctrl) {
+  let pts = ctrl;
+  for (let k = 0; k < ILE_PASSES; k++) {
+    const q = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      q.push({ x: 0.75 * a.x + 0.25 * b.x, y: 0.75 * a.y + 0.25 * b.y });
+      q.push({ x: 0.25 * a.x + 0.75 * b.x, y: 0.25 * a.y + 0.75 * b.y });
+    }
+    pts = q;
+  }
+  return pts;
+}
+
+function termineTrait() {
+  const brut = traceCote;
+  traceCote = null;
+  if (!brut || brut.length < 3) return;
+  // 1+2. On efface la main qui tremble. Le curseur fixe la longueur d'onde
+  //    effacee, en pixels a l'ecran : ce que l'on voit est ce que l'on lisse.
+  //    Trois tours : un trait tremblant zigzague, sa longueur est gonflee
+  //    par les allers-retours, et un seul lissage mesure mal les distances.
+  //    Apres chaque tour, le trait se rapproche de la vraie forme et le
+  //    suivant travaille sur des longueurs justes.
+  const pas = 4 / vue.z, sigma = (lissage * 5) / vue.z;
+  // Premier degrossissage sur l'ordre des releves, pas sur les distances :
+  // le doigt est echantillonne regulierement dans le temps, et le temps,
+  // lui, ne se laisse pas gonfler par les zigzags.
+  let pts = brut;
+  const nb = pts.length, v = Math.min(6, Math.floor((nb - 1) / 2));
+  if (v >= 1) {
+    const pre = new Array(nb);
+    for (let i = 0; i < nb; i++) {
+      let x = 0, y = 0;
+      for (let k = -v; k <= v; k++) { const q = pts[((i + k) % nb + nb) % nb]; x += q.x; y += q.y; }
+      pre[i] = { x: x / (2 * v + 1), y: y / (2 * v + 1) };
+    }
+    pts = pre;
+  }
+  for (let tour = 0; tour < 3; tour++) {
+    pts = reechantillonne(pts, pas);
+    pts = lisseBoucle(pts, sigma, perimetre(pts) / pts.length);
+  }
+  // 3. points de controle espaces, 110 au plus : l'arrondi final (Chaikin)
+  //    est calcule a la volee, dans l'editeur, le jeu et le serveur.
+  pts = reechantillonne(pts, Math.max(perimetre(pts) / 110, 30));
+  if (pts.length < 3) return;
+  carte.ile = pts.map(function (q) { return { x: Math.round(q.x), y: Math.round(q.y) }; });
   majCote();
 }
 
 // Taille des poignees a l'ecran, quel que soit le zoom
 function rayonPoignee() { return 8 / vue.z; }
 
-// De loin, les poignees se toucheraient les unes les autres : on les
-// masque, et un clic demarre alors toujours un nouveau trait.
-function poigneesVisibles() { return vue.z >= 0.08; }
+// Les poignees n'apparaissent que si elles sont assez ecartees a l'ecran
+// pour etre saisies une par une (18 px). De plus loin, elles formeraient un
+// chapelet qui cache la cote, et un clic doit demarrer un nouveau trait.
+function poigneesVisibles() {
+  const pts = carte.ile;
+  if (!pts || pts.length < 3) return false;
+  return (perimetre(pts) / pts.length) * vue.z >= 18;
+}
 
 // Point le plus proche du contour, s'il est sous le curseur
 function poigneeSous(x, y) {
