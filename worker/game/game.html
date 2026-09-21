@@ -147,7 +147,7 @@ const L_BALLE     = R_JOUEUR * 0.26;
 const N_ARBRES   = 26;
 const N_BUISSONS = 32;
 const R_ARBRE    = CELL * 1.75;
-const R_BUISSON  = CELL * 1.5;
+const R_BUISSON  = CELL * 1.36;
 const PV_ARBRE   = 100;
 
 // ============ zone ============
@@ -167,8 +167,8 @@ const EAU_LENTEUR = 0.5;   // a pied dans l'eau : deux fois plus lent
 
 // ============ couleurs ============
 const C = {
-  sol:         '#6a8c45',
-  ligne:       '#638341',
+  sol:         '#698d41',
+  ligne:       '#62843d',
   dehors:      '#4a6635',
   ligneDehors: '#425c2e',
   // L'eau qui entoure l'ile, et la meme en plus sombre au-dela des
@@ -183,9 +183,9 @@ const C = {
   // la carte du monde, qui dessinent des formes simples, restent assorties.
   buisson: {
     trait: '#303030',
-    ext:   '#7cc058',
-    int:   '#9cc85c',
-    tache: '#7cc058',
+    ext:   '#77b855',
+    int:   '#96c058',
+    tache: '#77b855',
   },
   traitArbre: '#303030',
   souche:     'rgba(40,52,32,0.13)',
@@ -309,7 +309,7 @@ function cheminBlob(x, y, r, lobes, phase, amp) {
 // Mesures faites sur les images elles-memes : centre et rayon MOYEN du
 // contour opaque, en pixels. L'echelle est calibree sur le rendu reel pour
 // que le rayon moyen a l'ecran soit exactement celui de l'ancien dessin
-// (88,2 unites pour un arbre, 75,0 pour un buisson) : la hitbox, qui vaut r
+// (88,2 unites pour un arbre, 68,0 pour un buisson) : la hitbox, qui vaut r
 // cote serveur, tombe sur le bord visible comme avant, et rien ne change de
 // place ni de taille.
 var VEG = {
@@ -325,7 +325,7 @@ var VEG_ECH = { arbre: 1.0044, buisson: 0.9980 };  // calibre sur le rendu reel 
 // Debord de l'ombre autour du contour, en unites monde. Calibre pour que
 // l'anneau depasse du feuillage autant que l'ancien (bande de 13,5 dont la
 // moitie interieure etait cachee sous le feuillage).
-var VEG_OMBRE = { arbre: 6.0, buisson: 6.3 };
+var VEG_OMBRE = { arbre: 6.0, buisson: 6.5 };
 var VEG_OMBRE_ALPHA = 0.11;                       // meme valeur que C.ombreDouce
 var _vegCache = {};
 
@@ -1010,6 +1010,57 @@ function minimapAPeindre() {
   return true;
 }
 
+// Vegetation de la minimap et de la carte : les vraies images, reduites une
+// fois pour toutes a la taille ou elles s'affichent (une quinzaine de
+// pixels). Chaque toile est peinte une seule fois, ensuite ce n'est qu'une
+// recopie de quelques pixels par objet.
+var _vegMini = {};
+function vegToutPret() {
+  for (var i = 0; i < VEG_ARBRES.length; i++) if (!vegPret(VEG_ARBRES[i])) return 0;
+  return vegPret('buisson') ? 1 : 0;
+}
+function vegMini(nom, tPx) {
+  tPx = Math.max(4, Math.round(tPx / 2) * 2);
+  var cle = nom + ':' + tPx, e = _vegMini[cle];
+  if (e) return e;
+  var sp = SPRITES[nom];
+  var w = sp.naturalWidth || sp.width, h = sp.naturalHeight || sp.height;
+  // Reduction par moities successives : d'un coup, une image divisee par
+  // vingt perd ses traits fins et crenele.
+  var cur = sp, cw = w, ch = h;
+  while (cw / 2 >= tPx) {
+    var nw = Math.max(1, Math.round(cw / 2)), nh = Math.max(1, Math.round(ch / 2));
+    var t = document.createElement('canvas'); t.width = nw; t.height = nh;
+    var tc = t.getContext('2d'); tc.imageSmoothingQuality = 'high';
+    tc.drawImage(cur, 0, 0, nw, nh);
+    cur = t; cw = nw; ch = nh;
+  }
+  e = document.createElement('canvas');
+  e.width = tPx; e.height = Math.max(1, Math.round(h * tPx / w));
+  var g = e.getContext('2d'); g.imageSmoothingQuality = 'high';
+  g.drawImage(cur, 0, 0, e.width, e.height);
+  _vegMini[cle] = e;
+  return e;
+}
+// Meme cadrage que dessineVeg (centre, echelle, rotation), dans un contexte
+// deja au repere monde ; k = pixels de la toile par unite monde. Une souche
+// y reste l'arbre d'origine. Renvoie faux si l'image n'est pas encore la.
+function dessineVegMini(c, ob, k) {
+  var genre = ob.type === 'buisson' ? 'buisson' : 'arbre';
+  var nom = genre === 'buisson' ? 'buisson' : (VEG_ARBRES[ob.teinte] || VEG_ARBRES[0]);
+  if (!vegPret(nom)) return false;
+  var sp = SPRITES[nom], m = VEG[nom];
+  var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
+  var ech = (ob.r * VEG_ECH[genre]) / m.r;          // unites monde par px image
+  var e = vegMini(nom, sw * ech * k);
+  c.save();
+  c.translate(ob.x, ob.y);
+  c.rotate(ob.phase || 0);
+  c.drawImage(e, -m.cx * ech, -m.cy * ech, sw * ech, sh * ech);
+  c.restore();
+  return true;
+}
+
 function blobSur(c, x, y, r, lobes, phase, amp) {
   c.beginPath();
   for (var i = 0; i <= 48; i++) {
@@ -1059,16 +1110,14 @@ function _mmBande(c, g, h2, d, b, large, taillePx) {
   c.globalAlpha = 1;
 
   c.lineJoin = 'round';
+  var kPx = taillePx / (large * MM_MARGE);   // pixels du cache par unite monde
   for (var i = 0; i < localObs.length; i++) {
     var ob = localObs[i];
     if (ob.x < g - ob.r || ob.x > d + ob.r || ob.y < h2 - ob.r || ob.y > b + ob.r) continue;
-    if (ob.type === 'souche') {
-      c.fillStyle = C.souche;
-      c.beginPath(); c.arc(ob.x, ob.y, ob.r * 0.55, 0, 6.2832); c.fill();
-      continue;
-    }
-    var arbre = ob.type === 'arbre';
+    if (dessineVegMini(c, ob, kPx)) continue;
+    var arbre = ob.type === 'arbre' || ob.type === 'souche';
     var pal = arbre ? C.arbres[ob.teinte] : C.buisson;
+    if (!pal) continue;
     c.lineWidth = ob.r * 0.15;
     c.strokeStyle = arbre ? C.traitArbre : C.buisson.trait;
     blobSur(c, ob.x, ob.y, ob.r * 0.92, ob.lobes, ob.phase, 0.075);
@@ -1090,7 +1139,7 @@ function peintMinimap(cx, cy, large, taillePx) {
   var c = _mmCv.getContext('2d');
   var lc = large * MM_MARGE;               // cote couvert par le cache
   var k = taillePx / lc;
-  var cle = MONDE + ':' + mapVerLocal + ':' + localObs.length;
+  var cle = MONDE + ':' + mapVerLocal + ':' + localObs.length + ':' + vegToutPret();
   var g = cx - lc / 2, d = cx + lc / 2, h2 = cy - lc / 2, b = cy + lc / 2;
 
   // Recentrage : le decor n'a pas change, seul le cadrage glisse. On decale
@@ -1183,6 +1232,7 @@ function peintCarte(cotePx) {
   c.lineJoin = 'round';
   for (var i = 0; i < localObs.length; i++) {
     var ob = localObs[i];
+    if (dessineVegMini(c, ob, k)) continue;
     var arbre = ob.type === 'arbre' || ob.type === 'souche';
     var pal = arbre ? C.arbres[ob.teinte] : C.buisson;
     if (!pal) continue;
@@ -1207,7 +1257,7 @@ function dessineCarte() {
   var g = carteGeom();
   var cotePx = Math.max(8, Math.round(g.c * PX));
   var cle = mapVerLocal + ':' + MONDE + ':' + cotePx + ':' + (ILE ? ILE.length : 0) + ':' +
-            localObs.length;
+            localObs.length + ':' + vegToutPret();
   if (!_carteCv || _carteCle !== cle) { _carteCv = peintCarte(cotePx); _carteCle = cle; }
 
   repereEcran();
@@ -1292,7 +1342,7 @@ function dessineMinimap(zone, tPartie) {
   } else {
     var large = MM_CASES * CELL;           // largeur de la fenetre, en unites monde
     var taillePx = Math.round(mW * MM_MARGE * 2);   // 2x pour rester net
-    var cle = MONDE + ':' + mapVerLocal + ':' + localObs.length;
+    var cle = MONDE + ':' + mapVerLocal + ':' + localObs.length + ':' + vegToutPret();
     var marge = (large * MM_MARGE - large) / 2;     // de quoi bouger sans repeindre
     // Le recentrage ne repeint qu'une fine bande : on le declenche souvent,
     // pour repartir le cout au lieu de le prendre d'un bloc tous les 800
@@ -1972,13 +2022,21 @@ function dessine(p, moi, viseur, drag) {
     }
     ctx.stroke();
   };
-  ctx.lineWidth = 2.5;
+  // Tout sauf le carre du monde
+  const horsMonde = () => {
+    ctx.beginPath();
+    ctx.rect(gch - CELL, hau - CELL, drt - gch + 3 * CELL, bas - hau + 3 * CELL);
+    ctx.rect(0, 0, MONDE, MONDE);
+    ctx.clip('evenodd');
+  };
+  ctx.lineWidth = 3.7;   // 3,5 px pour une case de 47 px sur la reference
   if (ILE) {
     // Au large, le quadrillage continue, a peine plus sombre que l'ocean.
     // Dans la carte, deux passes, car la cote ne suit aucune case : traits
     // verts sur l'ile, bleus sur l'eau.
-    ctx.strokeStyle = C.ligneEauLoin;
-    grille();
+    // Chaque trait n'est trace qu'une fois : superposes, les bords
+    // antialiases des deux couleurs s'additionnaient en un liseré sombre.
+    ctx.save(); horsMonde(); ctx.strokeStyle = C.ligneEauLoin; grille(); ctx.restore();
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, MONDE, MONDE); cheminIle(ctx, true);
     ctx.clip('evenodd');
@@ -1991,8 +2049,7 @@ function dessine(p, moi, viseur, drag) {
     grille();
     ctx.restore();
   } else {
-    ctx.strokeStyle = C.ligneDehors;
-    grille();
+    ctx.save(); horsMonde(); ctx.strokeStyle = C.ligneDehors; grille(); ctx.restore();
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, MONDE, MONDE);
@@ -2674,10 +2731,8 @@ function majObs(decorMaj, mapVer) {
     if (!o) continue;
     var etait = prevObsTypes[m.idx];
     if (etait === 'arbre' && m.type === 'souche') genTreeDebris(o);
-    // Le serveur renvoie un objet des qu'il TREMBLE, pas seulement quand il
-    // tombe. Repeindre la minimap la-dessus revenait a la refaire a chaque
-    // tick pendant une fusillade : on ne la salit que sur un vrai changement.
-    if (etait !== m.type) marqueMinimapSale();
+    // La minimap ne suit pas les arbres abattus : elle montre la carte
+    // d'origine, comme la carte du monde. Rien a repeindre ici.
     o.type = m.type; o.pv = m.pv; o.secousse = m.secousse || 0;
     prevObsTypes[m.idx] = m.type;
   }
