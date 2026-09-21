@@ -143,13 +143,15 @@
 
   <div id="blocCote">
     <h2>Contour de l'ile</h2>
-    <div class="note">Clic dans le vide : ajoute un point a la suite.
-      Clic sur un trait : insere un point au milieu. Glisser un point : le
-      deplace. Clic droit sur un point : le supprime.
-      Tout ce qui est hors du contour devient de l'eau, ou l'on avance deux
+    <div class="note">Dessinez la cote d'un seul trait, comme au crayon :
+      appuyez, faites le tour de l'ile, relachez. Le contour se referme tout
+      seul et l'interieur devient la terre. Un nouveau trait remplace le
+      precedent. Pour retoucher, glissez une poignee ; clic droit dessus
+      pour la retirer. Hors du contour c'est de l'eau, ou l'on avance deux
       fois moins vite.</div>
+    <div class="ligne">Lissage <b id="vLiss">4</b></div>
+    <input type="range" id="lissage" min="1" max="24" value="4">
     <div class="ligne"><button id="coteRect">Partir d'un rectangle</button></div>
-    <div class="ligne"><button id="coteUndoPt">Retirer le dernier point</button></div>
     <div class="ligne"><button id="coteVide">Tout effacer (plus d'eau)</button></div>
     <div class="ligne">Points <b id="vCote">0</b></div>
   </div>
@@ -427,6 +429,8 @@ let carte = {
 let vue = { x: 6400, y: 6400, z: 0.06 };
 let outil = 'placer', typeObj = 'arbre';
 let poignee = null;           // index du point de cote en cours de deplacement
+let traceCote = null;         // trait a main levee en cours
+let lissage = 4;              // tolerance du lissage, en pixels ecran
 let portee = 600, densite = 6, rGomme = 300;
 // Un element a toujours sa taille de jeu : elle n'est pas reglable.
 const RAYON = { arbre: Math.round(R_ARBRE), buisson: Math.round(R_BUISSON) };
@@ -577,8 +581,28 @@ function dessine() {
     ctx.beginPath(); ctx.arc(s.x, s.y, 300, 0, 6.2832); ctx.stroke();
   }
 
+  // trait a main levee en cours : on montre par ou il se refermera
+  if (traceCote && traceCote.length) {
+    ctx.lineWidth = 3 / vue.z; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(traceCote[0].x, traceCote[0].y);
+    for (let i = 1; i < traceCote.length; i++) ctx.lineTo(traceCote[i].x, traceCote[i].y);
+    ctx.stroke();
+    if (traceCote.length > 2) {
+      ctx.setLineDash([10 / vue.z, 8 / vue.z]);
+      ctx.strokeStyle = 'rgba(255,255,255,.55)';
+      ctx.beginPath();
+      ctx.moveTo(traceCote[traceCote.length - 1].x, traceCote[traceCote.length - 1].y);
+      ctx.lineTo(traceCote[0].x, traceCote[0].y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
   // contour de l'ile : trait et poignees, seulement avec l'outil Cote
-  if (outil === 'cote' && carte.ile && carte.ile.length) {
+  if (outil === 'cote' && !traceCote && carte.ile && carte.ile.length) {
+    const montrePoignees = poigneesVisibles();
     const pts = carte.ile;
     ctx.lineWidth = 2.5 / vue.z;
     ctx.strokeStyle = 'rgba(255,255,255,.9)';
@@ -588,7 +612,7 @@ function dessine() {
     if (pts.length >= 3) ctx.closePath();
     ctx.stroke();
     const rp = rayonPoignee();
-    for (let i = 0; i < pts.length; i++) {
+    for (let i = 0; montrePoignees && i < pts.length; i++) {
       ctx.beginPath(); ctx.arc(pts[i].x, pts[i].y, rp, 0, 6.2832);
       ctx.fillStyle = (i === poignee) ? '#ffd24a' : '#ffffff';
       ctx.fill();
@@ -734,38 +758,73 @@ function bouge(e) {
   }
   if (appuye) agit(m.x, m.y, false);
 }
-function fin() { appuye = false; deplace = false; dernier = null; poignee = null; }
+function fin() {
+  if (traceCote) termineTrait();     // relacher referme le contour
+  appuye = false; deplace = false; dernier = null; poignee = null;
+}
+
+// Douglas-Peucker : on ne garde que les points qui changent la forme. Un
+// tour d'ile a main levee sort a un millier de points, dont l'immense
+// majorite ne dit rien de plus que ses voisins.
+function simplifieTrait(pts, tol) {
+  if (pts.length < 3) return pts.slice();
+  const garde = new Array(pts.length).fill(false);
+  garde[0] = garde[pts.length - 1] = true;
+  const pile = [[0, pts.length - 1]];
+  while (pile.length) {
+    const seg = pile.pop(), i0 = seg[0], i1 = seg[1];
+    const a = pts[i0], b = pts[i1];
+    const vx = b.x - a.x, vy = b.y - a.y, l2 = vx * vx + vy * vy;
+    let pire = -1, pireD = tol;
+    for (let k = i0 + 1; k < i1; k++) {
+      const q = pts[k];
+      let d;
+      if (l2 < 1e-9) d = Math.hypot(q.x - a.x, q.y - a.y);
+      else {
+        let t = ((q.x - a.x) * vx + (q.y - a.y) * vy) / l2;
+        t = Math.max(0, Math.min(1, t));
+        d = Math.hypot(q.x - (a.x + vx * t), q.y - (a.y + vy * t));
+      }
+      if (d > pireD) { pireD = d; pire = k; }
+    }
+    if (pire > 0) { garde[pire] = true; pile.push([i0, pire], [pire, i1]); }
+  }
+  return pts.filter(function (_, i) { return garde[i]; });
+}
+
+// Fin du trait : on simplifie, en serrant la tolerance tant que le contour
+// reste trop lourd pour etre transmis et teste a chaque tick.
+function termineTrait() {
+  const pts = traceCote;
+  traceCote = null;
+  if (!pts || pts.length < 3) return;
+  let tol = Math.max(1, lissage) / vue.z;
+  let out = simplifieTrait(pts, tol);
+  while (out.length > 260 && tol < 1e5) { tol *= 1.6; out = simplifieTrait(pts, tol); }
+  if (out.length >= 4 &&
+      Math.hypot(out[0].x - out[out.length - 1].x, out[0].y - out[out.length - 1].y) < tol * 1.5) {
+    out.pop();                                  // la boucle se referme d'elle-meme
+  }
+  if (out.length < 3) return;
+  carte.ile = out.map(function (q) { return { x: Math.round(q.x), y: Math.round(q.y) }; });
+  majCote();
+}
 
 // Taille des poignees a l'ecran, quel que soit le zoom
 function rayonPoignee() { return 8 / vue.z; }
 
+// De loin, les poignees se toucheraient les unes les autres : on les
+// masque, et un clic demarre alors toujours un nouveau trait.
+function poigneesVisibles() { return vue.z >= 0.08; }
+
 // Point le plus proche du contour, s'il est sous le curseur
 function poigneeSous(x, y) {
+  if (!poigneesVisibles()) return -1;
   const pts = carte.ile || [];
   const r = rayonPoignee() * 1.6;
   for (let i = 0; i < pts.length; i++)
     if (Math.hypot(pts[i].x - x, pts[i].y - y) <= r) return i;
   return -1;
-}
-
-// Segment du contour sous le curseur : renvoie l'indice ou inserer
-function segmentSous(x, y) {
-  const pts = carte.ile || [];
-  if (pts.length < 2) return -1;
-  const seuil = 10 / vue.z;
-  let best = -1, bestD = seuil;
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[i], b = pts[(i + 1) % pts.length];
-    if (pts.length < 3 && i === pts.length - 1) break;   // pas encore ferme
-    const vx = b.x - a.x, vy = b.y - a.y;
-    const l2 = vx * vx + vy * vy;
-    if (l2 < 1) continue;
-    let t = ((x - a.x) * vx + (y - a.y) * vy) / l2;
-    t = Math.max(0, Math.min(1, t));
-    const d = Math.hypot(x - (a.x + vx * t), y - (a.y + vy * t));
-    if (d < bestD) { bestD = d; best = i + 1; }
-  }
-  return best;
 }
 
 let dernierJet = null;
@@ -782,18 +841,21 @@ function agit(x, y, presse) {
   // Un point d'apparition se pose au clic, pas en continu pendant le glisser
   else if (outil === 'spawn' && presse) carte.spawns.push({ x: Math.round(x), y: Math.round(y) });
   else if (outil === 'cote') {
-    const rx = Math.round(x), ry = Math.round(y);
-    if (!presse) {                       // glisser : on deplace la poignee prise
-      if (poignee !== null && carte.ile[poignee]) { carte.ile[poignee] = { x: rx, y: ry }; majCote(); }
+    if (presse) {
+      // Sur une poignee : retouche du contour. Ailleurs : nouveau trait.
+      const ip = poigneeSous(x, y);
+      if (ip >= 0) { poignee = ip; traceCote = null; return; }
+      traceCote = [{ x: x, y: y }];
       return;
     }
-    if (!carte.ile) carte.ile = [];
-    const ip = poigneeSous(x, y);
-    if (ip >= 0) { poignee = ip; return; }          // on attrape un point
-    const seg = segmentSous(x, y);
-    if (seg >= 0) { carte.ile.splice(seg, 0, { x: rx, y: ry }); poignee = seg; }
-    else { carte.ile.push({ x: rx, y: ry }); poignee = carte.ile.length - 1; }
-    majCote();
+    if (poignee !== null && carte.ile && carte.ile[poignee]) {
+      carte.ile[poignee] = { x: Math.round(x), y: Math.round(y) }; majCote(); return;
+    }
+    // On echantillonne le geste : retenir chaque pixel ne sert a rien
+    if (traceCote) {
+      const q = traceCote[traceCote.length - 1];
+      if (Math.hypot(x - q.x, y - q.y) >= 3 / vue.z) traceCote.push({ x: x, y: y });
+    }
   }
 }
 
@@ -873,12 +935,6 @@ document.getElementById('coteRect').onclick = () => {
   carte.ile = [{ x: k, y: k }, { x: m - k, y: k }, { x: m - k, y: m - k }, { x: k, y: m - k }];
   majCote();
 };
-document.getElementById('coteUndoPt').onclick = () => {
-  if (!carte.ile || !carte.ile.length) return;
-  memorise(); carte.ile.pop();
-  if (!carte.ile.length) carte.ile = null;
-  majCote();
-};
 document.getElementById('coteVide').onclick = () => {
   memorise(); carte.ile = null; majCote();
 };
@@ -888,6 +944,7 @@ function curseur(id, span, cb) {
   el.oninput = () => { document.getElementById(span).textContent = el.value; cb(+el.value); };
 }
 curseur('gomme', 'vGom', v => rGomme = v);
+curseur('lissage', 'vLiss', v => lissage = v);
 curseur('portee', 'vPort', v => portee = v);
 curseur('densite', 'vDens', v => densite = v);
 curseur('r0', 'vR0', v => carte.zone.r0 = v);
