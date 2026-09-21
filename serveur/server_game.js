@@ -117,8 +117,18 @@ function nombre(v, defaut) {
   return Number.isFinite(n) ? n : defaut;
 }
 
+// Taille du monde et cyclone ne se reglent plus dans l'editeur : ce sont
+// toujours les memes. Une carte qui ne les donne pas prend ces valeurs.
+const CARTE_DEFAUT = {
+  partie: { monde: 12800, zone: {"cx": 6400, "cy": 6400, "r0": 9500, "attente": 20, "vagues": [{"r": 2900, "duree": 30, "pause": 30, "degats": 2}, {"r": 950, "duree": 20, "pause": 15, "degats": 5}, {"r": 300, "duree": 10, "pause": 20, "degats": 10}, {"r": 0, "duree": 45, "pause": 0, "degats": 10}]} },
+  lobby:  { monde: 3200,  zone: {"cx": 1600, "cy": 1600, "r0": 1900, "attente": 20, "vagues": [{"r": 700, "duree": 30, "pause": 20, "degats": 2}, {"r": 250, "duree": 20, "pause": 15, "degats": 5}, {"r": 0, "duree": 30, "pause": 0, "degats": 10}]} },
+};
+
 function valideMap(brut, nom) {
   if (!brut || typeof brut !== 'object') throw new Error('racine invalide');
+  const defaut = CARTE_DEFAUT[nom] || CARTE_DEFAUT.partie;
+  if (brut.monde === undefined) brut = Object.assign({}, brut, { monde: defaut.monde });
+  if (!brut.zone) brut = Object.assign({}, brut, { zone: defaut.zone });
   const monde = nombre(brut.monde, NaN);
   if (!Number.isFinite(monde) || monde < 500) throw new Error('champ monde invalide');
   if (!Array.isArray(brut.obs)) throw new Error('champ obs manquant');
