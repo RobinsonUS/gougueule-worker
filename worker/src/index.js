@@ -12,6 +12,11 @@ import avion from '../game/avion.png';
 import parachute from '../game/parachute.png';
 import boutonPara from '../game/bouton_para.png';
 import boutonPlonge from '../game/bouton_plonge.png';
+import arbreVert    from '../game/arbre_vert.png';
+import arbreOrange  from '../game/arbre_orange.png';
+import arbreRouge   from '../game/arbre_rouge.png';
+import arbreSombre  from '../game/arbre_sombre.png';
+import buissonImg   from '../game/buisson.png';
 import arm          from '../game/arm.png';
 import hand         from '../game/hand.png';
 import head         from '../game/head.png';
@@ -163,6 +168,11 @@ export default {
       '/game/parachute.png':      parachute,
       '/game/bouton_para.png':    boutonPara,
       '/game/bouton_plonge.png':  boutonPlonge,
+      '/game/arbre_vert.png':     arbreVert,
+      '/game/arbre_orange.png':   arbreOrange,
+      '/game/arbre_rouge.png':    arbreRouge,
+      '/game/arbre_sombre.png':   arbreSombre,
+      '/game/buisson.png':        buissonImg,
       '/game/arm.png':          arm,
       '/game/hand.png':         hand,
       '/game/head.png':         head,
