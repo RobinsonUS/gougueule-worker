@@ -1193,7 +1193,8 @@ function peintMinimap(cx, cy, large, taillePx) {
 var carteOuverte = false;
 var _carteCv = null, _carteCle = '';
 var CARTE_MINI = { x: 0, y: 0, c: 0 };      // zone cliquable de la minimap
-var CARTE_EAU = '#0174c0';                  // bleu de la fenetre, releve sur le vrai jeu
+var CARTE_EAU = '#0071bc';                  // bleu de la fenetre, releve sur le vrai jeu
+var CARTE_GROUPE = 4;                       // cases du sol par carreau de la carte
 
 function carteGeom() {
   var cote = Math.round(Math.min(LARG, HAUT) * 0.88);
@@ -1218,14 +1219,14 @@ function peintCarte(cotePx) {
   if (ILE) { cheminIle(c); c.fill(); }
   else c.fillRect(0, 0, MONDE, MONDE);
   // quadrillage discret, sur la terre comme sur l'eau
-  var pas = CELL * MM_GROUPE;
+  var pas = CELL * CARTE_GROUPE;
   c.beginPath();
   for (var g = pas; g < MONDE; g += pas) {
     c.moveTo(g, 0); c.lineTo(g, MONDE);
     c.moveTo(0, g); c.lineTo(MONDE, g);
   }
-  c.strokeStyle = 'rgba(0,0,0,0.12)';
-  c.lineWidth = 1.5 / k;
+  c.strokeStyle = 'rgba(0,0,0,0.055)';
+  c.lineWidth = 1.6 / k;
   c.stroke();
   // vegetation, comme sur la minimap. Une souche est un arbre abattu : la
   // carte, elle, montre l'arbre d'origine.
@@ -1315,7 +1316,8 @@ function dessineTrajetCarte(g, av) {
 
   var ep = Math.max(3, g.c * 0.0069);       // epaisseur du trait
   var tiret = Math.max(6, g.c * 0.0176);    // longueur d'un tiret
-  var fl = g.c * 0.026;                     // longueur d'une branche de fleche
+  var fl = g.c * 0.018;                     // fleche : longueur mesuree le long du couloir
+  var rb = Math.max(3, g.c * 0.0114);       // boule blanche du point de depart
   ctx.save();
   ctx.lineWidth = ep;
   ctx.lineCap = 'butt';
@@ -1328,12 +1330,20 @@ function dessineTrajetCarte(g, av) {
   ctx.strokeStyle = TRAJET_ORANGE;
   ctx.stroke();
   ctx.setLineDash([]);
-  // Fleche ouverte, blanche, a angle droit
-  var dos = av.angle + Math.PI;
+  // Boule blanche au depart du trajet
+  ctx.beginPath(); ctx.arc(ax, ay, rb, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff'; ctx.fill();
+
+  // Fleche ouverte, blanche, a angle droit. Ses deux branches ne sont pas
+  // coupees d'equerre : elles s'arretent sur une meme ligne en travers du
+  // couloir, ce qui donne au bout des branches une coupe en biais.
+  ctx.translate(bx, by);
+  ctx.rotate(av.angle);                     // x = sens du vol, pointe a l'origine
+  ctx.beginPath(); ctx.rect(-fl, -2 * fl, 3 * fl, 4 * fl); ctx.clip();
   ctx.beginPath();
-  ctx.moveTo(bx + Math.cos(dos - Math.PI / 4) * fl, by + Math.sin(dos - Math.PI / 4) * fl);
-  ctx.lineTo(bx, by);
-  ctx.lineTo(bx + Math.cos(dos + Math.PI / 4) * fl, by + Math.sin(dos + Math.PI / 4) * fl);
+  ctx.moveTo(-2 * fl, -2 * fl);
+  ctx.lineTo(0, 0);
+  ctx.lineTo(-2 * fl, 2 * fl);
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = ep * 1.15;                // un peu plus epaisse que le trait
   ctx.lineJoin = 'miter';
