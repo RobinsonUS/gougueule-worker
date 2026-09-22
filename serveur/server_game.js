@@ -266,13 +266,22 @@ function placer(rng, map, obs) {
 function creePartie(nomMap) {
   const map = chargeMap(nomMap || 'lobby');
   const rng = creeRng((Math.random() * 1e9) | 0);
+  // Des le lobby, on sait a quoi ressemblera la partie : on tire le couloir
+  // de vol maintenant et on envoie la carte de partie en apercu, pour que
+  // chacun puisse etudier le trajet avant le decollage. La partie reprendra
+  // ce meme couloir, sinon l'apercu mentirait.
+  let avionPrevu = null;
+  if ((nomMap || 'lobby') === 'lobby') {
+    const mp = chargeMap('partie');
+    avionPrevu = creeAvion(rng, mp.monde);
+  }
   // Copie de travail : la carte de reference n'est jamais modifiee
   const obs = map.obs.map(o => ({
     x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed,
     pv: PV_ARBRE, secousse: 0, _lt: o.type,
   }));
   return {
-    map, monde: map.monde, mapVer: 1,
+    map, monde: map.monde, mapVer: 1, avionPrevu,
     rng, obs, arbres: obs.filter(o => o.type === 'arbre'), arbresGrid: null,
     t: 0, tick: 0, fini: false, vainqueur: null,
     demarree: false, nbMax: 0, balleId: 0,
@@ -1075,8 +1084,10 @@ function demarrePartie(room, gid) {
   // On quitte la carte d'attente pour la carte de partie
   changeMap(p, 'partie');
 
-  // Couloir de vol et embarquement
-  p.avion = creeAvion(p.rng, p.monde);
+  // Couloir de vol et embarquement : celui annonce des le lobby
+  p.avion = (p.avionPrevu && p.avionPrevu.x1 !== undefined) ? p.avionPrevu
+                                                           : creeAvion(p.rng, p.monde);
+  p.avionPrevu = null;
   p.tVol = 0;
   p.phaseVol = true;
 
@@ -1116,6 +1127,18 @@ function demarrePartie(room, gid) {
   }
 }
 
+// Carte de partie montree pendant le lobby, couloir de vol compris.
+function apercuPartie(p) {
+  if (!p.phaseLobby || !p.avionPrevu) return null;
+  const mp = chargeMap('partie');
+  const av = p.avionPrevu;
+  return {
+    monde: mp.monde, ile: mp.ile,
+    decor: mp.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed })),
+    avion: { x0: av.x0, y0: av.y0, x1: av.x1, y1: av.y1, angle: av.angle, v: AVION_V },
+  };
+}
+
 // Bloc carte commun aux messages init et mapSwitch
 function payloadCarte(p) {
   const zc = p.map.zone;
@@ -1128,6 +1151,9 @@ function payloadCarte(p) {
     },
     ile: p.map.ile,
     decor: p.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, seed: o.seed })),
+    // Apercu de la carte de partie pendant l'attente : de quoi ouvrir la
+    // vraie carte depuis le lobby et y lire le trajet de l'avion.
+    apercu: apercuPartie(p),
   };
 }
 
