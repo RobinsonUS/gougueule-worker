@@ -1380,12 +1380,13 @@ function dessineTrajetCarte(g, src) {
   ctx.translate(bx, by);
   ctx.rotate(av.angle);                     // x = sens du vol, pointe a l'origine
   ctx.lineWidth = ep * 1.15;                // un peu plus epaisse que le trait
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
   ctx.strokeStyle = '#ffffff';
+  ctx.lineCap = 'butt';                     // coupe droite cote pointilles
   ctx.beginPath();                          // fin de la branche
-  ctx.moveTo(-tiret - fl, 0); ctx.lineTo(0, 0);
+  ctx.moveTo(-(tiret + fl) / 2, 0); ctx.lineTo(0, 0);
   ctx.stroke();
+  ctx.lineCap = 'round';                    // bouts de fleche arrondis
+  ctx.lineJoin = 'round';
   ctx.beginPath();                          // les deux diagonales
   ctx.moveTo(-fl, -fl);
   ctx.lineTo(0, 0);
