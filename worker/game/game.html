@@ -1379,12 +1379,13 @@ function dessineTrajetCarte(g, src) {
   // ligne en travers du couloir.
   ctx.translate(bx, by);
   ctx.rotate(av.angle);                     // x = sens du vol, pointe a l'origine
-  ctx.lineWidth = ep * 1.15;                // un peu plus epaisse que le trait
   ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = ep;                       // exactement la largeur du trait
   ctx.lineCap = 'butt';                     // coupe droite cote pointilles
   ctx.beginPath();                          // fin de la branche
   ctx.moveTo(-(tiret + fl) / 2, 0); ctx.lineTo(0, 0);
   ctx.stroke();
+  ctx.lineWidth = ep * 1.15;                // fleche un peu plus epaisse
   ctx.lineCap = 'round';                    // bouts de fleche arrondis
   ctx.lineJoin = 'round';
   ctx.beginPath();                          // les deux diagonales
