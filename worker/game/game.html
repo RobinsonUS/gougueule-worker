@@ -1025,20 +1025,14 @@ function vegMini(nom, tPx) {
   if (e) return e;
   var sp = SPRITES[nom];
   var w = sp.naturalWidth || sp.width, h = sp.naturalHeight || sp.height;
-  // Reduction par moities successives : d'un coup, une image divisee par
-  // vingt perd ses traits fins et crenele.
-  var cur = sp, cw = w, ch = h;
-  while (cw / 2 >= tPx) {
-    var nw = Math.max(1, Math.round(cw / 2)), nh = Math.max(1, Math.round(ch / 2));
-    var t = document.createElement('canvas'); t.width = nw; t.height = nh;
-    var tc = t.getContext('2d'); tc.imageSmoothingQuality = 'high';
-    tc.drawImage(cur, 0, 0, nw, nh);
-    cur = t; cw = nw; ch = nh;
-  }
+  // Reduction d'un seul coup, sans lissage : les arbres gardent leur
+  // silhouette dentelee et leur grain, comme sur la carte du vrai jeu. Un
+  // lissage propre en ferait des pastilles rondes toutes pareilles.
   e = document.createElement('canvas');
   e.width = tPx; e.height = Math.max(1, Math.round(h * tPx / w));
-  var g = e.getContext('2d'); g.imageSmoothingQuality = 'high';
-  g.drawImage(cur, 0, 0, e.width, e.height);
+  var g = e.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.drawImage(sp, 0, 0, e.width, e.height);
   _vegMini[cle] = e;
   return e;
 }
@@ -1190,40 +1184,76 @@ function peintMinimap(cx, cy, large, taillePx) {
 // carte est entouree d'eau). Un clic hors de la fenetre la referme. C'est la carte telle qu'elle a ete dessinee : un arbre
 // abattu n'y change rien, et elle est la meme pour tous. Seul le point du
 // joueur bouge. On la peint donc une fois, puis on ne fait que la recopier.
+// Carte de partie recue pendant le lobby : de quoi ouvrir la vraie carte
+// avant le decollage et y lire le trajet de l'avion.
+var APERCU = null;
+function initApercu(a) {
+  APERCU = null;
+  if (!a || !Array.isArray(a.decor)) return;
+  APERCU = {
+    monde: a.monde,
+    ile: ileDePoints(a.ile),
+    obs: a.decor.map(function (o) {
+      return Object.assign({}, o, cosmetiques(o.seed), { alphaVis: 1 });
+    }),
+    avion: a.avion || null,
+  };
+}
+// Ce que la carte du monde doit montrer : la partie en cours, ou l'apercu
+// de la carte de partie tant qu'on attend dans le lobby.
+function carteSource() {
+  if (snapDernier && snapDernier.phaseLobby && APERCU)
+    return { monde: APERCU.monde, ile: APERCU.ile, obs: APERCU.obs,
+             avion: APERCU.avion, apercu: true };
+  return { monde: MONDE, ile: ILE, obs: localObs,
+           avion: (snapDernier && snapDernier.avion) || null, apercu: false };
+}
+
 var carteOuverte = false;
 var _carteCv = null, _carteCle = '';
 var CARTE_MINI = { x: 0, y: 0, c: 0 };      // zone cliquable de la minimap
 var CARTE_EAU = '#0071bc';                  // bleu de la fenetre, releve sur le vrai jeu
 var CARTE_GROUPE = 4;                       // cases du sol par carreau de la carte
+var CARTE_MARGE = 0.055;                    // bande d'eau autour de la carte
+var CARTE_DEF = 1;                        // peinte a la moitie de sa taille,
+                                            // puis etiree : meme grain que le vrai jeu
+// Passage des unites monde aux pixels de l'ecran dans la fenetre de la carte.
+function carteRepere(g, src) {
+  var m = g.c * CARTE_MARGE;
+  return { x: g.x + m, y: g.y + m, k: (g.c - 2 * m) / src.monde };
+}
 
 function carteGeom() {
   var cote = Math.round(Math.min(LARG, HAUT) * 0.88);
   return { x: Math.round((LARG - cote) / 2), y: Math.round((HAUT - cote) / 2), c: cote };
 }
 function carteDisponible() {
-  return etatJeu === 'jeu' && !!snapDernier && !snapDernier.phaseLobby;
+  if (etatJeu !== 'jeu' || !snapDernier) return false;
+  return !snapDernier.phaseLobby || !!APERCU;   // dans le lobby : l'apercu
 }
 
-function peintCarte(cotePx) {
+function peintCarte(cotePx, src) {
   var cv2 = document.createElement('canvas');
   cv2.width = cotePx; cv2.height = cotePx;
   var c = cv2.getContext('2d');
   c.fillStyle = CARTE_EAU;
   c.fillRect(0, 0, cotePx, cotePx);
 
-  var k = cotePx / MONDE;
+  var m = cotePx * CARTE_MARGE;
+  var k = (cotePx - 2 * m) / src.monde;
   c.save();
+  c.translate(m, m);
   c.scale(k, k);
   // la terre ; le bleu de la fenetre fait l'eau
   c.fillStyle = C.sol;
-  if (ILE) { cheminIle(c); c.fill(); }
-  else c.fillRect(0, 0, MONDE, MONDE);
+  if (src.ile) { cheminIlePts(c, src.ile); c.fill(); }
+  else c.fillRect(0, 0, src.monde, src.monde);
   // quadrillage discret, sur la terre comme sur l'eau
   var pas = CELL * CARTE_GROUPE;
   c.beginPath();
-  for (var g = pas; g < MONDE; g += pas) {
-    c.moveTo(g, 0); c.lineTo(g, MONDE);
-    c.moveTo(0, g); c.lineTo(MONDE, g);
+  for (var g = pas; g < src.monde; g += pas) {
+    c.moveTo(g, 0); c.lineTo(g, src.monde);
+    c.moveTo(0, g); c.lineTo(src.monde, g);
   }
   c.strokeStyle = 'rgba(0,0,0,0.055)';
   c.lineWidth = 1.6 / k;
@@ -1231,8 +1261,8 @@ function peintCarte(cotePx) {
   // vegetation, comme sur la minimap. Une souche est un arbre abattu : la
   // carte, elle, montre l'arbre d'origine.
   c.lineJoin = 'round';
-  for (var i = 0; i < localObs.length; i++) {
-    var ob = localObs[i];
+  for (var i = 0; i < src.obs.length; i++) {
+    var ob = src.obs[i];
     if (dessineVegMini(c, ob, k)) continue;
     var arbre = ob.type === 'arbre' || ob.type === 'souche';
     var pal = arbre ? C.arbres[ob.teinte] : C.buisson;
@@ -1256,10 +1286,11 @@ function dessineCarte() {
   if (!carteOuverte) return;
   if (!carteDisponible()) { carteOuverte = false; return; }
   var g = carteGeom();
-  var cotePx = Math.max(8, Math.round(g.c * PX));
-  var cle = mapVerLocal + ':' + MONDE + ':' + cotePx + ':' + (ILE ? ILE.length : 0) + ':' +
-            localObs.length + ':' + vegToutPret();
-  if (!_carteCv || _carteCle !== cle) { _carteCv = peintCarte(cotePx); _carteCle = cle; }
+  var src = carteSource();
+  var cotePx = Math.max(8, Math.round(g.c * PX * CARTE_DEF));
+  var cle = mapVerLocal + ':' + src.monde + ':' + cotePx + ':' + (src.ile ? src.ile.length : 0) +
+            ':' + src.obs.length + ':' + vegToutPret() + ':' + (src.apercu ? 'a' : 'p');
+  if (!_carteCv || _carteCle !== cle) { _carteCv = peintCarte(cotePx, src); _carteCle = cle; }
 
   repereEcran();
   ctx.save();
@@ -1272,15 +1303,17 @@ function dessineCarte() {
   ctx.fillRect(g.x - o, g.y - o, g.c + 2 * o, g.c + 2 * o);
   ctx.drawImage(_carteCv, g.x, g.y, g.c, g.c);
 
-  // Trajet de l'avion, tant qu'on est a bord
+  // Trajet de l'avion : toujours visible depuis le lobby, et en partie
+  // tant qu'on est a bord.
   var j = agentVue;
-  var av = snapDernier && snapDernier.avion;
-  if (j && j.enAvion && av) dessineTrajetCarte(g, av);
+  if (src.avion && (src.apercu || (j && j.enAvion))) dessineTrajetCarte(g, src);
 
   // Le joueur (ou celui qu'on suit). Dans l'avion, c'est l'avion.
-  if (j) {
+  // Pendant l'attente, l'apercu montre une autre carte : pas de point.
+  var rep = carteRepere(g, src);
+  if (j && !src.apercu) {
     var px = j.enAvion ? cam.x : j.x, py = j.enAvion ? cam.y : j.y;
-    var sx = g.x + px / MONDE * g.c, sy = g.y + py / MONDE * g.c;
+    var sx = rep.x + px * rep.k, sy = rep.y + py * rep.k;
     ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2);
     ctx.fillStyle = '#ffffff'; ctx.fill();
     ctx.lineWidth = 2.5; ctx.strokeStyle = '#1b2a3a'; ctx.stroke();
@@ -1294,13 +1327,17 @@ function dessineCarte() {
 // retrouver tout le couloir. Tailles relevees sur le vrai jeu, en
 // fraction du cote de la fenetre.
 var TRAJET_ORANGE = '#ffa723';
-var TRAJET_MARGE = 0.04;          // le trait s'arrete un peu avant les bords
-function dessineTrajetCarte(g, av) {
+function dessineTrajetCarte(g, src) {
+  var av = src.avion;
   var ux = Math.cos(av.angle), uy = Math.sin(av.angle);
-  // Couloir borne au carre du monde, un peu rentre : methode des dalles
-  var m = MONDE * TRAJET_MARGE, lo = MONDE - m;
+  // Le couloir va d'un bord du monde a l'autre : la fleche tombe donc
+  // pile ou l'avion largue les derniers passagers. On part d'un point du
+  // couloir (l'avion, ou son point d'entree) et on borne au carre du
+  // monde par la methode des dalles.
+  var ax0 = av.x !== undefined ? av.x : av.x0, ay0 = av.y !== undefined ? av.y : av.y0;
+  var m = 0, lo = src.monde;
   var t0 = -Infinity, t1 = Infinity;
-  var axes = [[av.x, ux], [av.y, uy]];
+  var axes = [[ax0, ux], [ay0, uy]];
   for (var i = 0; i < 2; i++) {
     var p = axes[i][0], u = axes[i][1];
     if (Math.abs(u) < 1e-9) { if (p < m || p > lo) return; continue; }
@@ -1310,9 +1347,9 @@ function dessineTrajetCarte(g, av) {
     if (tb < t1) t1 = tb;
   }
   if (!(t1 > t0)) return;
-  var k = g.c / MONDE;
-  var ax = g.x + (av.x + ux * t0) * k, ay = g.y + (av.y + uy * t0) * k;
-  var bx = g.x + (av.x + ux * t1) * k, by = g.y + (av.y + uy * t1) * k;
+  var rp = carteRepere(g, src), k = rp.k;
+  var ax = rp.x + (ax0 + ux * t0) * k, ay = rp.y + (ay0 + uy * t0) * k;
+  var bx = rp.x + (ax0 + ux * t1) * k, by = rp.y + (ay0 + uy * t1) * k;
 
   var ep = Math.max(3, g.c * 0.0069);       // epaisseur du trait
   var tiret = Math.max(6, g.c * 0.0176);    // longueur d'un tiret
@@ -1324,9 +1361,10 @@ function dessineTrajetCarte(g, av) {
   ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
   ctx.strokeStyle = '#ffffff';
   ctx.stroke();
-  // Les tirets orange avancent d'une paire (orange + blanc) par seconde
+  // Les tirets orange filent exactement a la vitesse de l'avion
+  var vPx = (av.v || 420) * k;
   ctx.setLineDash([tiret, tiret]);
-  ctx.lineDashOffset = -((performance.now() / 1000) * 2 * tiret % (2 * tiret));
+  ctx.lineDashOffset = -((performance.now() / 1000) * vPx % (2 * tiret));
   ctx.strokeStyle = TRAJET_ORANGE;
   ctx.stroke();
   ctx.setLineDash([]);
@@ -1398,8 +1436,9 @@ function dessineMinimap(zone, tPartie) {
   // paliers de 30 Hz et ferait trembler la fenetre de la minimap.
   if (suivi && suivi.enAvion) suivi = { x: cam.x, y: cam.y };
   var enJeu = snapDernier && !snapDernier.phaseLobby && suivi;
-  // Zone ou un clic ouvre la carte du monde, seulement en partie
-  if (enJeu) { CARTE_MINI.x = mX; CARTE_MINI.y = mY; CARTE_MINI.c = mW; }
+  // Zone ou un clic ouvre la carte du monde. Dans le lobby aussi : le carre
+  // reste vide, mais il ouvre la carte de la partie a venir.
+  CARTE_MINI.x = mX; CARTE_MINI.y = mY; CARTE_MINI.c = mW;
 
   if (!enJeu) {
     // Salle d'attente : on garde le carre neutre
@@ -2741,13 +2780,16 @@ function courbeIle(ctrl) {
   }
   return pts;
 }
-function initIle(pts) {
+function ileDePoints(pts) {
   var ctrl = (Array.isArray(pts) && pts.length >= 3)
     ? pts.map(function (q) {
         return Array.isArray(q) ? { x: +q[0], y: +q[1] } : { x: +q.x, y: +q.y };
       })
     : null;
-  ILE = ctrl ? courbeIle(ctrl) : null;
+  return ctrl ? courbeIle(ctrl) : null;
+}
+function initIle(pts) {
+  ILE = ileDePoints(pts);
   ILE_BOITE = null;
   if (ILE) {
     var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -2760,12 +2802,13 @@ function initIle(pts) {
   }
 }
 // Chemin du contour dans le contexte donne, en coordonnees monde
-function cheminIle(c, suite) {
+function cheminIlePts(c, pts, suite) {
   if (!suite) c.beginPath();
-  c.moveTo(ILE[0].x, ILE[0].y);
-  for (var i = 1; i < ILE.length; i++) c.lineTo(ILE[i].x, ILE[i].y);
+  c.moveTo(pts[0].x, pts[0].y);
+  for (var i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
   c.closePath();
 }
+function cheminIle(c, suite) { cheminIlePts(c, ILE, suite); }
 // Copie conforme de dansIle() cote serveur : toute difference ferait
 // sautiller le joueur sur la cote, entre prediction et correction.
 function dansIleLoc(x, y) {
@@ -3502,6 +3545,7 @@ function connect() {
       mapVerLocal = msg.mapVer || 1;
       initIle(msg.ile);
       initObs(msg.decor);
+      initApercu(msg.apercu);          // carte de partie visible des le lobby
       localParticules.length = 0;
       cam.x = msg.spawn.x; cam.y = msg.spawn.y;
       moi = { x: msg.spawn.x, y: msg.spawn.y, angle: 0, recharge: 0,
@@ -3525,6 +3569,8 @@ function connect() {
       mapVerLocal = msg.mapVer || (mapVerLocal + 1);
       initIle(msg.ile);
       initObs(msg.decor);                    // decor + index repartis a neuf
+      initApercu(msg.apercu);                // en partie : plus d'apercu
+      _carteCv = null; _carteCle = '';       // la carte du monde repart de zero
       _mmCv = null; _mmCle = '';             // la minimap repart de zero
       localParticules.length = 0;
       _deathFades = {};
