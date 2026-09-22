@@ -1249,11 +1249,13 @@ function peintCarte(cotePx, src) {
   if (src.ile) { cheminIlePts(c, src.ile); c.fill(); }
   else c.fillRect(0, 0, src.monde, src.monde);
   // quadrillage discret, sur la terre comme sur l'eau
+  // Le quadrillage couvre toute la fenetre, terre et eau comprises.
   var pas = CELL * CARTE_GROUPE;
+  var deb = Math.ceil((-m / k) / pas) * pas, fin = (cotePx - m) / k;
   c.beginPath();
-  for (var g = pas; g < src.monde; g += pas) {
-    c.moveTo(g, 0); c.lineTo(g, src.monde);
-    c.moveTo(0, g); c.lineTo(src.monde, g);
+  for (var g = deb; g < fin; g += pas) {
+    c.moveTo(g, -m / k); c.lineTo(g, fin);
+    c.moveTo(-m / k, g); c.lineTo(fin, g);
   }
   c.strokeStyle = 'rgba(0,0,0,0.055)';
   c.lineWidth = 1.6 / k;
@@ -1372,19 +1374,22 @@ function dessineTrajetCarte(g, src) {
   ctx.beginPath(); ctx.arc(ax, ay, rb, 0, Math.PI * 2);
   ctx.fillStyle = '#ffffff'; ctx.fill();
 
-  // Fleche ouverte, blanche, a angle droit. Ses deux branches ne sont pas
-  // coupees d'equerre : elles s'arretent sur une meme ligne en travers du
-  // couloir, ce qui donne au bout des branches une coupe en biais.
+  // Fleche : les deux diagonales, plus la fin de la branche, toujours en
+  // blanc. Les bouts sont legerement arrondis et s'arretent sur une meme
+  // ligne en travers du couloir.
   ctx.translate(bx, by);
   ctx.rotate(av.angle);                     // x = sens du vol, pointe a l'origine
-  ctx.beginPath(); ctx.rect(-fl, -2 * fl, 3 * fl, 4 * fl); ctx.clip();
-  ctx.beginPath();
-  ctx.moveTo(-2 * fl, -2 * fl);
-  ctx.lineTo(0, 0);
-  ctx.lineTo(-2 * fl, 2 * fl);
-  ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = ep * 1.15;                // un peu plus epaisse que le trait
-  ctx.lineJoin = 'miter';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#ffffff';
+  ctx.beginPath();                          // fin de la branche
+  ctx.moveTo(-tiret - fl, 0); ctx.lineTo(0, 0);
+  ctx.stroke();
+  ctx.beginPath();                          // les deux diagonales
+  ctx.moveTo(-fl, -fl);
+  ctx.lineTo(0, 0);
+  ctx.lineTo(-fl, fl);
   ctx.stroke();
   ctx.restore();
 }
