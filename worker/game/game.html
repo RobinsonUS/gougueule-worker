@@ -1271,8 +1271,12 @@ function dessineCarte() {
   ctx.fillRect(g.x - o, g.y - o, g.c + 2 * o, g.c + 2 * o);
   ctx.drawImage(_carteCv, g.x, g.y, g.c, g.c);
 
-  // Le joueur (ou celui qu'on suit). Dans l'avion, c'est l'avion.
+  // Trajet de l'avion, tant qu'on est a bord
   var j = agentVue;
+  var av = snapDernier && snapDernier.avion;
+  if (j && j.enAvion && av) dessineTrajetCarte(g, av);
+
+  // Le joueur (ou celui qu'on suit). Dans l'avion, c'est l'avion.
   if (j) {
     var px = j.enAvion ? cam.x : j.x, py = j.enAvion ? cam.y : j.y;
     var sx = g.x + px / MONDE * g.c, sy = g.y + py / MONDE * g.c;
@@ -1280,6 +1284,60 @@ function dessineCarte() {
     ctx.fillStyle = '#ffffff'; ctx.fill();
     ctx.lineWidth = 2.5; ctx.strokeStyle = '#1b2a3a'; ctx.stroke();
   }
+  ctx.restore();
+}
+
+// Trajet de l'avion sur la carte : un trait blanc et orange qui defile
+// dans le sens du vol, termine par une fleche ouverte. L'avion vole en
+// ligne droite d'un bord a l'autre : sa position et son cap suffisent a
+// retrouver tout le couloir. Tailles relevees sur le vrai jeu, en
+// fraction du cote de la fenetre.
+var TRAJET_ORANGE = '#ffa723';
+var TRAJET_MARGE = 0.04;          // le trait s'arrete un peu avant les bords
+function dessineTrajetCarte(g, av) {
+  var ux = Math.cos(av.angle), uy = Math.sin(av.angle);
+  // Couloir borne au carre du monde, un peu rentre : methode des dalles
+  var m = MONDE * TRAJET_MARGE, lo = MONDE - m;
+  var t0 = -Infinity, t1 = Infinity;
+  var axes = [[av.x, ux], [av.y, uy]];
+  for (var i = 0; i < 2; i++) {
+    var p = axes[i][0], u = axes[i][1];
+    if (Math.abs(u) < 1e-9) { if (p < m || p > lo) return; continue; }
+    var ta = (m - p) / u, tb = (lo - p) / u;
+    if (ta > tb) { var tt = ta; ta = tb; tb = tt; }
+    if (ta > t0) t0 = ta;
+    if (tb < t1) t1 = tb;
+  }
+  if (!(t1 > t0)) return;
+  var k = g.c / MONDE;
+  var ax = g.x + (av.x + ux * t0) * k, ay = g.y + (av.y + uy * t0) * k;
+  var bx = g.x + (av.x + ux * t1) * k, by = g.y + (av.y + uy * t1) * k;
+
+  var ep = Math.max(3, g.c * 0.0069);       // epaisseur du trait
+  var tiret = Math.max(6, g.c * 0.0176);    // longueur d'un tiret
+  var fl = g.c * 0.026;                     // longueur d'une branche de fleche
+  ctx.save();
+  ctx.lineWidth = ep;
+  ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+  // Les tirets orange avancent d'une paire (orange + blanc) par seconde
+  ctx.setLineDash([tiret, tiret]);
+  ctx.lineDashOffset = -((performance.now() / 1000) * 2 * tiret % (2 * tiret));
+  ctx.strokeStyle = TRAJET_ORANGE;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Fleche ouverte, blanche, a angle droit
+  var dos = av.angle + Math.PI;
+  ctx.beginPath();
+  ctx.moveTo(bx + Math.cos(dos - Math.PI / 4) * fl, by + Math.sin(dos - Math.PI / 4) * fl);
+  ctx.lineTo(bx, by);
+  ctx.lineTo(bx + Math.cos(dos + Math.PI / 4) * fl, by + Math.sin(dos + Math.PI / 4) * fl);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = ep * 1.15;                // un peu plus epaisse que le trait
+  ctx.lineJoin = 'miter';
+  ctx.stroke();
   ctx.restore();
 }
 
