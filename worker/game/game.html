@@ -1210,6 +1210,7 @@ function carteSource() {
 }
 
 var carteOuverte = false;
+var _zoneVue = null;                        // zone interpolee de la derniere image
 var _carteCv = null, _carteCle = '';
 var CARTE_MINI = { x: 0, y: 0, c: 0 };      // zone cliquable de la minimap
 var CARTE_EAU = '#0071bc';                  // bleu de la fenetre, releve sur le vrai jeu
@@ -1305,6 +1306,10 @@ function dessineCarte() {
   ctx.fillRect(g.x - o, g.y - o, g.c + 2 * o, g.c + 2 * o);
   ctx.drawImage(_carteCv, g.x, g.y, g.c, g.c);
 
+  // Cyclone : exactement ce que montre la minimap, a l'echelle de la carte.
+  var rep0 = carteRepere(g, src);
+  if (!src.apercu) dessineZoneCarte(g, rep0);
+
   // Trajet de l'avion : toujours visible depuis le lobby, et en partie
   // tant qu'on est a bord.
   var j = agentVue;
@@ -1312,13 +1317,71 @@ function dessineCarte() {
 
   // Le joueur (ou celui qu'on suit). Dans l'avion, c'est l'avion.
   // Pendant l'attente, l'apercu montre une autre carte : pas de point.
-  var rep = carteRepere(g, src);
+  var rep = rep0;
   if (j && !src.apercu) {
     var px = j.enAvion ? cam.x : j.x, py = j.enAvion ? cam.y : j.y;
     var sx = rep.x + px * rep.k, sy = rep.y + py * rep.k;
     ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2);
     ctx.fillStyle = '#ffffff'; ctx.fill();
     ctx.lineWidth = 2.5; ctx.strokeStyle = '#1b2a3a'; ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Cyclone sur la carte du monde : zone deja avalee en bleu, bord du
+// cyclone, cercle d'arrivee de la vague, et chemin le plus court pour y
+// rentrer. Meme lecture que sur la minimap, en grand.
+function dessineZoneCarte(g, rep) {
+  var zone = _zoneVue || (snapDernier && snapDernier.zone);
+  if (!zone || !(zone.r >= 0)) return;
+  var k = rep.k;
+  var zx = rep.x + zone.x * k, zy = rep.y + zone.y * k;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(g.x, g.y, g.c, g.c); ctx.clip();
+
+  // Tout ce que le cyclone a deja avale passe en bleu
+  ctx.beginPath();
+  ctx.rect(g.x, g.y, g.c, g.c);
+  ctx.arc(zx, zy, zone.r * k, 0, Math.PI * 2, true);
+  ctx.fillStyle = C.horsZone;
+  ctx.fill('evenodd');
+
+  // Bord actuel du cyclone
+  if (zone.r > 0.5) {
+    ctx.beginPath();
+    ctx.arc(zx, zy, zone.r * k, 0, Math.PI * 2);
+    ctx.strokeStyle = C.zone;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  // Cercle d'arrivee de la vague en cours
+  var cible = snapDernier && snapDernier.zoneCible;
+  if (cible && cible.r > 0 && zone.r > cible.r + 1) {
+    var tx = rep.x + cible.x * k, ty = rep.y + cible.y * k;
+    ctx.beginPath();
+    ctx.arc(tx, ty, cible.r * k, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Hors du cercle d'arrivee : le chemin le plus court pour y entrer
+    var j = agentVue;
+    if (j) {
+      var jx = j.enAvion ? cam.x : j.x, jy = j.enAvion ? cam.y : j.y;
+      var dx = cible.x - jx, dy = cible.y - jy;
+      var dist = Math.hypot(dx, dy);
+      if (dist > cible.r) {
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(rep.x + jx * k, rep.y + jy * k);
+        ctx.lineTo(tx - dx / dist * cible.r * k, ty - dy / dist * cible.r * k);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
   }
   ctx.restore();
 }
@@ -2442,6 +2505,7 @@ function dessine(p, moi, viseur, drag) {
   // En spectateur l'inventaire n'a pas lieu d'etre : on garde la barre de vie
   if (a.inv && etatJeu !== 'mort' && etatJeu !== 'fin') dessineInventaire(a, a.slot, drag);
   if (viseur) dessineViseur(viseur.x, viseur.y);
+  _zoneVue = p.zone;                // la carte du monde s'en sert aussi
   if (!ecranMortVisible()) dessineMinimap(p.zone, p.t);
 
 
