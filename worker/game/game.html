@@ -102,7 +102,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe','feuille'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe','feuille','hutte1','hutte1_toit','hutte2','hutte2_toit'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // weapon_XM8 : supprimer le fond blanc
 (function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
   var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
@@ -452,6 +452,172 @@ function dessineOmbreBuisson(o) {
 function dessineBuissonTexture(o) {
   if (vegPret('buisson')) { dessineVeg('buisson', o, o.x, o.y, 0); return; }
   dessineBuissonTextureDessin(o);
+}
+
+// ═══ Huttes (Hu1 et Hu2) ════════════════════════════════════════════
+// Meme geometrie que le serveur. Repere local : origine au centre du corps,
+// perron vers +y quand rot = 0 ; rot = quarts de tour horaires. Les images
+// sont deja tournees perron en bas, et le corps y est centre en (208, 208).
+var HUTTE = (function () {
+  var B = 116.15, I = 79.38, D = 62.75, P = 96.9, PV = 134.8;
+  return {
+    B: B, I: I, D: D, R: 230,
+    ECH: 0.58367,         // unites monde par pixel d'image (corps : 398 px = 232,3 unites)
+    CX: 208, CY: 208,     // centre du corps dans les images
+    OMBRE: 7.6,           // debord de l'ombre, releve sur le vrai jeu
+    OMBRE_DY: 2.0,        // l'ombre descend un peu plus qu'elle ne monte
+    murs: [
+      [-B, -B,  B, -I], [-B, -I, -I,  B], [ I, -I,  B,  B],
+      [-B,  I, -D,  B], [ D,  I,  B,  B],
+      [-P,  B, -D, PV], [ D,  B,  P, PV],
+    ],
+    // On voit l'interieur des que la tete touche l'une de ces zones :
+    // le plancher, la porte, et une bande devant la facade (perron compris)
+    vue: [
+      [-I, -I, I, I],
+      [-D, I, D, 128.4],
+      [-117.2, 111, 117.2, 196],
+    ],
+  };
+})();
+function rectMondeH(o, r) {
+  var q = ((o.rot | 0) % 4 + 4) % 4, u0 = r[0], v0 = r[1], u1 = r[2], v1 = r[3];
+  var a, b;
+  if (q === 0)      { a = [u0, v0];   b = [u1, v1]; }
+  else if (q === 1) { a = [-v0, u0];  b = [-v1, u1]; }
+  else if (q === 2) { a = [-u0, -v0]; b = [-u1, -v1]; }
+  else              { a = [v0, -u0];  b = [v1, -u1]; }
+  return { x0: o.x + Math.min(a[0], b[0]), y0: o.y + Math.min(a[1], b[1]),
+           x1: o.x + Math.max(a[0], b[0]), y1: o.y + Math.max(a[1], b[1]) };
+}
+// Murs et zones de vue en coordonnees monde, calcules une fois par hutte
+function prepareHutte(o) {
+  if (!(o.r > 0)) o.r = HUTTE.R;
+  o._murs = HUTTE.murs.map(function (r) { return rectMondeH(o, r); });
+  o._vue = HUTTE.vue.map(function (r) { return rectMondeH(o, r); });
+  o._corps = rectMondeH(o, [-HUTTE.B, -HUTTE.B, HUTTE.B, HUTTE.B]);
+  if (o.toitA === undefined) o.toitA = 1;
+}
+function cercleTouche(x, y, R, w) {
+  var qx = Math.max(w.x0, Math.min(w.x1, x)), qy = Math.max(w.y0, Math.min(w.y1, y));
+  return (x - qx) * (x - qx) + (y - qy) * (y - qy) < R * R;
+}
+// La tete (cercle de rayon R) touche-t-elle une zone d'ou l'on voit dedans ?
+function voitDansHutte(o, x, y) {
+  if (!o._vue) prepareHutte(o);
+  for (var i = 0; i < o._vue.length; i++) if (cercleTouche(x, y, R_JOUEUR, o._vue[i])) return true;
+  return false;
+}
+function sousLeToit(o, x, y) {
+  var c = o._corps;
+  return c && x > c.x0 && x < c.x1 && y > c.y0 && y < c.y1;
+}
+// Sort un cercle d'un mur ; centre dans le mur : par la face la plus proche
+function pousseMur(a, R, w) {
+  var qx = Math.max(w.x0, Math.min(w.x1, a.x)), qy = Math.max(w.y0, Math.min(w.y1, a.y));
+  var dx = a.x - qx, dy = a.y - qy, d2 = dx * dx + dy * dy;
+  if (d2 >= R * R) return false;
+  if (d2 > 1e-9) {
+    var d = Math.sqrt(d2);
+    a.x += dx / d * (R - d); a.y += dy / d * (R - d);
+  } else {
+    var g = a.x - w.x0, dr = w.x1 - a.x, h = a.y - w.y0, b = w.y1 - a.y;
+    var mn = Math.min(g, dr, h, b);
+    if (mn === g) a.x = w.x0 - R; else if (mn === dr) a.x = w.x1 + R;
+    else if (mn === h) a.y = w.y0 - R; else a.y = w.y1 + R;
+  }
+  return true;
+}
+
+function huttePrete(v) { return vegPret('hutte' + v) && vegPret('hutte' + v + '_toit'); }
+// Corps, toit et anneau d'ombre a la taille d'ecran, calcules une fois par
+// taille (arrondie a 8 px pres), jamais a chaque image.
+var _hutteCache = {};
+function hutteCanevas(v, largeurEcran) {
+  var sp = SPRITES['hutte' + v], st = SPRITES['hutte' + v + '_toit'];
+  var tPx = Math.max(8, Math.round(largeurEcran / 8) * 8);
+  var d = Math.max(1, Math.round(HUTTE.OMBRE * PXV));
+  var dy = Math.round(HUTTE.OMBRE_DY * PXV);
+  var cle = v + ':' + tPx + ':' + d + ':' + dy;
+  var e = _hutteCache[cle];
+  if (e) return e;
+  var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
+  var k = tPx / sw;
+  var cs = document.createElement('canvas');
+  cs.width = tPx; cs.height = Math.max(1, Math.round(sh * k));
+  cs.getContext('2d').drawImage(sp, 0, 0, cs.width, cs.height);
+  var tw = st.naturalWidth || st.width, th = st.naturalHeight || st.height;
+  var ct = document.createElement('canvas');
+  ct.width = Math.max(1, Math.round(tw * k)); ct.height = Math.max(1, Math.round(th * k));
+  ct.getContext('2d').drawImage(st, 0, 0, ct.width, ct.height);
+  // Ombre : la silhouette elargie de d pixels et decalee vers le bas, moins
+  // la silhouette elle-meme
+  var co = document.createElement('canvas');
+  co.width = cs.width + 2 * d; co.height = cs.height + 2 * d + Math.abs(dy);
+  var g = co.getContext('2d');
+  for (var i = 0; i < 24; i++) {
+    var a = i / 24 * Math.PI * 2;
+    g.drawImage(cs, d + Math.cos(a) * d, d + dy + Math.sin(a) * d);
+  }
+  g.drawImage(cs, d, d + dy);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, co.width, co.height);
+  g.globalCompositeOperation = 'destination-out';
+  g.drawImage(cs, d, d);
+  e = { cs: cs, ct: ct, co: co, d: d, k: k };
+  _hutteCache[cle] = e;
+  return e;
+}
+// quoi : 0 = corps, 1 = ombre, 2 = toit
+function dessineHutte(o, quoi) {
+  var v = o.v === 2 ? 2 : 1;
+  var S = HUTTE.ECH;
+  ctx.save();
+  ctx.translate(o.x, o.y);
+  ctx.rotate(((o.rot | 0) % 4) * Math.PI / 2);
+  if (!huttePrete(v)) {                   // le temps que les images arrivent
+    if (quoi !== 1) {
+      ctx.fillStyle = quoi === 2 ? '#7d8a96' : '#a97c6a';
+      ctx.fillRect(-HUTTE.B, -HUTTE.B, 2 * HUTTE.B, 2 * HUTTE.B);
+    }
+    ctx.restore();
+    return;
+  }
+  var sp = SPRITES['hutte' + v];
+  var sw = sp.naturalWidth || sp.width;
+  var e = hutteCanevas(v, sw * S * PXV);
+  var f = 1 / (e.k / S);                  // unites monde par px de la toile
+  var ox = -HUTTE.CX * S, oy = -HUTTE.CY * S;
+  if (quoi === 1) {
+    ctx.globalAlpha *= VEG_OMBRE_ALPHA;
+    ctx.drawImage(e.co, ox - e.d * f, oy - e.d * f, e.co.width * f, e.co.height * f);
+  } else if (quoi === 2) {
+    ctx.drawImage(e.ct, ox, oy, e.ct.width * f, e.ct.height * f);
+  } else {
+    ctx.drawImage(e.cs, ox, oy, e.cs.width * f, e.cs.height * f);
+  }
+  ctx.restore();
+}
+// Minimap et carte : le toit, reduit une fois pour toutes
+function dessineHutteMini(c, o, k) {
+  var v = o.v === 2 ? 2 : 1, S = HUTTE.ECH;
+  c.save();
+  c.translate(o.x, o.y);
+  c.rotate(((o.rot | 0) % 4) * Math.PI / 2);
+  if (huttePrete(v)) {
+    var sp = SPRITES['hutte' + v], st = SPRITES['hutte' + v + '_toit'];
+    var sw = sp.naturalWidth || sp.width, tw = st.naturalWidth || st.width;
+    var eb = vegMini('hutte' + v, sw * S * k);
+    var et = vegMini('hutte' + v + '_toit', tw * S * k);
+    var fb = (sw * S) / eb.width;
+    c.drawImage(eb, -HUTTE.CX * S, -HUTTE.CY * S, eb.width * fb, eb.height * fb);
+    c.drawImage(et, -HUTTE.CX * S, -HUTTE.CY * S, tw * S, (st.naturalHeight || st.height) * S);
+  } else {
+    c.fillStyle = '#7d8a96';
+    c.fillRect(-HUTTE.B, -HUTTE.B, 2 * HUTTE.B, 2 * HUTTE.B);
+  }
+  c.restore();
 }
 
 // ─── Ancien dessin, garde en repli tant que les images chargent ───
@@ -1061,7 +1227,7 @@ function minimapAPeindre() {
 var _vegMini = {};
 function vegToutPret() {
   for (var i = 0; i < VEG_ARBRES.length; i++) if (!vegPret(VEG_ARBRES[i])) return 0;
-  return vegPret('buisson') ? 1 : 0;
+  return (vegPret('buisson') && huttePrete(1) && huttePrete(2)) ? 1 : 0;
 }
 function vegMini(nom, tPx) {
   tPx = Math.max(4, Math.round(tPx / 2) * 2);
@@ -1085,6 +1251,7 @@ function vegMini(nom, tPx) {
 // y reste l'arbre d'origine. Renvoie faux si l'image n'est pas encore la.
 function dessineVegMini(c, ob, k) {
   if (ob.type === 'vide') return true;             // objet detruit : plus rien
+  if (ob.type === 'hutte') { dessineHutteMini(c, ob, k); return true; }
   var nom = nomVeg(ob);                            // une souche montre l'objet d'origine
   var genre = nom === 'buisson' ? 'buisson' : (nom === 'orbe' ? 'orbe' : 'arbre');
   if (!vegPret(nom)) return false;
@@ -2289,6 +2456,13 @@ function dessine(p, moi, viseur, drag) {
   for (const o of p.obs)
     if (o.type === 'souche' && visible(o)) dessineSouche(o);
 
+  // Huttes : ombre puis corps (murs et plancher), au ras du sol. Le toit
+  // viendra bien plus tard, par-dessus les joueurs.
+  const huttes = [];
+  for (const o of p.obs) if (o.type === 'hutte' && visible(o)) huttes.push(o);
+  for (const o of huttes) dessineHutte(o, 1);
+  for (const o of huttes) dessineHutte(o, 0);
+
   // ombres du decor
   for (const o of p.obs) {
     if (!visible(o)) continue;
@@ -2487,6 +2661,21 @@ function dessine(p, moi, viseur, drag) {
     dessineBalle(b);
   }
 
+  // ---- toits des huttes : par-dessus ce qui se passe dedans ----
+  // On voit l'interieur des que sa tete touche le plancher, la porte ou le
+  // devant de la facade. A pied seulement : de l'avion ou en parachute, le
+  // toit reste pose.
+  for (const o of huttes) {
+    const ouvert = aPied && voitDansHutte(o, a.x, a.y);
+    if (o.toitA === undefined) o.toitA = ouvert ? 0 : 1;
+    o.toitA += ((ouvert ? 0 : 1) - o.toitA) * 0.3;
+    if (Math.abs(o.toitA - (ouvert ? 0 : 1)) < 0.01) o.toitA = ouvert ? 0 : 1;
+    if (o.toitA <= 0) continue;
+    ctx.globalAlpha = o.toitA;
+    dessineHutte(o, 2);
+    ctx.globalAlpha = 1;
+  }
+
   // ---- vegetation ----
   for (const o of p.obs) {
     if (!visible(o)) continue;
@@ -2536,6 +2725,10 @@ function dessine(p, moi, viseur, drag) {
     if (_nj.enAvion || (_nj.para || 0) > 0) continue;   // en l'air : aucun pseudo
     var _na = alphaVisJoueurs[_nj.id];
     if (_na === undefined) _na = 1;
+    // sous un toit ferme, on ne devine meme pas son nom
+    for (var _hi = 0; _hi < huttes.length; _hi++)
+      if (sousLeToit(huttes[_hi], _nj.x, _nj.y)) _na *= 1 - (huttes[_hi].toitA || 0);
+    if (_na <= 0.01) continue;
     dessineNom(_nj.x, _nj.y, _nj.name || '?', _na);
   }
 
@@ -3041,7 +3234,9 @@ function initObs(decor) {
     if (o.type === 'orbe') c.phase = 0;      // le bigbush se regarde droit
     // base = ce que l'objet etait avant d'etre abattu : la trace au sol en
     // garde la forme.
-    return Object.assign({}, o, c, { alphaVis: 1, base: o.type });
+    var n = Object.assign({}, o, c, { alphaVis: 1, base: o.type });
+    if (n.type === 'hutte') prepareHutte(n);
+    return n;
   });
   prevObsTypes = {};
   for (var i = 0; i < localObs.length; i++) prevObsTypes[i] = localObs[i].type;
@@ -3438,6 +3633,13 @@ function deplaceLoc(a, dx, dy) {
     var hit = false;
     for (var i = 0; i < localObs.length; i++) {
       var o = localObs[i];
+      if (o.type === 'hutte') {
+        // murs seulement : on contourne la hutte ou on y entre
+        if (Math.abs(a.x - o.x) > HUTTE.R || Math.abs(a.y - o.y) > HUTTE.R) continue;
+        if (!o._murs) prepareHutte(o);
+        for (var w = 0; w < o._murs.length; w++) if (pousseMur(a, R, o._murs[w])) hit = true;
+        continue;
+      }
       if (o.type !== 'arbre' && o.type !== 'orbe') continue;
       var nx = a.x - o.x, ny = a.y - o.y;
       var d = Math.hypot(nx, ny), min = o.r + R;
