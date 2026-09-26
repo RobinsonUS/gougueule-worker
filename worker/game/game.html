@@ -102,7 +102,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // weapon_XM8 : supprimer le fond blanc
 (function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
   var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
@@ -319,13 +319,14 @@ var VEG = {
   arbre_rouge:  { cx: 149.02, cy: 149.01, r: 143.74 },
   arbre_sombre: { cx: 149.02, cy: 149.01, r: 143.74 },
   buisson:      { cx: 184.68, cy: 196.69, r: 143.78 },  // l'image n'est pas centree
+  orbe:         { cx: 180.42, cy: 177.68, r: 172.17 },  // l'orbe du lobby
 };
 var VEG_ARBRES = ['arbre_vert', 'arbre_orange', 'arbre_rouge', 'arbre_sombre'];  // index = teinte
-var VEG_ECH = { arbre: 1.0044, buisson: 0.9980 };  // calibre sur le rendu reel (voir plus haut)
+var VEG_ECH = { arbre: 1.0044, buisson: 0.9980, orbe: 1.0543 };  // calibre sur le rendu reel (voir plus haut)
 // Debord de l'ombre autour du contour, en unites monde. Calibre pour que
 // l'anneau depasse du feuillage autant que l'ancien (bande de 13,5 dont la
 // moitie interieure etait cachee sous le feuillage).
-var VEG_OMBRE = { arbre: 6.0, buisson: 6.5 };
+var VEG_OMBRE = { arbre: 6.0, buisson: 6.5, orbe: 19.0 };   // ombre large, relevee sur le vrai jeu
 var VEG_OMBRE_ALPHA = 0.11;                       // meme valeur que C.ombreDouce
 var _vegCache = {};
 
@@ -372,10 +373,14 @@ function vegCanevas(nom, largeurEcran, debord) {
 // que deux arbres voisins ne soient jamais identiques. Toujours a la taille
 // monde exacte : la toile en cache n'est qu'un intermediaire, un ecart
 // d'arrondi ne fait donc jamais sauter la taille d'un arbre.
+// arbre, buisson ou orbe : chacun a son echelle et son ombre
+function vegGenre(o) {
+  return o.type === 'buisson' ? 'buisson' : (o.type === 'orbe' ? 'orbe' : 'arbre');
+}
 function dessineVeg(nom, o, x, y, ombre) {
   var sp = SPRITES[nom], m = VEG[nom];
   var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
-  var genre = o.type === 'buisson' ? 'buisson' : 'arbre';
+  var genre = vegGenre(o);
   var ech = (o.r * VEG_ECH[genre]) / m.r;          // unites monde par px image
   var e = vegCanevas(nom, sw * ech * PXV, VEG_OMBRE[genre]);
   var f = (sw * ech) / e.cs.width;                 // unites monde par px de la toile
@@ -409,6 +414,22 @@ function dessineArbreTexture(o) {
   var nom = VEG_ARBRES[o.teinte] || VEG_ARBRES[0];
   if (vegPret(nom)) { var q = decalageSecousse(o); dessineVeg(nom, o, q.x, q.y, false); return; }
   dessineArbreTextureDessin(o);
+}
+// L'orbe du lobby : meme dessin et meme ombre que la vegetation, mais
+// toujours droit (pas de rotation) et sans repli dessine a la main.
+function dessineOmbreOrbe(o) {
+  if (!vegPret('orbe')) return;
+  var q = decalageSecousse(o);
+  dessineVeg('orbe', o, q.x, q.y, true);
+}
+function dessineOrbeTexture(o) {
+  var q = decalageSecousse(o);
+  if (!vegPret('orbe')) {                  // le temps que l'image arrive
+    ctx.fillStyle = '#4b4d66';
+    ctx.beginPath(); ctx.arc(q.x, q.y, o.r, 0, Math.PI * 2); ctx.fill();
+    return;
+  }
+  dessineVeg('orbe', o, q.x, q.y, false);
 }
 function dessineOmbreBuisson(o) {
   if (vegPret('buisson')) { dessineVeg('buisson', o, o.x, o.y, true); return; }
@@ -1040,8 +1061,9 @@ function vegMini(nom, tPx) {
 // deja au repere monde ; k = pixels de la toile par unite monde. Une souche
 // y reste l'arbre d'origine. Renvoie faux si l'image n'est pas encore la.
 function dessineVegMini(c, ob, k) {
-  var genre = ob.type === 'buisson' ? 'buisson' : 'arbre';
-  var nom = genre === 'buisson' ? 'buisson' : (VEG_ARBRES[ob.teinte] || VEG_ARBRES[0]);
+  if (ob.type === 'vide') return true;             // objet detruit : plus rien
+  var genre = vegGenre(ob);
+  var nom = genre === 'arbre' ? (VEG_ARBRES[ob.teinte] || VEG_ARBRES[0]) : genre;
   if (!vegPret(nom)) return false;
   var sp = SPRITES[nom], m = VEG[nom];
   var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
@@ -2249,6 +2271,7 @@ function dessine(p, moi, viseur, drag) {
     if (!visible(o)) continue;
     if (o.type === 'arbre') dessineOmbreArbre(o);
     else if (o.type === 'buisson') dessineOmbreBuisson(o);
+    else if (o.type === 'orbe') dessineOmbreOrbe(o);
   }
 
   // Voir a travers un buisson n'est possible qu'a pied : survoler un
@@ -2430,8 +2453,11 @@ function dessine(p, moi, viseur, drag) {
   }
 
   // ---- vegetation ----
-  for (const o of p.obs)
-    if (o.type === 'arbre' && visible(o)) dessineArbreTexture(o);
+  for (const o of p.obs) {
+    if (!visible(o)) continue;
+    if (o.type === 'arbre') dessineArbreTexture(o);
+    else if (o.type === 'orbe') dessineOrbeTexture(o);
+  }
 
   for (const o of p.obs) {
     if (o.type !== 'buisson' || !visible(o)) continue;
@@ -2897,7 +2923,9 @@ function dansIleLoc(x, y) {
 
 function initObs(decor) {
   localObs = (decor || []).map(function (o) {
-    return Object.assign({}, o, cosmetiques(o.seed), { alphaVis: 1 });
+    var c = cosmetiques(o.seed);
+    if (o.type === 'orbe') c.phase = 0;      // l'orbe se regarde toujours droit
+    return Object.assign({}, o, c, { alphaVis: 1 });
   });
   prevObsTypes = {};
   for (var i = 0; i < localObs.length; i++) prevObsTypes[i] = localObs[i].type;
@@ -3284,7 +3312,7 @@ function deplaceLoc(a, dx, dy) {
     var hit = false;
     for (var i = 0; i < localObs.length; i++) {
       var o = localObs[i];
-      if (o.type !== 'arbre') continue;
+      if (o.type !== 'arbre' && o.type !== 'orbe') continue;
       var nx = a.x - o.x, ny = a.y - o.y;
       var d = Math.hypot(nx, ny), min = o.r + R;
       if (d < min) {
