@@ -579,9 +579,10 @@ let carte = {
 let vue = { x: 6400, y: 6400, z: 0.06 };
 // ═══ Huttes : meme geometrie et meme dessin que le jeu ═══════════════
 const HUTTE = {
-  B: 116.15, R: 230, ECH: 0.58367, CX: 208, CY: 208, OMBRE: 7.6, OMBRE_DY: 2.0,
+  // taille unique : mesures du vrai jeu x 1,08, comme en jeu et sur le serveur
+  B: 116.15 * 1.08, R: 250, ECH: 0.58367 * 1.08, CX: 208, CY: 208, OMBRE: 7.6 * 1.08, OMBRE_DY: 2.0 * 1.08,
   // emprise au sol : corps + perron (repere local, perron vers +y)
-  emprise: [-117.2, -116.15, 117.2, 168.1],
+  emprise: [-117.2 * 1.08, -116.15 * 1.08, 117.2 * 1.08, 168.1 * 1.08],
 };
 const SENS_ROT = ['le bas', 'la gauche', 'le haut', 'la droite'];
 function rectMondeH(o, r) {
