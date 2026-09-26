@@ -2297,6 +2297,11 @@ function dessine(p, moi, viseur, drag) {
     else if (o.type === 'orbe') dessineOmbreOrbe(o);
   }
 
+  // le bigbush est bas et plat : on le dessine SOUS les joueurs (et leur
+  // ombre), contrairement aux arbres et buissons qui les recouvrent
+  for (const o of p.obs)
+    if (o.type === 'orbe' && visible(o)) dessineOrbeTexture(o);
+
   // Voir a travers un buisson n'est possible qu'a pied : survoler un
   // buisson en avion ou en parachute ne revele rien de ce qu'il cache.
   const aPied = !a.enAvion && !((a.para || 0) > 0);
@@ -2486,7 +2491,6 @@ function dessine(p, moi, viseur, drag) {
   for (const o of p.obs) {
     if (!visible(o)) continue;
     if (o.type === 'arbre') dessineArbreTexture(o);
-    else if (o.type === 'orbe') dessineOrbeTexture(o);
   }
 
   for (const o of p.obs) {
