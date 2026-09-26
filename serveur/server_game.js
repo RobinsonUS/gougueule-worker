@@ -259,9 +259,9 @@ function valideMap(brut, nom) {
       continue;
     }
     const type = o.type === 'buisson' ? 'buisson' : 'arbre';
-    // Un buisson a toujours la meme taille : une carte enregistree avant
-    // un changement de R_BUISSON suit donc d'elle-meme.
-    const r = type === 'buisson' ? R_BUISSON : Math.max(4, nombre(o.r, R_DEFAUT[type]));
+    // Arbres et buissons ont toujours la meme taille, quoi que dise le
+    // fichier : un r arrondi ou ancien dans une carte ne change rien.
+    const r = type === 'buisson' ? R_BUISSON : R_ARBRE;
     let seed = nombre(o.seed, 0) | 0;
     if (!seed) seed = Math.imul(i + 1, 2654435761) | 0;
     obs.push({ x, y, r, type, seed });
