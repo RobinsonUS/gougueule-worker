@@ -68,6 +68,9 @@ const HUTTE = (() => {
   };
 })();
 const estHutte = (o) => o.type === 'hutte';
+// Une hutte encaisse les balles (pas les poings). A 0 PV elle devient une
+// ruine : plus de toit, plus de murs, donc plus rien de solide.
+const PV_HUTTE = 300;
 
 // Rectangle local -> rectangle monde (les quarts de tour gardent les axes)
 function rectMonde(o, r) {
@@ -79,7 +82,9 @@ function rectMonde(o, r) {
 }
 function mursDe(obs) {
   const out = [];
-  for (const o of obs) if (estHutte(o)) for (const r of HUTTE.murs) out.push(rectMonde(o, r));
+  for (const o of obs) if (estHutte(o)) for (const r of HUTTE.murs) {
+    const w = rectMonde(o, r); w.hutte = o; out.push(w);
+  }
   return out;
 }
 // Grille des murs : un mur long est range dans toutes les cases qu'il
@@ -391,7 +396,7 @@ function placer(rng, map, obs, sansSpawns) {
 function obsDeMap(map) {
   const obs = map.obs.map(o => estHutte(o)
     ? { x: o.x, y: o.y, r: o.r, type: 'hutte', v: o.v, rot: o.rot, seed: o.seed,
-        secousse: 0, _lt: 'hutte' }
+        pv: PV_HUTTE, secousse: 0, _lt: 'hutte' }
     : { x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed,
         pv: PV_ARBRE, secousse: 0, _lt: o.type });
   if (map.nom === 'lobby') {
@@ -472,14 +477,27 @@ function majBalles(p, arr) {
     if (nx2 < 0 || nx2 > p.monde || ny2 < 0 || ny2 > p.monde) { p.balles.splice(k, 1); continue; }
     const nx = nx2, ny = ny2;
     let mort = false;
-    // Mur de hutte sur le trajet : la balle s'y arrete, sans degat
+    // Mur de hutte sur le trajet : la balle s'y arrete et abime la hutte
     if (p.mursGrid) {
       const vus = new Set();
-      for (const q of [[b.x, b.y], [nx, ny]]) for (const w of mursPres(p, q[0], q[1])) {
-        if (vus.has(w)) continue; vus.add(w);
-        if (segmentMur(b.x, b.y, nx, ny, w, R_BALLE)) { mort = true; break; }
+      let touche = null;
+      for (const q of [[b.x, b.y], [nx, ny]]) {
+        for (const w of mursPres(p, q[0], q[1])) {
+          if (vus.has(w) || !estHutte(w.hutte)) continue; vus.add(w);
+          if (segmentMur(b.x, b.y, nx, ny, w, R_BALLE)) { touche = w.hutte; break; }
+        }
+        if (touche) break;
       }
-      if (mort) { p.balles.splice(k, 1); continue; }
+      if (touche) {
+        touche.pv -= p.rng() < 0.5 ? 10 : 11; touche.secousse = 0.22;
+        if (touche.pv <= 0) {
+          touche.pv = 0; touche.type = 'ruine'; touche.secousse = 0;
+          // murs a refaire : ceux de la ruine disparaissent
+          p.murs = mursDe(p.obs);
+          p.mursGrid = p.murs.length ? grilleMurs(p.murs) : null;
+        }
+        p.balles.splice(k, 1); continue;
+      }
     }
     for (const o of (p.arbresGrid ? queryGrid(p.arbresGrid, nx, ny) : (p.arbres || p.obs))) {
       if (!estSolide(o)) continue;
@@ -1165,6 +1183,61 @@ function dirVers(p, bot, gx, gy) {
   const dx = c.x - bot.x, dy = c.y - bot.y, d = Math.hypot(dx, dy) || 1;
   return { x: dx / d, y: dy / d, detour: c.x !== gx || c.y !== gy };
 }
+// ─── Evitement des arbres, de l'orbe et des buissons ───
+// Avant d'avancer, le bot regarde un peu devant lui. Si un arbre, l'orbe ou
+// un buisson barre le chemin, il essaie des caps de plus en plus ecartes,
+// d'abord du cote qu'il a deja choisi (sinon il hesite a chaque decision).
+// Les buissons ne bloquent personne : le bot les contourne juste, comme un
+// joueur qui ne veut pas s'y perdre.
+const EVITE_PORTEE = 170, EVITE_MARGE = R_JOUEUR + 4;
+function obstaclesPres(p, x, y, x2, y2) {
+  if (!p.arbresGrid) return VIDE;
+  if (!p.buissonsGrid) p.buissonsGrid = buildGrid(p.obs.filter(o => o.type === 'buisson'));
+  const vus = new Set();
+  for (const g of [p.arbresGrid, p.buissonsGrid])
+    for (const q of [[x, y], [x2, y2]]) for (const o of queryGrid(g, q[0], q[1])) vus.add(o);
+  return vus;
+}
+function segmentCercle(x0, y0, x1, y1, cx, cy, r) {
+  const dx = x1 - x0, dy = y1 - y0, l2 = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((cx - x0) * dx + (cy - y0) * dy) / l2));
+  const px = x0 + dx * t - cx, py = y0 + dy * t - cy;
+  return px * px + py * py < r * r;
+}
+function evite(p, bot, mx, my) {
+  const n = Math.hypot(mx, my);
+  if (n < 0.01) return { x: mx, y: my };
+  const a0 = Math.atan2(my, mx);
+  const L = EVITE_PORTEE;
+  const obs = obstaclesPres(p, bot.x, bot.y, bot.x + Math.cos(a0) * L, bot.y + Math.sin(a0) * L);
+  let aussiBuissons = true;
+  const libre = (a) => {
+    const x1 = bot.x + Math.cos(a) * L, y1 = bot.y + Math.sin(a) * L;
+    for (const o of obs) {
+      if (o.type !== 'arbre' && o.type !== 'orbe' && (o.type !== 'buisson' || !aussiBuissons)) continue;
+      const r = o.r + EVITE_MARGE;
+      // deja dedans (un buisson) : on le laisse sortir
+      if (Math.hypot(o.x - bot.x, o.y - bot.y) < r) continue;
+      if (segmentCercle(bot.x, bot.y, x1, y1, o.x, o.y, r)) return false;
+    }
+    return true;
+  };
+  const cote = bot._cote || (Math.random() < 0.5 ? 1 : -1);
+  // Deux passes : tout eviter ; sinon, faute de mieux, traverser un buisson
+  // plutot que buter contre un arbre.
+  for (const tous of [true, false]) {
+    aussiBuissons = tous;
+    if (libre(a0)) return { x: mx, y: my };
+    for (let k = 1; k <= 6; k++) {
+      for (const s of [cote, -cote]) {
+        const a = a0 + s * k * 0.26;        // pas de 15 degres, jusqu'a 90
+        if (libre(a)) { bot._cote = s; return { x: Math.cos(a) * n, y: Math.sin(a) * n }; }
+      }
+    }
+  }
+  return { x: mx, y: my };                  // cerne : on laisse la collision faire
+}
+
 // Un mur de hutte entre deux points ? (pour ne pas tirer dans le vide)
 function murEntre(p, x0, y0, x1, y1) {
   if (!p.mursGrid) return false;
@@ -1184,7 +1257,8 @@ function calculeBotCmd(p, bot, arr) {
     const coince = t > 20 && Math.hypot(bot._vx || 0, bot._vy || 0) < VITESSE * 0.25;
     if (t % 150 === 1 || (coince && t % 15 === 0)) bot._wA = Math.random() * Math.PI * 2;
     const wa = bot._wA || 0;
-    return { mx: Math.cos(wa), my: Math.sin(wa), ang: wa,
+    const ev = evite(p, bot, Math.cos(wa), Math.sin(wa));
+    return { mx: ev.x, my: ev.y, ang: Math.atan2(ev.y, ev.x),
              tire: false, recharger: false, vitesseRot: 3 };
   }
 
@@ -1230,7 +1304,8 @@ function calculeBotCmd(p, bot, arr) {
     else if (nearestDist < IDEAL - 80) { tmx = -dx / nearestDist * 0.5; tmy = -dy / nearestDist * 0.5; }
     // Le tremblement de visee derive doucement au lieu de sauter a chaque
     // decision : sinon le bot pivote par a-coups meme avec un cap lisse.
-    bot._jit = (bot._jit || 0) + ((Math.random() - 0.5) * 0.90 - (bot._jit || 0)) * 0.12;
+    // Visee un peu moins sure : environ 20 % de balles au but en moins
+    bot._jit = (bot._jit || 0) + ((Math.random() - 0.5) * 1.25 - (bot._jit || 0)) * 0.13;
     angle = cache ? Math.atan2(tmy, tmx) : Math.atan2(dy, dx) + bot._jit;
     if (!cache && nearestDist < 520 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
 
@@ -1258,6 +1333,9 @@ function calculeBotCmd(p, bot, arr) {
   if (!nearest) bot._vu = 0;
   const n = Math.hypot(tmx, tmy);
   if (n > 0.01) { tmx /= n; tmy /= n; }
+  // arbres, orbe et buissons : on les contourne au lieu de foncer dedans
+  const ev = evite(p, bot, tmx, tmy);
+  tmx = ev.x; tmy = ev.y;
   return { mx: tmx, my: tmy, ang: angle, tire, recharger, vitesseRot: 4 };
 }
 
@@ -1314,6 +1392,7 @@ function changeMap(p, nomMap) {
   p.obs = obsDeMap(map);
   p.arbres = null;        // caches de collision invalides
   p.arbresGrid = null;
+  p.buissonsGrid = null;
   p.murs = mursDe(p.obs);
   p.mursGrid = p.murs.length ? grilleMurs(p.murs) : null;
   p.balles = [];          // balles encore en vol sur l'ancienne carte
