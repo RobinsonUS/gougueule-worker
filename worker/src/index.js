@@ -23,6 +23,9 @@ import hutte1Img    from '../game/hutte1.png';
 import hutte1ToitImg from '../game/hutte1_toit.png';
 import hutte2Img    from '../game/hutte2.png';
 import hutte2ToitImg from '../game/hutte2_toit.png';
+import hutte1RuineImg from '../game/hutte1_ruine.png';
+import hutte2RuineImg from '../game/hutte2_ruine.png';
+import boisImg      from '../game/bois.png';
 import arm          from '../game/arm.png';
 import hand         from '../game/hand.png';
 import head         from '../game/head.png';
@@ -185,6 +188,9 @@ export default {
       '/game/hutte1_toit.png':    hutte1ToitImg,
       '/game/hutte2.png':         hutte2Img,
       '/game/hutte2_toit.png':    hutte2ToitImg,
+      '/game/hutte1_ruine.png':   hutte1RuineImg,
+      '/game/hutte2_ruine.png':   hutte2RuineImg,
+      '/game/bois.png':           boisImg,
       '/game/arm.png':          arm,
       '/game/hand.png':         hand,
       '/game/head.png':         head,
