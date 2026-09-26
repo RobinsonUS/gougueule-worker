@@ -273,11 +273,30 @@ function repereMonde() {
                    PX * (HAUT / 2) - PXV * cam.y);
 }
 // Zoom de vue vise par l'agent suivi : reduit en l'air, normal au sol
+// Dans une hutte (des qu'on voit dedans), la camera se resserre un peu :
+// on voit moins loin. Le passage se fait en douceur.
+var ZOOM_HUTTE = 1.12, _zHutte = 1;
+function voitDansUneHutte(a) {
+  if (!a || a.enAvion || (a.para || 0) > 0) return false;
+  for (var i = 0; i < localObs.length; i++) {
+    var o = localObs[i];
+    if (o.type !== 'hutte') continue;
+    if (Math.abs(a.x - o.x) > HUTTE.R || Math.abs(a.y - o.y) > HUTTE.R) continue;
+    if (voitDansHutte(o, a.x, a.y)) return true;
+  }
+  return false;
+}
+function majZoomHutte(a) {
+  var dt = Math.min(0.1, window._lastDt || 0.016);
+  var cible = voitDansUneHutte(a) ? ZOOM_HUTTE : 1;
+  _zHutte += (cible - _zHutte) * (1 - Math.exp(-dt * 6));
+  if (Math.abs(cible - _zHutte) < 0.001) _zHutte = cible;
+}
 function zoomVue(a) {
   if (!a) return 1;
   if (a.enAvion) return ZOOM_AIR;
   if ((a.para || 0) > 0) return 1 - (1 - ZOOM_AIR) * paraHaut(a);
-  return 1;
+  return _zHutte;
 }
 function repereEcran() { ctx.setTransform(PX, 0, 0, PX, 0, 0); }
 
@@ -459,13 +478,16 @@ function dessineBuissonTexture(o) {
 // perron vers +y quand rot = 0 ; rot = quarts de tour horaires. Les images
 // sont deja tournees perron en bas, et le corps y est centre en (208, 208).
 var HUTTE = (function () {
-  var B = 116.15, I = 79.38, D = 62.75, P = 96.9, PV = 134.8;
+  // Taille unique, comme les arbres : K agrandit toutes les cotes d'un coup
+  // (mesures du vrai jeu x 1,08). Meme valeur cote serveur et editeur.
+  var K = 1.08;
+  var B = 116.15 * K, I = 79.38 * K, D = 62.75 * K, P = 96.9 * K, PV = 134.8 * K;
   return {
-    B: B, I: I, D: D, R: 230,
-    ECH: 0.58367,         // unites monde par pixel d'image (corps : 398 px = 232,3 unites)
+    K: K, B: B, I: I, D: D, R: 250,
+    ECH: 0.58367 * K,     // unites monde par pixel d'image (corps : 398 px = 232,3 unites x K)
     CX: 208, CY: 208,     // centre du corps dans les images
-    OMBRE: 7.6,           // debord de l'ombre, releve sur le vrai jeu
-    OMBRE_DY: 2.0,        // l'ombre descend un peu plus qu'elle ne monte
+    OMBRE: 7.6 * K,       // debord de l'ombre, releve sur le vrai jeu
+    OMBRE_DY: 2.0 * K,        // l'ombre descend un peu plus qu'elle ne monte
     murs: [
       [-B, -B,  B, -I], [-B, -I, -I,  B], [ I, -I,  B,  B],
       [-B,  I, -D,  B], [ D,  I,  B,  B],
@@ -475,8 +497,8 @@ var HUTTE = (function () {
     // le plancher, la porte, et une bande devant la facade (perron compris)
     vue: [
       [-I, -I, I, I],
-      [-D, I, D, 128.4],
-      [-117.2, 111, 117.2, 196],
+      [-D, I, D, 128.4 * K],
+      [-117.2 * K, 111 * K, 117.2 * K, 196 * K],
     ],
   };
 })();
@@ -2367,6 +2389,7 @@ function dessine(p, moi, viseur, drag) {
   const a = p.agents[moi];
   if (!a) return;
   agentVue = a;               // la minimap et le HUD suivent cet agent
+  majZoomHutte(a);
   VUE_Z = zoomVue(a); PXV = PX * VUE_Z;   // vue reduite tant qu'on est en l'air
   // Dans l'avion, le joueur EST a la position de l'avion. On accroche la
   // camera a l'avion calcule plutot qu'a la position du passager, qui ne
