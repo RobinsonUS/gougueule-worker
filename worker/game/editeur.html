@@ -27,7 +27,7 @@
     box-shadow:0 0 12px rgba(140,193,82,.85)}
   h2{margin:16px 0 8px;font-size:10px;font-weight:700;text-transform:uppercase;
     letter-spacing:1.3px;color:rgba(255,255,255,.38)}
-  h2:first-of-type{margin-top:0}
+  #barre > h2:first-of-type{margin-top:0}
 
   /* ---------- boutons ---------- */
   .grille{display:grid;grid-template-columns:1fr 1fr;gap:6px}
@@ -39,6 +39,7 @@
   .opt:hover{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.2)}
   .opt.on{background:linear-gradient(160deg,#9ed45e,#6fae3c);border-color:#9ed45e;
     color:#16200d;box-shadow:0 3px 12px rgba(140,193,82,.32)}
+  .opt.large{grid-column:1 / -1;flex-direction:row;justify-content:center;gap:8px}
 
   .act{width:100%;padding:10px;margin-top:6px;border:1px solid rgba(255,255,255,.12);
     border-radius:11px;background:rgba(255,255,255,.05);color:#e9efe3;font-size:12.5px;
@@ -68,6 +69,13 @@
   input[type=text]:focus,input[type=number]:focus{border-color:#9ed45e;
     background:rgba(255,255,255,.09)}
   .duo{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .duo .act{margin-top:0}
+  .champ{display:flex;flex-direction:column;gap:4px;font-size:10.5px;font-weight:700;
+    color:rgba(255,255,255,.45);letter-spacing:.6px}
+  .champ input{font-variant-numeric:tabular-nums}
+  input[type=number]::-webkit-inner-spin-button{opacity:.35}
+  .alerte{font-size:10.5px;color:#f2a3a3;margin-top:7px;line-height:1.45}
+  #blocSel .act{margin-top:7px}
   .note{font-size:10.5px;color:rgba(255,255,255,.3);margin-top:6px;line-height:1.5}
 
   /* ---------- stats ---------- */
@@ -81,10 +89,12 @@
   .sep{height:1px;background:rgba(255,255,255,.09);margin:9px 0}
 
   /* ---------- aide ---------- */
-  #aide{position:absolute;bottom:16px;left:262px;font-size:10.5px;
-    color:rgba(255,255,255,.28);line-height:1.8;pointer-events:none}
+  #aide{position:absolute;bottom:14px;left:260px;font-size:10.5px;padding:8px 12px;
+    color:rgba(255,255,255,.55);line-height:1.8;pointer-events:none;border-radius:12px;
+    background:rgba(16,23,12,.72);border:1px solid rgba(255,255,255,.08);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
   #aide kbd{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
-    border-radius:4px;padding:1px 5px;font-family:inherit;font-size:10px;color:rgba(255,255,255,.45)}
+    border-radius:4px;padding:1px 5px;font-family:inherit;font-size:10px;color:rgba(255,255,255,.75)}
 
   /* ---------- fenetre export ---------- */
   #voile{position:fixed;inset:0;background:rgba(6,10,4,.72);backdrop-filter:blur(3px);
@@ -125,6 +135,7 @@
 
   <h2>Outil</h2>
   <div class="grille">
+    <div class="opt large" data-outil="select"><div class="ic">&#8689;</div>Selection</div>
     <div class="opt on" data-outil="placer"><div class="ic">+</div>Placer</div>
     <div class="opt" data-outil="pinceau"><div class="ic">~</div>Pinceau</div>
     <div class="opt" data-outil="gomme"><div class="ic">x</div>Gomme</div>
@@ -141,7 +152,7 @@
     </div>
     <div class="note">Taille fixe : arbre 87,5, buisson 68</div>
     <div id="blocRot">
-      <div class="ligne"><button id="bRot">Tourner (R)</button></div>
+      <button class="act" id="bRot">Tourner (R)</button>
       <div class="note">Porte vers <b id="vRot">le bas</b>. Une hutte se pose au
         clic, meme avec le pinceau.</div>
     </div>
@@ -157,9 +168,28 @@
       fois moins vite.</div>
     <div class="ligne">Lissage <b id="vLiss">4</b></div>
     <input type="range" id="lissage" min="1" max="24" value="4">
-    <div class="ligne"><button id="coteRect">Partir d'un rectangle</button></div>
-    <div class="ligne"><button id="coteVide">Tout effacer (plus d'eau)</button></div>
+    <button class="act" id="coteRect">Partir d'un rectangle</button>
+    <button class="act rouge" id="coteVide">Tout effacer (plus d'eau)</button>
     <div class="ligne">Points <b id="vCote">0</b></div>
+  </div>
+
+  <div id="blocSel">
+    <h2>Selection</h2>
+    <div id="selVide" class="note">Clique sur un element pour le choisir, glisse-le
+      pour le deplacer. Fleches : 1 unite (Maj : 10). Suppr : effacer.</div>
+    <div id="selInfo" style="display:none">
+      <div class="ligne">Type <b id="selType">-</b></div>
+      <div class="duo">
+        <label class="champ">X<input type="number" id="selX" step="1"></label>
+        <label class="champ">Y<input type="number" id="selY" step="1"></label>
+      </div>
+      <div class="duo" id="selHutte" style="margin-top:7px">
+        <button class="act" id="selRot">Tourner</button>
+        <button class="act" id="selMod">Modele 2</button>
+      </div>
+      <div class="alerte" id="selGene" style="display:none">Chevauche un autre element</div>
+      <button class="act rouge" id="selSuppr">Supprimer</button>
+    </div>
   </div>
 
   <div id="blocPinceau">
@@ -195,11 +225,13 @@
   <div class="sep"></div>
   <div class="st">Densite <b id="sDen">0</b></div>
   <div class="st">Zoom <b id="sZoom">0%</b></div>
+  <div class="st">Souris <b id="sSouris">-</b></div>
 </div>
 
 <div id="aide">
   <kbd>glisser</kbd> dessiner &nbsp; <kbd>molette</kbd> zoom &nbsp; <kbd>2 doigts</kbd> zoom<br>
-  <kbd>espace</kbd> ou <kbd>clic droit</kbd> deplacer &nbsp; <kbd>Cmd Z</kbd> annuler
+  <kbd>espace</kbd> ou <kbd>clic droit</kbd> deplacer &nbsp; <kbd>Cmd Z</kbd> annuler<br>
+  <kbd>R</kbd> tourner une hutte &nbsp; <kbd>fleches</kbd> ajuster la selection &nbsp; <kbd>Suppr</kbd> effacer
 </div>
 
 <div id="voile">
@@ -614,6 +646,64 @@ function dessineHutte(o, quoi) {
   else ctx.drawImage(e.cs, ox, oy, e.cs.width * f, e.cs.height * f);
   ctx.restore();
 }
+// ─── Textures reduites pour la vue lointaine ───
+// Une toile par image et par palier de taille (paliers de 20 %), reduite
+// par moities successives : net, sans grain. Quelques dizaines de toiles
+// au plus, quel que soit le zoom.
+const _mini = new Map();
+function spriteMini(nom, tPx) {
+  const b = Math.max(3, Math.round(Math.log(Math.max(2, tPx)) / Math.log(1.2)));
+  const cle = nom + ':' + b;
+  let e = _mini.get(cle);
+  if (e) return e;
+  const sp = SPRITES[nom];
+  const w = Math.max(2, Math.round(Math.pow(1.2, b)));
+  let src = sp, sw = sp.naturalWidth, sh = sp.naturalHeight;
+  while (sw / 2 >= w) {
+    const c = document.createElement('canvas');
+    c.width = Math.round(sw / 2); c.height = Math.max(1, Math.round(sh / 2));
+    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+    g.drawImage(src, 0, 0, c.width, c.height);
+    src = c; sw = c.width; sh = c.height;
+  }
+  e = document.createElement('canvas');
+  e.width = w; e.height = Math.max(1, Math.round(sp.naturalHeight * w / sp.naturalWidth));
+  const g = e.getContext('2d'); g.imageSmoothingQuality = 'high';
+  g.drawImage(src, 0, 0, e.width, e.height);
+  _mini.set(cle, e);
+  return e;
+}
+function vegToutPret() {
+  for (const n of VEG_ARBRES) if (!vegPret(n)) return false;
+  return vegPret('buisson');
+}
+// Meme cadrage que dessineVeg (centre, echelle, rotation)
+function dessineVegMini(o) {
+  const c = cosmo(o);
+  const nom = o.type === 'buisson' ? 'buisson' : (VEG_ARBRES[c.teinte] || VEG_ARBRES[0]);
+  const sp = SPRITES[nom], m = VEG[nom];
+  const ech = (o.r * VEG_ECH[o.type === 'buisson' ? 'buisson' : 'arbre']) / m.r;
+  const e = spriteMini(nom, sp.naturalWidth * ech * PXV);
+  ctx.save();
+  ctx.translate(o.x, o.y);
+  ctx.rotate(c.phase || 0);
+  ctx.drawImage(e, -m.cx * ech, -m.cy * ech, sp.naturalWidth * ech, sp.naturalHeight * ech);
+  ctx.restore();
+}
+function dessineHutteMini(o) {
+  const v = o.v === 2 ? 2 : 1, S = HUTTE.ECH;
+  if (!huttePrete(v)) { dessineHutte(o, 0); return; }
+  const sp = SPRITES['hutte' + v], st = SPRITES['hutte' + v + '_toit'];
+  ctx.save();
+  ctx.translate(o.x, o.y);
+  ctx.rotate(((o.rot | 0) % 4) * Math.PI / 2);
+  ctx.drawImage(spriteMini('hutte' + v, sp.naturalWidth * S * PXV), -HUTTE.CX * S, -HUTTE.CY * S,
+                sp.naturalWidth * S, sp.naturalHeight * S);
+  ctx.drawImage(spriteMini('hutte' + v + '_toit', st.naturalWidth * S * PXV), -HUTTE.CX * S, -HUTTE.CY * S,
+                st.naturalWidth * S, st.naturalHeight * S);
+  ctx.restore();
+}
+
 function dessineHutteEntiere(o) { dessineHutte(o, 1); dessineHutte(o, 0); dessineHutte(o, 2); }
 
 let outil = 'placer', typeObj = 'arbre', rotHutte = 0;
@@ -633,7 +723,10 @@ function memorise() {
 }
 function annule() {
   if (!histoire.length) return signale('Rien a annuler');
+  const graineSel = sel ? sel.seed : null;
   carte = JSON.parse(histoire.pop());
+  // on garde la meme selection apres l'annulation, si l'element existe encore
+  if (graineSel !== null) choisit(carte.obs.find(o => o.seed === graineSel) || null);
   cacheCos.clear(); reindexe(); majCote(); synchronisePanneau();
   signale('Annule');
 }
@@ -720,14 +813,20 @@ function dessine() {
   const tous = carte.obs.filter(o => o.x > x0 - 250 && o.x < x1 + 250 && o.y > y0 - 250 && o.y < y1 + 250);
   const visibles = tous.filter(o => o.type !== 'hutte');
   // les huttes d'abord : les arbres voisins passent par-dessus, comme en jeu
-  for (const o of tous) if (o.type === 'hutte') dessineHutte(o, 1);
-  for (const o of tous) if (o.type === 'hutte') { dessineHutte(o, 0); dessineHutte(o, 2); }
+  if (R_ARBRE * vue.z < 26) {
+    for (const o of tous) if (o.type === 'hutte') dessineHutteMini(o);
+  } else {
+    for (const o of tous) if (o.type === 'hutte') dessineHutte(o, 1);
+    for (const o of tous) if (o.type === 'hutte') { dessineHutte(o, 0); dessineHutte(o, 2); }
+  }
 
-  // Vue d'ensemble : plus rien n'est hors champ, et le dessin complet d'un
-  // millier de feuillages lobes coute cher pour des taches de 3 pixels.
-  // En dessous d'une certaine taille a l'ecran on trace un simple disque.
+  // Vue d'ensemble : les vraies images, reduites une fois pour toutes a la
+  // taille d'affichage (comme la carte du jeu). Chaque objet n'est plus
+  // qu'une recopie de quelques pixels. Disques en attendant les images.
   const tailleEcran = R_ARBRE * vue.z;
-  if (tailleEcran < 7) {
+  if (tailleEcran < 26 && vegToutPret()) {
+    for (const o of visibles) dessineVegMini(o);
+  } else if (tailleEcran < 7) {
     for (const o of visibles) {
       ctx.fillStyle = o.type === 'arbre' ? C.arbres[cosmo(o).teinte].ext : C.buisson.ext;
       ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, 6.2832); ctx.fill();
@@ -799,6 +898,28 @@ function dessine() {
     }
   }
 
+  // element selectionne : cadre pointille, rouge s'il en chevauche un autre
+  if (sel && carte.obs.indexOf(sel) < 0) choisit(null);      // efface ou annule entre-temps
+  if (sel && outil === 'select') {
+    const gene = !libreSauf(sel);
+    ctx.lineWidth = 2.5 / vue.z;
+    ctx.setLineDash([8 / vue.z, 6 / vue.z]);
+    ctx.strokeStyle = gene ? '#ff6b6b' : '#ffd24a';
+    ctx.beginPath();
+    if (sel.type === 'hutte') {
+      const e = rectMondeH(sel, HUTTE.emprise);
+      ctx.rect(e.x0 - 6 / vue.z, e.y0 - 6 / vue.z, e.x1 - e.x0 + 12 / vue.z, e.y1 - e.y0 + 12 / vue.z);
+    } else ctx.arc(sel.x, sel.y, sel.r + 6 / vue.z, 0, 6.2832);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // croix au centre : c'est ce point que donnent X et Y
+    const k = 7 / vue.z;
+    ctx.beginPath();
+    ctx.moveTo(sel.x - k, sel.y); ctx.lineTo(sel.x + k, sel.y);
+    ctx.moveTo(sel.x, sel.y - k); ctx.lineTo(sel.x, sel.y + k);
+    ctx.stroke();
+  }
+
   // hutte a poser : apercu sous la souris, rouge si la place est prise
   if (souris.dedans && estTypeHutte(typeObj) && (outil === 'placer' || outil === 'pinceau') && !deplace) {
     const o = nouvelObjet(souris.mx, souris.my);
@@ -857,6 +978,7 @@ function majInfos() {
   p('sHut', nh);
   p('sDen', dens.toFixed(1) + ' / ecran');
   p('sZoom', (vue.z * 100).toFixed(0) + '%');
+  p('sSouris', souris.dedans ? Math.round(souris.mx) + ' , ' + Math.round(souris.my) : '-');
 }
 
 // ═══ edition ═══════════════════════════════════════════════════════
@@ -915,6 +1037,59 @@ function libre(o) {
   for (const q of autour(o.x, o.y)) if (seGenent(o, q)) return false;
   return true;
 }
+// ─── Outil Selection ───
+let sel = null, prise = null;        // element choisi ; decalage souris pendant le glisser
+const NOMS_TYPE = { arbre: 'Arbre', buisson: 'Buisson' };
+function nomType(o) { return o.type === 'hutte' ? 'Hutte ' + (o.v === 2 ? 2 : 1) : (NOMS_TYPE[o.type] || o.type); }
+// L'element sous la souris : la vegetation passe avant les huttes, comme
+// a l'affichage. Entre deux arbres, le centre le plus proche.
+function objetSous(x, y) {
+  let best = null, bd = Infinity;
+  for (const o of carte.obs) {
+    if (o.type === 'hutte') continue;
+    const d = Math.hypot(o.x - x, o.y - y);
+    if (d <= o.r && d < bd) { bd = d; best = o; }
+  }
+  if (best) return best;
+  for (const o of carte.obs)
+    if (o.type === 'hutte' && distRect(x, y, rectMondeH(o, HUTTE.emprise)) === 0) return o;
+  return null;
+}
+function libreSauf(o) {
+  for (const q of carte.obs) if (q !== o && seGenent(o, q)) return false;
+  return true;
+}
+const $ = id => document.getElementById(id);
+function choisit(o) { sel = o; majSel(); }
+// Panneau de la selection, relu depuis l'element
+function majSel() {
+  $('selVide').style.display = sel ? 'none' : 'block';
+  $('selInfo').style.display = sel ? 'block' : 'none';
+  if (!sel) return;
+  $('selType').textContent = nomType(sel);
+  if (document.activeElement !== $('selX')) $('selX').value = sel.x;
+  if (document.activeElement !== $('selY')) $('selY').value = sel.y;
+  $('selHutte').style.display = sel.type === 'hutte' ? 'grid' : 'none';
+  $('selMod').textContent = 'Modele ' + (sel.v === 2 ? 1 : 2);
+  $('selGene').style.display = libreSauf(sel) ? 'none' : 'block';
+}
+function deplaceSel(x, y) {
+  if (!sel) return;
+  sel.x = Math.round(Math.max(0, Math.min(carte.monde, x)));
+  sel.y = Math.round(Math.max(0, Math.min(carte.monde, y)));
+  majSel();
+}
+function modifieSel(fn) {
+  if (!sel) return;
+  memorise(); fn(sel); reindexe(); majSel();
+}
+function supprimeSel() {
+  if (!sel) return;
+  memorise();
+  carte.obs = carte.obs.filter(o => o !== sel);
+  sel = null; reindexe(); majSel();
+}
+
 function pose(x, y) {
   const o = nouvelObjet(x, y);
   if (!libre(o)) return false;
@@ -976,6 +1151,8 @@ function bouge(e) {
 }
 function fin() {
   if (traceCote) termineTrait();     // relacher referme le contour
+  if (prise && prise.bouge) reindexe();
+  prise = null;
   appuye = false; deplace = false; dernier = null; poignee = null;
 }
 
@@ -1116,6 +1293,19 @@ function poigneeSous(x, y) {
 
 let dernierJet = null;
 function agit(x, y, presse) {
+  if (outil === 'select') {
+    if (presse) {
+      choisit(objetSous(x, y));
+      prise = sel ? { dx: sel.x - x, dy: sel.y - y, bouge: false } : null;
+      return;
+    }
+    if (!sel || !prise) return;
+    // on ne memorise qu'au premier vrai deplacement : un simple clic ne
+    // remplit pas l'historique
+    if (!prise.bouge) { memorise(); prise.bouge = true; }
+    deplaceSel(x + prise.dx, y + prise.dy);
+    return;
+  }
   if (!aMemorise) { memorise(); aMemorise = true; }
   if (outil === 'placer' || (outil === 'pinceau' && estTypeHutte(typeObj))) {
     if (!estTypeHutte(typeObj) || presse) pose(x, y);   // pas de trainee de huttes
@@ -1185,9 +1375,34 @@ cv.addEventListener('touchmove', e => {
 addEventListener('keydown', e => {
   if (e.code === 'Space') { espace = true; e.preventDefault(); }
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); annule(); }
-  if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey &&
-      document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') tourne();
+  const saisie = document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA';
+  if (saisie) return;
+  if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey) {
+    if (outil === 'select' && sel && sel.type === 'hutte') modifieSel(o => { o.rot = ((o.rot | 0) + 1) % 4; });
+    else tourne();
+  }
+  if (outil === 'select' && sel) {
+    const pas = e.shiftKey ? 10 : 1;
+    const fl = { ArrowLeft: [-pas, 0], ArrowRight: [pas, 0], ArrowUp: [0, -pas], ArrowDown: [0, pas] }[e.key];
+    if (fl) { e.preventDefault(); modifieSel(o => { o.x += fl[0]; o.y += fl[1]; }); }
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); supprimeSel(); }
+    if (e.key === 'Escape') choisit(null);
+  }
 });
+// Panneau de la selection
+for (const [id, axe] of [['selX', 'x'], ['selY', 'y']]) {
+  const el = $(id);
+  el.addEventListener('focus', () => { if (sel) memorise(); });
+  el.addEventListener('input', () => {
+    const v = parseFloat(el.value);
+    if (sel && isFinite(v)) { sel[axe] = Math.round(Math.max(0, Math.min(carte.monde, v))); majSel(); }
+  });
+  el.addEventListener('change', () => { reindexe(); majSel(); });
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') el.blur(); });
+}
+$('selRot').onclick = () => modifieSel(o => { o.rot = ((o.rot | 0) + 1) % 4; });
+$('selMod').onclick = () => modifieSel(o => { o.v = o.v === 2 ? 1 : 2; });
+$('selSuppr').onclick = supprimeSel;
 function tourne() {
   rotHutte = (rotHutte + 1) % 4;
   document.getElementById('vRot').textContent = SENS_ROT[rotHutte];
@@ -1212,6 +1427,8 @@ function majBlocs() {
   document.getElementById('blocObjet').style.display =
     (outil === 'placer' || outil === 'pinceau') ? 'block' : 'none';
   document.getElementById('blocPinceau').style.display = outil === 'pinceau' ? 'block' : 'none';
+  document.getElementById('blocSel').style.display = outil === 'select' ? 'block' : 'none';
+  if (outil !== 'select') choisit(null);
   document.getElementById('blocRot').style.display = estTypeHutte(typeObj) ? 'block' : 'none';
   document.getElementById('blocGomme').style.display = outil === 'gomme' ? 'block' : 'none';
   document.getElementById('blocCote').style.display = outil === 'cote' ? 'block' : 'none';
