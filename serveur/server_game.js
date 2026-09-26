@@ -34,6 +34,10 @@ const DISPERSION = 0.10, PORTEE = 800;
 const R_BALLE = R_JOUEUR * 0.17;
 const N_ARBRES = 26, N_BUISSONS = 32;
 const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.36, PV_ARBRE = 100;
+// L'orbe du lobby : un seul, plante au centre, long a casser au poing.
+const R_ORBE = 175, PV_ORBE = 1500;
+// Ce qui bloque le passage et arrete les balles.
+const estSolide = (o) => o.type === 'arbre' || o.type === 'orbe';
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const ZONE_TIC = 0.75;   // les degats de zone tombent par paliers, pas en continu
 // Largage : l'avion traverse la carte, les joueurs sautent quand ils veulent
@@ -234,18 +238,21 @@ function chargeMap(nom) {
 
 function uid() { return Math.random().toString(36).slice(2, 11); }
 
-function placer(rng, map, obs) {
+// sansSpawns : on ignore les points d'apparition de la carte et on cherche
+// n'importe quelle place libre. C'est ce que fait le lobby, pour que les
+// joueurs n'arrivent pas tous au meme endroit.
+function placer(rng, map, obs, sansSpawns) {
   const monde = map.monde;
   const libre = (x, y) => {
     if (x < 150 || x > monde - 150 || y < 150 || y > monde - 150) return false;
     for (const o of obs) {
-      if (o.type !== 'arbre') continue;
+      if (!estSolide(o)) continue;
       if (Math.hypot(o.x - x, o.y - y) < o.r + R_JOUEUR + 20) return false;
     }
     return true;
   };
 
-  if (map.spawns.length) {
+  if (map.spawns.length && !sansSpawns) {
     for (let i = 0; i < 200; i++) {
       const s = map.spawns[(rng() * map.spawns.length) | 0];
       const ang = rng() * Math.PI * 2, d = rng() * 140;
@@ -263,6 +270,20 @@ function placer(rng, map, obs) {
   return { x: monde / 2, y: monde / 2 };
 }
 
+// Copie de travail des obstacles d'une carte. Le lobby recoit en plus son
+// orbe central, qui n'est donc dans aucun fichier de carte.
+function obsDeMap(map) {
+  const obs = map.obs.map(o => ({
+    x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed,
+    pv: PV_ARBRE, secousse: 0, _lt: o.type,
+  }));
+  if (map.nom === 'lobby') {
+    obs.push({ x: map.monde / 2, y: map.monde / 2, r: R_ORBE, type: 'orbe',
+               seed: 424242, pv: PV_ORBE, secousse: 0, _lt: 'orbe' });
+  }
+  return obs;
+}
+
 function creePartie(nomMap) {
   const map = chargeMap(nomMap || 'lobby');
   const rng = creeRng((Math.random() * 1e9) | 0);
@@ -276,13 +297,10 @@ function creePartie(nomMap) {
     avionPrevu = creeAvion(rng, mp.monde);
   }
   // Copie de travail : la carte de reference n'est jamais modifiee
-  const obs = map.obs.map(o => ({
-    x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed,
-    pv: PV_ARBRE, secousse: 0, _lt: o.type,
-  }));
+  const obs = obsDeMap(map);
   return {
     map, monde: map.monde, mapVer: 1, avionPrevu,
-    rng, obs, arbres: obs.filter(o => o.type === 'arbre'), arbresGrid: null,
+    rng, obs, arbres: obs.filter(estSolide), arbresGrid: null,
     t: 0, tick: 0, fini: false, vainqueur: null,
     demarree: false, nbMax: 0, balleId: 0,
     zone: { x: map.zone.cx, y: map.zone.cy, r: map.zone.r0 },
@@ -295,7 +313,8 @@ function creePartie(nomMap) {
 
 function ajouteJoueur(partie, pid, name, avecArme = true) {
   partie.nbMax++;
-  const pos = placer(partie.rng, partie.map, partie.obs);
+  // Dans le lobby, chacun arrive a un endroit libre au hasard
+  const pos = placer(partie.rng, partie.map, partie.obs, partie.map.nom === 'lobby');
   partie.agents[pid] = {
     id: pid, name, x: pos.x, y: pos.y,
     pv: PV_MAX, angle: 0, recharge: 0, vivant: true,
@@ -334,10 +353,10 @@ function majBalles(p, arr) {
     const nx = nx2, ny = ny2;
     let mort = false;
     for (const o of (p.arbresGrid ? queryGrid(p.arbresGrid, nx, ny) : (p.arbres || p.obs))) {
-      if (o.type !== 'arbre') continue;
+      if (!estSolide(o)) continue;
       if (Math.hypot(o.x - nx, o.y - ny) < o.r + R_BALLE) {
         o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
-        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; p.arbresGrid = null; }
+        if (o.pv <= 0) { o.pv = 0; o.type = o.type === 'orbe' ? 'vide' : 'souche'; o.secousse = 0; p.arbres = null; p.arbresGrid = null; }
         mort = true; break;
       }
     }
@@ -660,14 +679,16 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
     a.revele = 0.35;
     // Dégâts aux arbres (même en lobby)
     for (const o of p.obs) {
-      if (o.type !== 'arbre') continue;
+      if (!estSolide(o)) continue;
       const ex = o.x - a.x, ey = o.y - a.y;
       const dist = Math.hypot(ex, ey);
-      if (dist < MELEE_PORTEE + o.r * 0.5) {
+      // Portee mesuree depuis la surface : vrai pour un arbre comme pour
+      // l'orbe du lobby, bien plus grosse.
+      if (dist < o.r + MELEE_PORTEE * 0.65) {
         const dot = (ex * Math.cos(a.angle) + ey * Math.sin(a.angle)) / dist;
         if (dot > 0.1) {
           o.pv -= MELEE_DEGATS; o.secousse = 0.22;
-          if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; }
+          if (o.pv <= 0) { o.pv = 0; o.type = o.type === 'orbe' ? 'vide' : 'souche'; o.secousse = 0; p.arbres = null; }
         }
       }
     }
@@ -770,7 +791,7 @@ function pas(p) {
 
   // Cache arbres (mis à jour si une souche apparaît, max toutes les 5s)
   if (!p.arbres || p.tick % 150 === 0) {
-    p.arbres = p.obs.filter(o => o.type === 'arbre');
+    p.arbres = p.obs.filter(estSolide);
     p.arbresGrid = buildGrid(p.arbres);
   }
 
@@ -1060,10 +1081,7 @@ function changeMap(p, nomMap) {
   p.map = map;
   p.monde = map.monde;
   p.mapVer++;
-  p.obs = map.obs.map(o => ({
-    x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed,
-    pv: PV_ARBRE, secousse: 0, _lt: o.type,
-  }));
+  p.obs = obsDeMap(map);
   p.arbres = null;        // caches de collision invalides
   p.arbresGrid = null;
   p.balles = [];          // balles encore en vol sur l'ancienne carte
