@@ -38,6 +38,111 @@ const R_ARBRE = CELL * 1.75, R_BUISSON = CELL * 1.36, PV_ARBRE = 100;
 const R_ORBE = 175, PV_ORBE = 1500;
 // Ce qui bloque le passage et arrete les balles.
 const estSolide = (o) => o.type === 'arbre' || o.type === 'orbe';
+
+// ─────────────── Huttes (Hu1 et Hu2) ──────────────────────────────
+// Deux dessins, une seule geometrie. Mesures relevees au pixel sur le vrai
+// jeu (quadrillage de 50 unites). Repere local : origine au centre du
+// corps, perron vers +y (rot = 0). rot = 1, 2, 3 : quarts de tour horaires.
+// Seuls les murs sont solides : on contourne la hutte ou on y entre.
+const HUTTE = (() => {
+  const B = 116.15;   // demi-cote exterieur du corps
+  const I = 79.38;    // demi-cote du plancher (face interieure des murs)
+  const D = 62.75;    // demi-largeur de la porte (entre les piliers)
+  const P = 96.9;     // bord exterieur des piliers
+  const PV = 134.8;   // bout des piliers, cote perron
+  return {
+    B, I, D, R: 230,  // R : rayon qui englobe tout (perron, zone de vue)
+    murs: [
+      [-B, -B,  B, -I],   // fond
+      [-B, -I, -I,  B],   // gauche
+      [ I, -I,  B,  B],   // droite
+      [-B,  I, -D,  B],   // facade, a gauche de la porte
+      [ D,  I,  B,  B],   // facade, a droite de la porte
+      [-P,  B, -D, PV],   // pilier gauche
+      [ D,  B,  P, PV],   // pilier droit
+    ],
+  };
+})();
+const estHutte = (o) => o.type === 'hutte';
+
+// Rectangle local -> rectangle monde (les quarts de tour gardent les axes)
+function rectMonde(o, r) {
+  const q = ((o.rot | 0) % 4 + 4) % 4;
+  const tr = (u, v) => q === 0 ? [u, v] : q === 1 ? [-v, u] : q === 2 ? [-u, -v] : [v, -u];
+  const a = tr(r[0], r[1]), b = tr(r[2], r[3]);
+  return { x0: o.x + Math.min(a[0], b[0]), y0: o.y + Math.min(a[1], b[1]),
+           x1: o.x + Math.max(a[0], b[0]), y1: o.y + Math.max(a[1], b[1]) };
+}
+function mursDe(obs) {
+  const out = [];
+  for (const o of obs) if (estHutte(o)) for (const r of HUTTE.murs) out.push(rectMonde(o, r));
+  return out;
+}
+// Grille des murs : un mur long est range dans toutes les cases qu'il
+// touche, marge du rayon d'un joueur comprise.
+function grilleMurs(murs) {
+  const g = new Map(), m = R_JOUEUR + 4;
+  for (const w of murs) {
+    const cx0 = Math.floor((w.x0 - m) / GRID_CELL_SZ), cx1 = Math.floor((w.x1 + m) / GRID_CELL_SZ);
+    const cy0 = Math.floor((w.y0 - m) / GRID_CELL_SZ), cy1 = Math.floor((w.y1 + m) / GRID_CELL_SZ);
+    for (let cx = cx0; cx <= cx1; cx++) for (let cy = cy0; cy <= cy1; cy++) {
+      const k = cx * 10000 + cy;
+      let c = g.get(k); if (!c) { c = []; g.set(k, c); }
+      c.push(w);
+    }
+  }
+  return g;
+}
+const VIDE = [];
+function mursPres(p, x, y) {
+  if (!p.mursGrid) return VIDE;
+  return p.mursGrid.get(Math.floor(x / GRID_CELL_SZ) * 10000 + Math.floor(y / GRID_CELL_SZ)) || VIDE;
+}
+// Sort un cercle d'un mur. Centre dans le mur : par la face la plus proche.
+function pousseMur(a, R, w) {
+  const qx = Math.max(w.x0, Math.min(w.x1, a.x)), qy = Math.max(w.y0, Math.min(w.y1, a.y));
+  const dx = a.x - qx, dy = a.y - qy, d2 = dx * dx + dy * dy;
+  if (d2 >= R * R) return false;
+  if (d2 > 1e-9) {
+    const d = Math.sqrt(d2);
+    a.x += dx / d * (R - d); a.y += dy / d * (R - d);
+  } else {
+    const g = a.x - w.x0, dr = w.x1 - a.x, h = a.y - w.y0, b = w.y1 - a.y;
+    const mn = Math.min(g, dr, h, b);
+    if (mn === g) a.x = w.x0 - R; else if (mn === dr) a.x = w.x1 + R;
+    else if (mn === h) a.y = w.y0 - R; else a.y = w.y1 + R;
+  }
+  return true;
+}
+// Le segment (x0,y0)->(x1,y1) touche-t-il le mur grossi de r ? Une balle
+// parcourt 50 unites par tick, plus que l'epaisseur d'un mur (37) : tester
+// le seul point d'arrivee la laisserait passer au travers.
+function segmentMur(x0, y0, x1, y1, w, r) {
+  let t0 = 0, t1 = 1;
+  const dx = x1 - x0, dy = y1 - y0;
+  const bords = [[-dx, x0 - (w.x0 - r)], [dx, (w.x1 + r) - x0],
+                 [-dy, y0 - (w.y0 - r)], [dy, (w.y1 + r) - y0]];
+  for (const [pp, qq] of bords) {
+    if (pp === 0) { if (qq < 0) return false; continue; }
+    const t = qq / pp;
+    if (pp < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return true;
+}
+// Dans l'emprise d'une hutte (corps + perron), pour ne rien y faire apparaitre
+function dansHutte(obs, x, y, marge) {
+  for (const o of obs) {
+    if (!estHutte(o)) continue;
+    const q = ((o.rot | 0) % 4 + 4) % 4;
+    let u = x - o.x, v = y - o.y;
+    if (q === 1) { const t = u; u = v; v = -t; }
+    else if (q === 2) { u = -u; v = -v; }
+    else if (q === 3) { const t = u; u = -v; v = t; }
+    if (Math.abs(u) < HUTTE.B + marge && v > -HUTTE.B - marge && v < 170 + marge) return true;
+  }
+  return false;
+}
 const ZONE_R0 = 1900, ZONE_R1 = 320, ZONE_ATTENTE = 12, ZONE_DUREE = 70, ZONE_DEGATS = 6;
 const ZONE_TIC = 0.75;   // les degats de zone tombent par paliers, pas en continu
 // Largage : l'avion traverse la carte, les joueurs sautent quand ils veulent
@@ -145,9 +250,15 @@ function valideMap(brut, nom) {
   const obs = [];
   for (let i = 0; i < brut.obs.length; i++) {
     const o = brut.obs[i] || {};
-    const type = o.type === 'buisson' ? 'buisson' : 'arbre';
     const x = nombre(o.x, NaN), y = nombre(o.y, NaN);
     if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('obs[' + i + '] : x/y invalide');
+    // Hutte : modele 1 ou 2, orientation en quarts de tour. Taille fixe.
+    if (o.type === 'hutte') {
+      obs.push({ x, y, r: HUTTE.R, type: 'hutte', v: o.v === 2 ? 2 : 1,
+                 rot: ((nombre(o.rot, 0) | 0) % 4 + 4) % 4, seed: nombre(o.seed, 0) | 0 });
+      continue;
+    }
+    const type = o.type === 'buisson' ? 'buisson' : 'arbre';
     // Un buisson a toujours la meme taille : une carte enregistree avant
     // un changement de R_BUISSON suit donc d'elle-meme.
     const r = type === 'buisson' ? R_BUISSON : Math.max(4, nombre(o.r, R_DEFAUT[type]));
@@ -249,6 +360,7 @@ function placer(rng, map, obs, sansSpawns) {
       if (!estSolide(o)) continue;
       if (Math.hypot(o.x - x, o.y - y) < o.r + R_JOUEUR + 20) return false;
     }
+    if (dansHutte(obs, x, y, R_JOUEUR + 20)) return false;
     return true;
   };
 
@@ -273,10 +385,11 @@ function placer(rng, map, obs, sansSpawns) {
 // Copie de travail des obstacles d'une carte. Le lobby recoit en plus son
 // orbe central, qui n'est donc dans aucun fichier de carte.
 function obsDeMap(map) {
-  const obs = map.obs.map(o => ({
-    x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed,
-    pv: PV_ARBRE, secousse: 0, _lt: o.type,
-  }));
+  const obs = map.obs.map(o => estHutte(o)
+    ? { x: o.x, y: o.y, r: o.r, type: 'hutte', v: o.v, rot: o.rot, seed: o.seed,
+        secousse: 0, _lt: 'hutte' }
+    : { x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed,
+        pv: PV_ARBRE, secousse: 0, _lt: o.type });
   if (map.nom === 'lobby') {
     obs.push({ x: map.monde / 2, y: map.monde / 2, r: R_ORBE, type: 'orbe',
                seed: 424242, pv: PV_ORBE, secousse: 0, _lt: 'orbe' });
@@ -298,9 +411,12 @@ function creePartie(nomMap) {
   }
   // Copie de travail : la carte de reference n'est jamais modifiee
   const obs = obsDeMap(map);
+  // Les huttes sont indestructibles : leurs murs ne changent jamais
+  const murs = mursDe(obs);
   return {
     map, monde: map.monde, mapVer: 1, avionPrevu,
     rng, obs, arbres: obs.filter(estSolide), arbresGrid: null,
+    murs, mursGrid: murs.length ? grilleMurs(murs) : null,
     t: 0, tick: 0, fini: false, vainqueur: null,
     demarree: false, nbMax: 0, balleId: 0,
     zone: { x: map.zone.cx, y: map.zone.cy, r: map.zone.r0 },
@@ -352,6 +468,15 @@ function majBalles(p, arr) {
     if (nx2 < 0 || nx2 > p.monde || ny2 < 0 || ny2 > p.monde) { p.balles.splice(k, 1); continue; }
     const nx = nx2, ny = ny2;
     let mort = false;
+    // Mur de hutte sur le trajet : la balle s'y arrete, sans degat
+    if (p.mursGrid) {
+      const vus = new Set();
+      for (const q of [[b.x, b.y], [nx, ny]]) for (const w of mursPres(p, q[0], q[1])) {
+        if (vus.has(w)) continue; vus.add(w);
+        if (segmentMur(b.x, b.y, nx, ny, w, R_BALLE)) { mort = true; break; }
+      }
+      if (mort) { p.balles.splice(k, 1); continue; }
+    }
     for (const o of (p.arbresGrid ? queryGrid(p.arbresGrid, nx, ny) : (p.arbres || p.obs))) {
       if (!estSolide(o)) continue;
       if (Math.hypot(o.x - nx, o.y - ny) < o.r + R_BALLE) {
@@ -602,7 +727,7 @@ function borne(a, monde) {
   a.y = Math.min(monde - R_JOUEUR, Math.max(R_JOUEUR, a.y));
 }
 
-function deplaceSolo(a, dx, dy, obs, maxIter, monde, grid) {
+function deplaceSolo(a, dx, dy, obs, maxIter, monde, grid, p) {
   a.x += dx; a.y += dy; borne(a, monde);
   // obs doit déjà être la liste des arbres (pré-filtrée).
   // Avec une grande carte la liste complete coute cher : on interroge la
@@ -620,6 +745,8 @@ function deplaceSolo(a, dx, dy, obs, maxIter, monde, grid) {
         a.x += nx / d * (min - d); a.y += ny / d * (min - d);
       }
     }
+    // murs des huttes
+    if (p && p.mursGrid) for (const w of mursPres(p, a.x, a.y)) if (pousseMur(a, R_JOUEUR, w)) hit = true;
     if (!hit) break;
   }
   borne(a, monde);
@@ -669,7 +796,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   // sorties plus haut.
   const vit = VITESSE * (dansIle(p, a.x, a.y) ? 1 : EAU_LENTEUR);
   // Bots : 1 itération de collision (précision réduite mais 3× plus rapide)
-  deplaceSolo(a, mx * vit * dt, my * vit * dt, p.arbres || p.obs, a.estBot ? 1 : 3, p.monde, p.arbresGrid);
+  deplaceSolo(a, mx * vit * dt, my * vit * dt, p.arbres || p.obs, a.estBot ? 1 : 3, p.monde, p.arbresGrid, p);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
   if (cmd.poing && a._pCd < 0.02) {
@@ -1084,6 +1211,8 @@ function changeMap(p, nomMap) {
   p.obs = obsDeMap(map);
   p.arbres = null;        // caches de collision invalides
   p.arbresGrid = null;
+  p.murs = mursDe(p.obs);
+  p.mursGrid = p.murs.length ? grilleMurs(p.murs) : null;
   p.balles = [];          // balles encore en vol sur l'ancienne carte
   p.evts = [];            // impacts rattaches a l'ancien decor
   p.zone = { x: map.zone.cx, y: map.zone.cy, r: map.zone.r0 };
@@ -1152,7 +1281,7 @@ function apercuPartie(p) {
   const av = p.avionPrevu;
   return {
     monde: mp.monde, ile: mp.ile,
-    decor: mp.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed })),
+    decor: mp.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed, v: o.v, rot: o.rot })),
     avion: { x0: av.x0, y0: av.y0, x1: av.x1, y1: av.y1, angle: av.angle, v: AVION_V },
   };
 }
@@ -1168,7 +1297,7 @@ function payloadCarte(p) {
       ZONE_ATTENTE: zc.attente, ZONE_DUREE: zc.duree, ZONE_R0: zc.r0, ZONE_R1: zc.r1,
     },
     ile: p.map.ile,
-    decor: p.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, seed: o.seed })),
+    decor: p.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, seed: o.seed, v: o.v, rot: o.rot })),
     // Apercu de la carte de partie pendant l'attente : de quoi ouvrir la
     // vraie carte depuis le lobby et y lire le trajet de l'avion.
     apercu: apercuPartie(p),
