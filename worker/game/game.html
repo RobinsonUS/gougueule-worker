@@ -102,7 +102,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe','feuille','hutte1','hutte1_toit','hutte2','hutte2_toit'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe','feuille','hutte1','hutte1_toit','hutte2','hutte2_toit','hutte1_ruine','hutte2_ruine','bois'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // weapon_XM8 : supprimer le fond blanc
 (function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
   var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
@@ -486,6 +486,7 @@ var HUTTE = (function () {
     K: K, B: B, I: I, D: D, R: 250,
     ECH: 0.58367 * K,     // unites monde par pixel d'image (corps : 398 px = 232,3 unites x K)
     CX: 208, CY: 208,     // centre du corps dans les images
+    RCX: 240, RCY: 240,   // idem dans les images de ruine (plus larges : gravats)
     OMBRE: 7.6 * K,       // debord de l'ombre, releve sur le vrai jeu
     OMBRE_DY: 2.0 * K,        // l'ombre descend un peu plus qu'elle ne monte
     murs: [
@@ -555,12 +556,12 @@ function huttePrete(v) { return vegPret('hutte' + v) && vegPret('hutte' + v + '_
 // Corps, toit et anneau d'ombre a la taille d'ecran, calcules une fois par
 // taille (arrondie a 8 px pres), jamais a chaque image.
 var _hutteCache = {};
-function hutteCanevas(v, largeurEcran) {
-  var sp = SPRITES['hutte' + v], st = SPRITES['hutte' + v + '_toit'];
+function hutteCanevas(v, largeurEcran, ruine) {
+  var sp = SPRITES['hutte' + v + (ruine ? '_ruine' : '')], st = ruine ? sp : SPRITES['hutte' + v + '_toit'];
   var tPx = Math.max(8, Math.round(largeurEcran / 8) * 8);
   var d = Math.max(1, Math.round(HUTTE.OMBRE * PXV));
   var dy = Math.round(HUTTE.OMBRE_DY * PXV);
-  var cle = v + ':' + tPx + ':' + d + ':' + dy;
+  var cle = v + (ruine ? 'r' : '') + ':' + tPx + ':' + d + ':' + dy;
   var e = _hutteCache[cle];
   if (e) return e;
   var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
@@ -591,13 +592,41 @@ function hutteCanevas(v, largeurEcran) {
   _hutteCache[cle] = e;
   return e;
 }
-// quoi : 0 = corps, 1 = ombre, 2 = toit
-function dessineHutte(o, quoi) {
+// Tremblement sous les balles : comme le bigbush, attenue vu la taille
+function secousseHutte(o) {
+  var s = o.secousse || 0;
+  if (s <= 0) return { x: 0, y: 0 };
+  var a = HUTTE.B * 0.07 * (s / 0.22);
+  return { x: Math.sin(s * 130) * a, y: Math.cos(s * 155) * a * 0.55 };
+}
+// Avancement du fondu intact -> ruine, de 0 a 1 (tres rapide)
+var RUINE_FONDU = 0.15;
+function fonduRuine(o) {
+  if (o.type !== 'ruine') return 0;
+  if (!o.tRuine) return 1;
+  return Math.min(1, (Date.now() - o.tRuine) / (RUINE_FONDU * 1000));
+}
+function ruinePrete(v) { return vegPret('hutte' + v + '_ruine'); }
+// quoi : 0 = corps, 1 = ombre, 2 = toit. ruine : l'image de la hutte detruite.
+function dessineHutte(o, quoi, ruine) {
   var v = o.v === 2 ? 2 : 1;
   var S = HUTTE.ECH;
+  var q = secousseHutte(o);
   ctx.save();
-  ctx.translate(o.x, o.y);
+  ctx.translate(o.x + q.x, o.y + q.y);
   ctx.rotate(((o.rot | 0) % 4) * Math.PI / 2);
+  if (ruine) {
+    if (!ruinePrete(v) || quoi === 2) { ctx.restore(); return; }
+    var sr = SPRITES['hutte' + v + '_ruine'];
+    var er = hutteCanevas(v, (sr.naturalWidth || sr.width) * S * PXV, true);
+    var fr = S / er.k, oxr = -HUTTE.RCX * S, oyr = -HUTTE.RCY * S;
+    if (quoi === 1) {
+      ctx.globalAlpha *= VEG_OMBRE_ALPHA;
+      ctx.drawImage(er.co, oxr - er.d * fr, oyr - er.d * fr, er.co.width * fr, er.co.height * fr);
+    } else ctx.drawImage(er.cs, oxr, oyr, er.cs.width * fr, er.cs.height * fr);
+    ctx.restore();
+    return;
+  }
   if (!huttePrete(v)) {                   // le temps que les images arrivent
     if (quoi !== 1) {
       ctx.fillStyle = quoi === 2 ? '#7d8a96' : '#a97c6a';
@@ -1273,7 +1302,7 @@ function vegMini(nom, tPx) {
 // y reste l'arbre d'origine. Renvoie faux si l'image n'est pas encore la.
 function dessineVegMini(c, ob, k) {
   if (ob.type === 'vide') return true;             // objet detruit : plus rien
-  if (ob.type === 'hutte') { dessineHutteMini(c, ob, k); return true; }
+  if (ob.type === 'hutte' || ob.type === 'ruine') { dessineHutteMini(c, ob, k); return true; }
   var nom = nomVeg(ob);                            // une souche montre l'objet d'origine
   var genre = nom === 'buisson' ? 'buisson' : (nom === 'orbe' ? 'orbe' : 'arbre');
   if (!vegPret(nom)) return false;
@@ -2481,10 +2510,20 @@ function dessine(p, moi, viseur, drag) {
 
   // Huttes : ombre puis corps (murs et plancher), au ras du sol. Le toit
   // viendra bien plus tard, par-dessus les joueurs.
+  // Une ruine apparait en fondu (tres court) sur la hutte intacte.
   const huttes = [];
-  for (const o of p.obs) if (o.type === 'hutte' && visible(o)) huttes.push(o);
-  for (const o of huttes) dessineHutte(o, 1);
-  for (const o of huttes) dessineHutte(o, 0);
+  for (const o of p.obs) if ((o.type === 'hutte' || o.type === 'ruine') && visible(o)) huttes.push(o);
+  // La ruine est posee d'emblee, la hutte intacte s'efface par-dessus :
+  // jamais de trou ou l'herbe transparaitrait pendant le fondu.
+  const parCouche = (quoi) => {
+    for (const o of huttes) {
+      const t = fonduRuine(o);
+      if (o.type === 'ruine') dessineHutte(o, quoi, true);
+      if (t < 1) { ctx.globalAlpha = 1 - t; dessineHutte(o, quoi, false); ctx.globalAlpha = 1; }
+    }
+  };
+  parCouche(1);
+  parCouche(0);
 
   // ombres du decor
   for (const o of p.obs) {
@@ -2665,6 +2704,13 @@ function dessine(p, moi, viseur, drag) {
       const hh = q.L, ww = q.L * q.ratio * (cv.width / cv.height);
       ctx.drawImage(cv, -ww / 2, -hh / 2, ww, hh);
 
+    } else if (q.type === 'bois') {
+      ctx.translate(q.x, q.y);
+      ctx.rotate(q.rot);
+      const cv = boisVariante(q.ton);
+      const hh = q.L, ww = q.L * q.ratio * (cv.width / cv.height);
+      ctx.drawImage(cv, -ww / 2, -hh / 2, ww, hh);
+
     } else {
       const _qa = q._aMax!==undefined ? Math.min(q._aMax, alphaVal) : alphaVal;
       ctx.globalAlpha = _qa * 0.55;
@@ -2689,6 +2735,13 @@ function dessine(p, moi, viseur, drag) {
   // devant de la facade. A pied seulement : de l'avion ou en parachute, le
   // toit reste pose.
   for (const o of huttes) {
+    if (o.type === 'ruine') {              // le toit s'efface avec le reste
+      const t = fonduRuine(o);
+      if (t < 1 && (o.toitA || 0) > 0) {
+        ctx.globalAlpha = o.toitA * (1 - t); dessineHutte(o, 2, false); ctx.globalAlpha = 1;
+      }
+      continue;
+    }
     const ouvert = aPied && voitDansHutte(o, a.x, a.y);
     if (o.toitA === undefined) o.toitA = ouvert ? 0 : 1;
     o.toitA += ((ouvert ? 0 : 1) - o.toitA) * 0.3;
@@ -2750,7 +2803,7 @@ function dessine(p, moi, viseur, drag) {
     if (_na === undefined) _na = 1;
     // sous un toit ferme, on ne devine meme pas son nom
     for (var _hi = 0; _hi < huttes.length; _hi++)
-      if (sousLeToit(huttes[_hi], _nj.x, _nj.y)) _na *= 1 - (huttes[_hi].toitA || 0);
+      if (huttes[_hi].type === 'hutte' && sousLeToit(huttes[_hi], _nj.x, _nj.y)) _na *= 1 - (huttes[_hi].toitA || 0);
     if (_na <= 0.01) continue;
     dessineNom(_nj.x, _nj.y, _nj.name || '?', _na);
   }
@@ -3098,6 +3151,60 @@ function genFeuilles(n, x, y, vitMin, vitMax, dir) {
   }
 }
 
+// ─── Eclats de bois (hutte detruite) ───
+// Une seule image, en quelques bruns plus ou moins clairs
+var BOIS_TONS = [[166, 124, 82], [140, 102, 66], [122, 88, 56], [186, 142, 96], [154, 114, 74]];
+var _bois = null;
+function boisVariante(i) {
+  if (!_bois) {
+    var sp = SPRITES.bois;
+    var w = sp.naturalWidth || sp.width, h = sp.naturalHeight || sp.height;
+    _bois = BOIS_TONS.map(function (ton) {
+      var cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      var g = cv.getContext('2d');
+      g.drawImage(sp, 0, 0);
+      var im = g.getImageData(0, 0, w, h), d = im.data;
+      for (var k = 0; k < d.length; k += 4) {
+        if (d[k + 3] < 8 || d[k] < 100) continue;   // le trait sombre reste tel quel
+        var f = d[k] / 166;                          // garde les nuances du dessin
+        d[k] = Math.min(255, ton[0] * f);
+        d[k + 1] = Math.min(255, ton[1] * f);
+        d[k + 2] = Math.min(255, ton[2] * f);
+      }
+      g.putImageData(im, 0, 0);
+      return cv;
+    });
+  }
+  return _bois[i % _bois.length];
+}
+// Quelques eclats a chacun des 4 coins, projetes vers l'exterieur
+function genBois(o) {
+  var sp = SPRITES.bois;
+  if (!(sp && (sp.naturalWidth || sp.width))) return;
+  var B = HUTTE.B;
+  var coins = [[-B, -B], [B, -B], [-B, B], [B, B]];
+  for (var c = 0; c < 4; c++) {
+    var cx = o.x + coins[c][0], cy = o.y + coins[c][1];
+    var dir = Math.atan2(coins[c][1], coins[c][0]);
+    var n = 3 + ((Math.random() * 3) | 0);
+    for (var q = 0; q < n; q++) {
+      var an = dir + (Math.random() - 0.5) * 1.6;
+      var vi = 90 + Math.random() * 230;
+      var L = 24 + Math.random() * 16;              // longueur, en unites monde
+      localParticules.push({ type: 'bois',
+        x: cx + (Math.random() - 0.5) * 30, y: cy + (Math.random() - 0.5) * 30,
+        vx: Math.cos(an) * vi, vy: Math.sin(an) * vi,
+        L: L, ratio: 0.85 + Math.random() * 0.3,
+        ton: (Math.random() * BOIS_TONS.length) | 0,
+        rot: Math.random() * Math.PI * 2, vrot: (Math.random() - 0.5) * 7,
+        r: L * 0.5, vie: 0, vieMax: 0 });
+      var dern = localParticules[localParticules.length - 1];
+      dern.vie = dern.vieMax = 0.55 + Math.random() * 0.45;   // bien visibles au depart
+    }
+  }
+}
+
 function genTreeDebris(o) {
   // Le bigbush garde ses eclats gris, mais en nombre proportionnel a sa
   // surface : autant d'eclats au metre carre qu'un arbre.
@@ -3258,7 +3365,7 @@ function initObs(decor) {
     // base = ce que l'objet etait avant d'etre abattu : la trace au sol en
     // garde la forme.
     var n = Object.assign({}, o, c, { alphaVis: 1, base: o.type });
-    if (n.type === 'hutte') prepareHutte(n);
+    if (n.type === 'hutte' || n.type === 'ruine') prepareHutte(n);
     return n;
   });
   prevObsTypes = {};
@@ -3276,6 +3383,7 @@ function majObs(decorMaj, mapVer) {
     var etait = prevObsTypes[m.idx];
     if (etait === 'arbre' && m.type === 'souche') genTreeDebris(o);
     if (etait === 'orbe' && m.type === 'souche') genTreeDebris(o);
+    if (etait === 'hutte' && m.type === 'ruine') { o.tRuine = Date.now(); genBois(o); }
     // Un coup qui ne tue pas fait quand meme tomber une feuille ou deux,
     // au bord du feuillage. Une fois sur deux.
     var frappe = (m.secousse || 0) > (o.secousse || 0) + 0.02;
