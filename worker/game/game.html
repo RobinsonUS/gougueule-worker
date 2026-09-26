@@ -177,8 +177,8 @@ const C = {
   eauLoin:     '#0f5a8e',
   ligneEau:    '#0f6cae',
   ligneEauLoin:'#0e5383',   // le quadrillage continue au large, tres sombre
-  ombre:       'rgba(0,0,0,0.13)',
-  ombreDouce:  'rgba(0,0,0,0.06)',   // arbres, buissons, joueurs, bigbush
+  ombre:       'rgba(0,0,0,0.14)',
+  ombreDouce:  'rgba(0,0,0,0.07)',   // arbres, buissons, joueurs, bigbush
   // Couleurs relevees sur les images des arbres et buissons : la minimap et
   // la carte du monde, qui dessinent des formes simples, restent assorties.
   buisson: {
@@ -188,7 +188,7 @@ const C = {
     tache: '#77b855',
   },
   traitArbre: '#303030',
-  souche:     'rgba(40,52,32,0.13)',
+  souche:     'rgba(40,52,32,0.14)',
   aura:       'rgba(230,60,50,0.45)',
   invPlein:   '#d7d9cf',
   invBord:    'rgba(255,255,255,0.55)',
@@ -326,8 +326,8 @@ var VEG_ECH = { arbre: 1.0044, buisson: 0.9980, orbe: 1.0543 };  // calibre sur 
 // Debord de l'ombre autour du contour, en unites monde. Calibre pour que
 // l'anneau depasse du feuillage autant que l'ancien (bande de 13,5 dont la
 // moitie interieure etait cachee sous le feuillage).
-var VEG_OMBRE = { arbre: 9.0, buisson: 6.5, orbe: 19.0 };   // ombre large, relevee sur le vrai jeu
-var VEG_OMBRE_ALPHA = 0.06;                       // meme valeur que C.ombreDouce
+var VEG_OMBRE = { arbre: 10.8, buisson: 6.5, orbe: 19.0 };   // ombre large, relevee sur le vrai jeu
+var VEG_OMBRE_ALPHA = 0.07;                       // meme valeur que C.ombreDouce
 var _vegCache = {};
 
 function vegPret(nom) {
@@ -665,8 +665,8 @@ function dessineArme(R) {
 }
 
 // Epaisseur des halos d'ombre, en fraction de R.
-const HALO_TETE = 0.25 / 1.5;   // tete : 1.5 fois plus fin
-const HALO_ARME = 0.25 / 2;     // arme + bras : 2 fois plus fin
+const HALO_TETE = 0.25;         // tete
+const HALO_ARME = 0.1875;       // arme + bras : un quart plus fin
 
 // Silhouette d'ombre du sprite XM8 (tete + bras + arme), fabriquee une
 // seule fois puis mise en cache. L'arme est obtenue en dilatant le
@@ -2861,12 +2861,14 @@ function feuillePrete() {
 
 // n feuilles projetees depuis (x, y), plus ou moins rondes et plus ou
 // moins claires. Taille relevee sur le vrai jeu : ~20 unites de long.
-function genFeuilles(n, x, y, vitMin, vitMax) {
+// dir : direction de projection (radians). Sans elle, au hasard.
+function genFeuilles(n, x, y, vitMin, vitMax, dir) {
   if (!feuillePrete()) return;
   for (var q = 0; q < n; q++) {
-    var an = Math.random() * Math.PI * 2;
+    var an = dir === undefined ? Math.random() * Math.PI * 2
+                               : dir + (Math.random() - 0.5) * 0.7;
     var vi = vitMin + Math.random() * (vitMax - vitMin);
-    var L = 15 + Math.random() * 9;                 // longueur, en unites monde
+    var L = 11 + Math.random() * 17;                // longueur, en unites monde
     localParticules.push({ type: 'feuille', x: x, y: y,
       vx: Math.cos(an) * vi, vy: Math.sin(an) * vi,
       L: L, ratio: 0.58 + Math.random() * 0.34,     // de l'ovale au presque rond
@@ -2898,9 +2900,11 @@ function genTreeDebris(o) {
     }
     return;
   }
+  // Chaque feuille part du centre vers l'exterieur : l'arbre explose au
+  // lieu de s'affaisser sur place.
   for (var i2 = 0; i2 < 22; i2++) {
     var a3 = Math.random() * Math.PI * 2, d3 = Math.random() * o.r * 0.75;
-    genFeuilles(1, o.x + Math.cos(a3) * d3, o.y + Math.sin(a3) * d3, 90, 350);
+    genFeuilles(1, o.x + Math.cos(a3) * d3, o.y + Math.sin(a3) * d3, 120, 380, a3);
   }
 }
 
@@ -3056,7 +3060,8 @@ function majObs(decorMaj, mapVer) {
     if (frappe && m.type === 'arbre' && Math.random() < 0.5) {
       var ang = Math.random() * Math.PI * 2;
       genFeuilles(1 + ((Math.random() * 2) | 0),
-                  o.x + Math.cos(ang) * o.r * 0.9, o.y + Math.sin(ang) * o.r * 0.9, 40, 150);
+                  o.x + Math.cos(ang) * o.r * 0.9, o.y + Math.sin(ang) * o.r * 0.9,
+                  40, 150, ang);
     }
     // La minimap ne suit pas les arbres abattus : elle montre la carte
     // d'origine, comme la carte du monde. Rien a repeindre ici.
