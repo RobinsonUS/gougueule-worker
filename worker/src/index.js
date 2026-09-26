@@ -19,6 +19,10 @@ import arbreSombre  from '../game/arbre_sombre.png';
 import buissonImg   from '../game/buisson.png';
 import orbeImg      from '../game/orbe.png';
 import feuilleImg   from '../game/feuille.png';
+import hutte1Img    from '../game/hutte1.png';
+import hutte1ToitImg from '../game/hutte1_toit.png';
+import hutte2Img    from '../game/hutte2.png';
+import hutte2ToitImg from '../game/hutte2_toit.png';
 import arm          from '../game/arm.png';
 import hand         from '../game/hand.png';
 import head         from '../game/head.png';
@@ -177,6 +181,10 @@ export default {
       '/game/buisson.png':        buissonImg,
       '/game/orbe.png':           orbeImg,
       '/game/feuille.png':        feuilleImg,
+      '/game/hutte1.png':         hutte1Img,
+      '/game/hutte1_toit.png':    hutte1ToitImg,
+      '/game/hutte2.png':         hutte2Img,
+      '/game/hutte2_toit.png':    hutte2ToitImg,
       '/game/arm.png':          arm,
       '/game/hand.png':         hand,
       '/game/head.png':         head,
