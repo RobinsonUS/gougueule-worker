@@ -18,6 +18,7 @@ import arbreRouge   from '../game/arbre_rouge.png';
 import arbreSombre  from '../game/arbre_sombre.png';
 import buissonImg   from '../game/buisson.png';
 import orbeImg      from '../game/orbe.png';
+import feuilleImg   from '../game/feuille.png';
 import arm          from '../game/arm.png';
 import hand         from '../game/hand.png';
 import head         from '../game/head.png';
@@ -175,6 +176,7 @@ export default {
       '/game/arbre_sombre.png':   arbreSombre,
       '/game/buisson.png':        buissonImg,
       '/game/orbe.png':           orbeImg,
+      '/game/feuille.png':        feuilleImg,
       '/game/arm.png':          arm,
       '/game/hand.png':         hand,
       '/game/head.png':         head,
