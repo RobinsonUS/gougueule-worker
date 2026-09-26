@@ -3178,29 +3178,44 @@ function boisVariante(i) {
   }
   return _bois[i % _bois.length];
 }
-// Quelques eclats a chacun des 4 coins, projetes vers l'exterieur
+// Eclats projetes vers l'exterieur : quelques-uns a chacun des 4 coins, et
+// quelques-uns le long des 3 murs pleins (pas la facade, qui a la porte).
+function eclatBois(x, y, dir, ouverture) {
+  var an = dir + (Math.random() - 0.5) * ouverture;
+  var vi = 90 + Math.random() * 230;
+  var L = 12 + Math.random() * 8;                   // longueur, en unites monde
+  var vie = 0.55 + Math.random() * 0.45;            // bien visibles au depart
+  localParticules.push({ type: 'bois', x: x, y: y,
+    vx: Math.cos(an) * vi, vy: Math.sin(an) * vi,
+    L: L, ratio: 0.85 + Math.random() * 0.3,
+    ton: (Math.random() * BOIS_TONS.length) | 0,
+    rot: Math.random() * Math.PI * 2, vrot: (Math.random() - 0.5) * 7,
+    r: L * 0.5, vie: vie, vieMax: vie });
+}
 function genBois(o) {
   var sp = SPRITES.bois;
   if (!(sp && (sp.naturalWidth || sp.width))) return;
-  var B = HUTTE.B;
+  var B = HUTTE.B, rot = ((o.rot | 0) % 4) * Math.PI / 2;
+  var c = Math.cos(rot), sn = Math.sin(rot);
+  // repere local de la hutte (perron vers +y) -> monde
+  var eclat = function (u, v, dir, ouv) {
+    eclatBois(o.x + u * c - v * sn, o.y + u * sn + v * c, dir + rot, ouv);
+  };
   var coins = [[-B, -B], [B, -B], [-B, B], [B, B]];
-  for (var c = 0; c < 4; c++) {
-    var cx = o.x + coins[c][0], cy = o.y + coins[c][1];
-    var dir = Math.atan2(coins[c][1], coins[c][0]);
-    var n = 3 + ((Math.random() * 3) | 0);
-    for (var q = 0; q < n; q++) {
-      var an = dir + (Math.random() - 0.5) * 1.6;
-      var vi = 90 + Math.random() * 230;
-      var L = 24 + Math.random() * 16;              // longueur, en unites monde
-      localParticules.push({ type: 'bois',
-        x: cx + (Math.random() - 0.5) * 30, y: cy + (Math.random() - 0.5) * 30,
-        vx: Math.cos(an) * vi, vy: Math.sin(an) * vi,
-        L: L, ratio: 0.85 + Math.random() * 0.3,
-        ton: (Math.random() * BOIS_TONS.length) | 0,
-        rot: Math.random() * Math.PI * 2, vrot: (Math.random() - 0.5) * 7,
-        r: L * 0.5, vie: 0, vieMax: 0 });
-      var dern = localParticules[localParticules.length - 1];
-      dern.vie = dern.vieMax = 0.55 + Math.random() * 0.45;   // bien visibles au depart
+  for (var k = 0; k < 4; k++) {
+    var n = 2 + ((Math.random() * 3) | 0);            // 2 a 4 par coin
+    for (var q = 0; q < n; q++)
+      eclat(coins[k][0] + (Math.random() - 0.5) * 24, coins[k][1] + (Math.random() - 0.5) * 24,
+            Math.atan2(coins[k][1], coins[k][0]), 1.6);
+  }
+  // murs : fond (vers -y), gauche (vers -x), droite (vers +x)
+  var murs = [[0, -B, -Math.PI / 2, true], [-B, 0, Math.PI, false], [B, 0, 0, false]];
+  for (var m = 0; m < 3; m++) {
+    var nm = 2 + ((Math.random() * 2) | 0);           // 2 ou 3 par mur
+    for (var q2 = 0; q2 < nm; q2++) {
+      var t = (Math.random() - 0.5) * B * 1.4;        // le long du mur, loin des coins
+      var u = murs[m][3] ? t : murs[m][0], v = murs[m][3] ? murs[m][1] : t;
+      eclat(u, v, murs[m][2], 1.2);
     }
   }
 }
