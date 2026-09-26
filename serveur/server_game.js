@@ -356,7 +356,7 @@ function majBalles(p, arr) {
       if (!estSolide(o)) continue;
       if (Math.hypot(o.x - nx, o.y - ny) < o.r + R_BALLE) {
         o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
-        if (o.pv <= 0) { o.pv = 0; o.type = o.type === 'orbe' ? 'vide' : 'souche'; o.secousse = 0; p.arbres = null; p.arbresGrid = null; }
+        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; p.arbresGrid = null; }
         mort = true; break;
       }
     }
@@ -688,7 +688,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
         const dot = (ex * Math.cos(a.angle) + ey * Math.sin(a.angle)) / dist;
         if (dot > 0.1) {
           o.pv -= MELEE_DEGATS; o.secousse = 0.22;
-          if (o.pv <= 0) { o.pv = 0; o.type = o.type === 'orbe' ? 'vide' : 'souche'; o.secousse = 0; p.arbres = null; }
+          if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; }
         }
       }
     }
