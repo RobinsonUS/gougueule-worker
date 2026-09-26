@@ -102,7 +102,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe','feuille'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // weapon_XM8 : supprimer le fond blanc
 (function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
   var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
@@ -178,7 +178,7 @@ const C = {
   ligneEau:    '#0f6cae',
   ligneEauLoin:'#0e5383',   // le quadrillage continue au large, tres sombre
   ombre:       'rgba(0,0,0,0.13)',
-  ombreDouce:  'rgba(0,0,0,0.11)',   // arbres, buissons, joueurs
+  ombreDouce:  'rgba(0,0,0,0.06)',   // arbres, buissons, joueurs, bigbush
   // Couleurs relevees sur les images des arbres et buissons : la minimap et
   // la carte du monde, qui dessinent des formes simples, restent assorties.
   buisson: {
@@ -326,8 +326,8 @@ var VEG_ECH = { arbre: 1.0044, buisson: 0.9980, orbe: 1.0543 };  // calibre sur 
 // Debord de l'ombre autour du contour, en unites monde. Calibre pour que
 // l'anneau depasse du feuillage autant que l'ancien (bande de 13,5 dont la
 // moitie interieure etait cachee sous le feuillage).
-var VEG_OMBRE = { arbre: 6.0, buisson: 6.5, orbe: 19.0 };   // ombre large, relevee sur le vrai jeu
-var VEG_OMBRE_ALPHA = 0.11;                       // meme valeur que C.ombreDouce
+var VEG_OMBRE = { arbre: 9.0, buisson: 6.5, orbe: 19.0 };   // ombre large, relevee sur le vrai jeu
+var VEG_OMBRE_ALPHA = 0.06;                       // meme valeur que C.ombreDouce
 var _vegCache = {};
 
 function vegPret(nom) {
@@ -364,7 +364,16 @@ function vegCanevas(nom, largeurEcran, debord) {
   g.fillRect(0, 0, co.width, co.height);
   g.globalCompositeOperation = 'destination-out';
   g.drawImage(cs, d, d);
-  e = { cs: cs, co: co, d: d };
+  // Silhouette pleine : la trace laissee au sol par un objet detruit a
+  // exactement la forme et la taille de l'objet.
+  var csil = document.createElement('canvas');
+  csil.width = cs.width; csil.height = cs.height;
+  var gs = csil.getContext('2d');
+  gs.drawImage(cs, 0, 0);
+  gs.globalCompositeOperation = 'source-in';
+  gs.fillStyle = C.souche;
+  gs.fillRect(0, 0, csil.width, csil.height);
+  e = { cs: cs, co: co, csil: csil, d: d };
   _vegCache[cle] = e;
   return e;
 }
@@ -388,9 +397,11 @@ function dessineVeg(nom, o, x, y, ombre) {
   ctx.translate(x, y);
   ctx.rotate(o.phase || 0);
   var ox = -m.cx * ech, oy = -m.cy * ech;
-  if (ombre) {
+  if (ombre === 1) {                               // l'ombre portee
     ctx.globalAlpha *= VEG_OMBRE_ALPHA;
     ctx.drawImage(e.co, ox - e.d * f, oy - e.d * f, e.co.width * f, e.co.height * f);
+  } else if (ombre === 2) {                        // la trace au sol
+    ctx.drawImage(e.csil, ox, oy, e.csil.width * f, e.csil.height * f);
   } else {
     ctx.drawImage(e.cs, ox, oy, e.cs.width * f, e.cs.height * f);
   }
@@ -401,18 +412,21 @@ function dessineVeg(nom, o, x, y, ombre) {
 // pour le feuillage
 function decalageSecousse(o) {
   var s = o.secousse || 0, r = o.r;
-  return { x: o.x + (s > 0 ? Math.sin(s * 130) * r * 0.09 * (s / 0.22) : 0),
-           y: o.y + (s > 0 ? Math.cos(s * 155) * r * 0.05 * (s / 0.22) : 0) };
+  // Le bigbush est enorme : un tremblement proportionnel a sa taille ferait
+  // sauter la moitie de l'ecran. On le divise par deux et demi.
+  var k = (o.type === 'orbe' || o.base === 'orbe') ? 0.4 : 1;
+  return { x: o.x + (s > 0 ? Math.sin(s * 130) * r * 0.09 * k * (s / 0.22) : 0),
+           y: o.y + (s > 0 ? Math.cos(s * 155) * r * 0.05 * k * (s / 0.22) : 0) };
 }
 
 function dessineOmbreArbre(o) {
   var nom = VEG_ARBRES[o.teinte] || VEG_ARBRES[0];
-  if (vegPret(nom)) { var q = decalageSecousse(o); dessineVeg(nom, o, q.x, q.y, true); return; }
+  if (vegPret(nom)) { var q = decalageSecousse(o); dessineVeg(nom, o, q.x, q.y, 1); return; }
   dessineOmbreArbreDessin(o);
 }
 function dessineArbreTexture(o) {
   var nom = VEG_ARBRES[o.teinte] || VEG_ARBRES[0];
-  if (vegPret(nom)) { var q = decalageSecousse(o); dessineVeg(nom, o, q.x, q.y, false); return; }
+  if (vegPret(nom)) { var q = decalageSecousse(o); dessineVeg(nom, o, q.x, q.y, 0); return; }
   dessineArbreTextureDessin(o);
 }
 // L'orbe du lobby : meme dessin et meme ombre que la vegetation, mais
@@ -420,7 +434,7 @@ function dessineArbreTexture(o) {
 function dessineOmbreOrbe(o) {
   if (!vegPret('orbe')) return;
   var q = decalageSecousse(o);
-  dessineVeg('orbe', o, q.x, q.y, true);
+  dessineVeg('orbe', o, q.x, q.y, 1);
 }
 function dessineOrbeTexture(o) {
   var q = decalageSecousse(o);
@@ -429,14 +443,14 @@ function dessineOrbeTexture(o) {
     ctx.beginPath(); ctx.arc(q.x, q.y, o.r, 0, Math.PI * 2); ctx.fill();
     return;
   }
-  dessineVeg('orbe', o, q.x, q.y, false);
+  dessineVeg('orbe', o, q.x, q.y, 0);
 }
 function dessineOmbreBuisson(o) {
-  if (vegPret('buisson')) { dessineVeg('buisson', o, o.x, o.y, true); return; }
+  if (vegPret('buisson')) { dessineVeg('buisson', o, o.x, o.y, 1); return; }
   dessineOmbreBuissonDessin(o);
 }
 function dessineBuissonTexture(o) {
-  if (vegPret('buisson')) { dessineVeg('buisson', o, o.x, o.y, false); return; }
+  if (vegPret('buisson')) { dessineVeg('buisson', o, o.x, o.y, 0); return; }
   dessineBuissonTextureDessin(o);
 }
 
@@ -494,11 +508,20 @@ function dessineArbreTextureDessin(o) {
   }
 }
 
+// Trace laissee au sol : exactement la forme et la taille de l'objet abattu,
+// arbre comme bigbush.
+function nomVeg(o) {
+  var base = o.base || o.type;
+  if (base === 'orbe') return 'orbe';
+  if (base === 'buisson') return 'buisson';
+  return VEG_ARBRES[o.teinte] || VEG_ARBRES[0];
+}
 function dessineSouche(o) {
+  var nom = nomVeg(o);
+  if (vegPret(nom)) { dessineVeg(nom, o, o.x, o.y, 2); return; }
   const { x, y, r, lobes, phase } = o;
-  const amp = 0.075;
   ctx.fillStyle = C.souche;
-  cheminBlob(x, y, r * 0.92, lobes, phase, amp);
+  cheminBlob(x, y, r * 0.92, lobes, phase, 0.075);
   ctx.fill();
 }
 
@@ -1062,8 +1085,8 @@ function vegMini(nom, tPx) {
 // y reste l'arbre d'origine. Renvoie faux si l'image n'est pas encore la.
 function dessineVegMini(c, ob, k) {
   if (ob.type === 'vide') return true;             // objet detruit : plus rien
-  var genre = vegGenre(ob);
-  var nom = genre === 'arbre' ? (VEG_ARBRES[ob.teinte] || VEG_ARBRES[0]) : genre;
+  var nom = nomVeg(ob);                            // une souche montre l'objet d'origine
+  var genre = nom === 'buisson' ? 'buisson' : (nom === 'orbe' ? 'orbe' : 'arbre');
   if (!vegPret(nom)) return false;
   var sp = SPRITES[nom], m = VEG[nom];
   var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
@@ -2433,6 +2456,13 @@ function dessine(p, moi, viseur, drag) {
       ctx.ellipse(0, 0, longueur * 0.7, epaisseur, 0, 0, Math.PI * 2);
       ctx.fill();
 
+    } else if (q.type === 'feuille') {
+      ctx.translate(q.x, q.y);
+      ctx.rotate(q.rot);
+      const cv = feuilleVariante(q.ton);
+      const hh = q.L, ww = q.L * q.ratio * (cv.width / cv.height);
+      ctx.drawImage(cv, -ww / 2, -hh / 2, ww, hh);
+
     } else {
       const _qa = q._aMax!==undefined ? Math.min(q._aMax, alphaVal) : alphaVal;
       ctx.globalAlpha = _qa * 0.55;
@@ -2789,12 +2819,88 @@ function genMuzzleFlash(a) {
   }
 }
 
+// ─── Feuilles d'arbre ───────────────────────────────────────────────
+// Une seule image, declinee en plusieurs teintes : du vert clair au brun
+// et a l'orange. La teinte ne touche que l'interieur, le trait sombre du
+// contour reste le meme.
+var FEUILLE_TONS = [
+  [110, 142, 72], [79, 100, 55], [60, 78, 44],
+  [124, 92, 52], [96, 68, 40], [156, 108, 48],
+];
+var _feuilles = null;
+function feuilleVariante(i) {
+  if (!_feuilles) {
+    var sp = SPRITES.feuille;
+    var w = sp.naturalWidth || sp.width, h = sp.naturalHeight || sp.height;
+    _feuilles = FEUILLE_TONS.map(function (ton) {
+      var cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      var g = cv.getContext('2d');
+      g.drawImage(sp, 0, 0);
+      var im = g.getImageData(0, 0, w, h), d = im.data;
+      for (var k = 0; k < d.length; k += 4) {
+        if (d[k + 3] < 8) continue;
+        // l'interieur est vert : c'est lui qu'on reteinte
+        if (d[k + 1] > d[k] + 6 && d[k + 1] > d[k + 2] + 6) {
+          var f = d[k + 1] / 100;                 // garde les nuances du dessin
+          d[k] = Math.min(255, ton[0] * f);
+          d[k + 1] = Math.min(255, ton[1] * f);
+          d[k + 2] = Math.min(255, ton[2] * f);
+        }
+      }
+      g.putImageData(im, 0, 0);
+      return cv;
+    });
+  }
+  return _feuilles[i % _feuilles.length];
+}
+function feuillePrete() {
+  var sp = SPRITES.feuille;
+  return !!(sp && (sp.naturalWidth || sp.width));
+}
+
+// n feuilles projetees depuis (x, y), plus ou moins rondes et plus ou
+// moins claires. Taille relevee sur le vrai jeu : ~20 unites de long.
+function genFeuilles(n, x, y, vitMin, vitMax) {
+  if (!feuillePrete()) return;
+  for (var q = 0; q < n; q++) {
+    var an = Math.random() * Math.PI * 2;
+    var vi = vitMin + Math.random() * (vitMax - vitMin);
+    var L = 15 + Math.random() * 9;                 // longueur, en unites monde
+    localParticules.push({ type: 'feuille', x: x, y: y,
+      vx: Math.cos(an) * vi, vy: Math.sin(an) * vi,
+      L: L, ratio: 0.58 + Math.random() * 0.34,     // de l'ovale au presque rond
+      ton: (Math.random() * FEUILLE_TONS.length) | 0,
+      rot: Math.random() * Math.PI * 2, vrot: (Math.random() - 0.5) * 6,
+      r: L * 0.5, vie: 0.45 + Math.random() * 0.45, vieMax: 0.9 });
+  }
+}
+
 function genTreeDebris(o) {
-  for (var q = 0; q < 22; q++) {
-    var an = Math.random()*Math.PI*2, vi = 90+Math.random()*260, dd = Math.random()*o.r*0.75;
-    localParticules.push({x:o.x+Math.cos(an)*dd, y:o.y+Math.sin(an)*dd,
-      vx:Math.cos(an)*vi, vy:Math.sin(an)*vi,
-      r:o.r*(0.06+Math.random()*0.10), vie:0.45+Math.random()*0.45, vieMax:0.9});
+  // Le bigbush garde ses eclats gris, mais en nombre proportionnel a sa
+  // surface : autant d'eclats au metre carre qu'un arbre.
+  if ((o.base || o.type) === 'orbe') {
+    var n = Math.min(90, Math.round(22 * Math.pow(o.r / R_ARBRE, 2)));
+    for (var k = 0; k < n; k++) {
+      var a2 = Math.random()*Math.PI*2, v2 = 90+Math.random()*260, d2 = Math.random()*o.r*0.75;
+      localParticules.push({x:o.x+Math.cos(a2)*d2, y:o.y+Math.sin(a2)*d2,
+        vx:Math.cos(a2)*v2, vy:Math.sin(a2)*v2,
+        r:R_ARBRE*(0.06+Math.random()*0.10), vie:0.45+Math.random()*0.45, vieMax:0.9});
+    }
+    return;
+  }
+  if (!feuillePrete()) {                            // repli : les eclats gris
+    for (var q = 0; q < 22; q++) {
+      var an = Math.random()*Math.PI*2, vi = 90+Math.random()*260, dd = Math.random()*o.r*0.75;
+      localParticules.push({x:o.x+Math.cos(an)*dd, y:o.y+Math.sin(an)*dd,
+        vx:Math.cos(an)*vi, vy:Math.sin(an)*vi,
+        r:o.r*(0.06+Math.random()*0.10), vie:0.45+Math.random()*0.45, vieMax:0.9});
+    }
+    return;
+  }
+  for (var i2 = 0; i2 < 22; i2++) {
+    var a3 = Math.random() * Math.PI * 2, d3 = Math.random() * o.r * 0.75;
+    genFeuilles(1, o.x + Math.cos(a3) * d3, o.y + Math.sin(a3) * d3, 90, 350);
   }
 }
 
@@ -2924,8 +3030,10 @@ function dansIleLoc(x, y) {
 function initObs(decor) {
   localObs = (decor || []).map(function (o) {
     var c = cosmetiques(o.seed);
-    if (o.type === 'orbe') c.phase = 0;      // l'orbe se regarde toujours droit
-    return Object.assign({}, o, c, { alphaVis: 1 });
+    if (o.type === 'orbe') c.phase = 0;      // le bigbush se regarde droit
+    // base = ce que l'objet etait avant d'etre abattu : la trace au sol en
+    // garde la forme.
+    return Object.assign({}, o, c, { alphaVis: 1, base: o.type });
   });
   prevObsTypes = {};
   for (var i = 0; i < localObs.length; i++) prevObsTypes[i] = localObs[i].type;
@@ -2941,6 +3049,15 @@ function majObs(decorMaj, mapVer) {
     if (!o) continue;
     var etait = prevObsTypes[m.idx];
     if (etait === 'arbre' && m.type === 'souche') genTreeDebris(o);
+    if (etait === 'orbe' && m.type === 'souche') genTreeDebris(o);
+    // Un coup qui ne tue pas fait quand meme tomber une feuille ou deux,
+    // au bord du feuillage. Une fois sur deux.
+    var frappe = (m.secousse || 0) > (o.secousse || 0) + 0.02;
+    if (frappe && m.type === 'arbre' && Math.random() < 0.5) {
+      var ang = Math.random() * Math.PI * 2;
+      genFeuilles(1 + ((Math.random() * 2) | 0),
+                  o.x + Math.cos(ang) * o.r * 0.9, o.y + Math.sin(ang) * o.r * 0.9, 40, 150);
+    }
     // La minimap ne suit pas les arbres abattus : elle montre la carte
     // d'origine, comme la carte du monde. Rien a repeindre ici.
     o.type = m.type; o.pv = m.pv; o.secousse = m.secousse || 0;
