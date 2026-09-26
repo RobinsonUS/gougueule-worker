@@ -1086,6 +1086,89 @@ function lerpAngle(a, b, maxTurn) {
   return a + d;
 }
 
+// ─── Deplacement des bots autour des huttes ───
+// Un bot qui fonce droit sur sa cible bute contre les murs. On cherche donc
+// un chemin par quelques points de passage autour de chaque hutte proche :
+// ses 4 coins exterieurs, le devant de la porte et l'interieur. Plus court
+// chemin (Dijkstra) entre ces points, en ne gardant que les segments qui ne
+// traversent aucun mur.
+const NAV_MARGE = HUTTE.B + R_JOUEUR + 10;        // coins, a distance des murs
+const NAV_POINTS = [
+  [-NAV_MARGE, -NAV_MARGE], [NAV_MARGE, -NAV_MARGE],   // coins du fond
+  [-NAV_MARGE, 134.8 + R_JOUEUR + 10], [NAV_MARGE, 134.8 + R_JOUEUR + 10],  // coins de facade
+  [0, 205],                                          // devant la porte
+  [0, 20],                                           // dedans
+];
+function mursHutte(o) {
+  if (!o._murs) o._murs = HUTTE.murs.map(r => rectMonde(o, r));
+  return o._murs;
+}
+function huttesPres(p, x, y, gx, gy) {
+  if (!p.mursGrid) return VIDE;
+  const out = [];
+  for (const o of p.obs) {
+    if (!estHutte(o)) continue;
+    if (Math.hypot(o.x - x, o.y - y) < 650 || Math.hypot(o.x - gx, o.y - gy) < 400) out.push(o);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+// Marge un peu sous le rayon du joueur : un bot colle a un mur (pousse
+// pile a R) ne doit pas se croire bloque par lui.
+function voieLibre(murs, x0, y0, x1, y1, r) {
+  for (const w of murs) if (segmentMur(x0, y0, x1, y1, w, r)) return false;
+  return true;
+}
+// Prochain point a viser pour aller de (x, y) a (gx, gy)
+function prochainPas(p, x, y, gx, gy) {
+  const hs = huttesPres(p, x, y, gx, gy);
+  if (!hs.length) return { x: gx, y: gy };
+  const murs = [];
+  for (const o of hs) for (const w of mursHutte(o)) murs.push(w);
+  const r = R_JOUEUR - 2;
+  if (voieLibre(murs, x, y, gx, gy, r)) return { x: gx, y: gy };
+  const pts = [{ x, y }, { x: gx, y: gy }];
+  for (const o of hs) {
+    const q = ((o.rot | 0) % 4 + 4) % 4;
+    for (const [u, v] of NAV_POINTS) {
+      const [dx, dy] = q === 0 ? [u, v] : q === 1 ? [-v, u] : q === 2 ? [-u, -v] : [v, -u];
+      pts.push({ x: o.x + dx, y: o.y + dy });
+    }
+  }
+  const n = pts.length, dist = new Array(n).fill(Infinity), prec = new Array(n).fill(-1), fait = new Array(n).fill(false);
+  dist[0] = 0;
+  for (;;) {
+    let i = -1;
+    for (let k = 0; k < n; k++) if (!fait[k] && dist[k] < Infinity && (i < 0 || dist[k] < dist[i])) i = k;
+    if (i < 0 || i === 1) break;
+    fait[i] = true;
+    for (let k = 0; k < n; k++) {
+      if (fait[k] || k === i) continue;
+      const d = dist[i] + Math.hypot(pts[k].x - pts[i].x, pts[k].y - pts[i].y);
+      if (d >= dist[k]) continue;
+      if (!voieLibre(murs, pts[i].x, pts[i].y, pts[k].x, pts[k].y, r)) continue;
+      dist[k] = d; prec[k] = i;
+    }
+  }
+  if (prec[1] < 0) return { x: gx, y: gy };       // aucun chemin : tout droit
+  let k = 1;
+  while (prec[k] !== 0) k = prec[k];
+  return pts[k];
+}
+// Direction a prendre vers (gx, gy), detours compris
+function dirVers(p, bot, gx, gy) {
+  const c = prochainPas(p, bot.x, bot.y, gx, gy);
+  const dx = c.x - bot.x, dy = c.y - bot.y, d = Math.hypot(dx, dy) || 1;
+  return { x: dx / d, y: dy / d, detour: c.x !== gx || c.y !== gy };
+}
+// Un mur de hutte entre deux points ? (pour ne pas tirer dans le vide)
+function murEntre(p, x0, y0, x1, y1) {
+  if (!p.mursGrid) return false;
+  for (const o of huttesPres(p, x0, y0, x1, y1))
+    if (!voieLibre(mursHutte(o), x0, y0, x1, y1, R_BALLE)) return true;
+  return false;
+}
+
 function calculeBotCmd(p, bot, arr) {
   bot._tick = (bot._tick || 0) + 1;
   const t = bot._tick;
@@ -1093,7 +1176,9 @@ function calculeBotCmd(p, bot, arr) {
 
   // Lobby : errance libre
   if (p.phaseLobby) {
-    if (t % 150 === 1) bot._wA = Math.random() * Math.PI * 2;
+    // coince contre un mur : il repart ailleurs
+    const coince = t > 20 && Math.hypot(bot._vx || 0, bot._vy || 0) < VITESSE * 0.25;
+    if (t % 150 === 1 || (coince && t % 15 === 0)) bot._wA = Math.random() * Math.PI * 2;
     const wa = bot._wA || 0;
     return { mx: Math.cos(wa), my: Math.sin(wa), ang: wa,
              tire: false, recharger: false, vitesseRot: 3 };
@@ -1124,21 +1209,26 @@ function calculeBotCmd(p, bot, arr) {
   // 1. Fuir la zone si dehors
   const dz = Math.hypot(bot.x - p.zone.x, bot.y - p.zone.y);
   if (p.demarree && dz > p.zone.r * 0.88) {
-    const dx = p.zone.x - bot.x, dy = p.zone.y - bot.y;
-    const d = Math.hypot(dx, dy);
-    tmx = dx / d; tmy = dy / d; angle = Math.atan2(dy, dx);
+    const dv = dirVers(p, bot, p.zone.x, p.zone.y);
+    tmx = dv.x; tmy = dv.y; angle = Math.atan2(dv.y, dv.x);
 
   } else if (nearest) {
     // 2. Chasser l'ennemi à distance idéale
     const dx = nearest.x - bot.x, dy = nearest.y - bot.y;
     const IDEAL = 380;
-    if (nearestDist > IDEAL + 80) { tmx = dx / nearestDist; tmy = dy / nearestDist; }
+    // Un mur entre les deux : inutile de tirer, on va le chercher (par la
+    // porte s'il est dans une hutte)
+    const cache = murEntre(p, bot.x, bot.y, nearest.x, nearest.y);
+    if (cache || nearestDist > IDEAL + 80) {
+      const dv = dirVers(p, bot, nearest.x, nearest.y);
+      tmx = dv.x; tmy = dv.y;
+    }
     else if (nearestDist < IDEAL - 80) { tmx = -dx / nearestDist * 0.5; tmy = -dy / nearestDist * 0.5; }
     // Le tremblement de visee derive doucement au lieu de sauter a chaque
     // decision : sinon le bot pivote par a-coups meme avec un cap lisse.
     bot._jit = (bot._jit || 0) + ((Math.random() - 0.5) * 0.90 - (bot._jit || 0)) * 0.12;
-    angle = Math.atan2(dy, dx) + bot._jit;
-    if (nearestDist < 520 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
+    angle = cache ? Math.atan2(tmy, tmx) : Math.atan2(dy, dx) + bot._jit;
+    if (!cache && nearestDist < 520 && bot.munitions > 0 && bot.rechargement <= 0) tire = true;
 
   } else {
     // 3. Errance
@@ -1147,8 +1237,17 @@ function calculeBotCmd(p, bot, arr) {
     const wa = bot._wA || 0;
     const tzx = p.zone.x - bot.x, tzy = p.zone.y - bot.y;
     const tzd = Math.hypot(tzx, tzy);
-    if (tzd > 450) { tmx = tzx / tzd * 0.8 + Math.cos(wa) * 0.2; tmy = tzy / tzd * 0.8 + Math.sin(wa) * 0.2; }
-    else { tmx = Math.cos(wa); tmy = Math.sin(wa); }
+    if (tzd > 450) {
+      const dv = dirVers(p, bot, p.zone.x, p.zone.y);
+      // en plein detour on suit le detour, sans derive aleatoire
+      const k = dv.detour ? 0 : 0.2;
+      tmx = dv.x * (1 - k) + Math.cos(wa) * k; tmy = dv.y * (1 - k) + Math.sin(wa) * k;
+    }
+    else {
+      const coince = Math.hypot(bot._vx || 0, bot._vy || 0) < VITESSE * 0.25;
+      if (coince && t % 15 === 0) bot._wA = Math.random() * Math.PI * 2;
+      tmx = Math.cos(bot._wA || 0); tmy = Math.sin(bot._wA || 0);
+    }
     angle = Math.atan2(tmy, tmx);
   }
 
