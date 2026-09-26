@@ -45,13 +45,17 @@ const estSolide = (o) => o.type === 'arbre' || o.type === 'orbe';
 // corps, perron vers +y (rot = 0). rot = 1, 2, 3 : quarts de tour horaires.
 // Seuls les murs sont solides : on contourne la hutte ou on y entre.
 const HUTTE = (() => {
-  const B = 116.15;   // demi-cote exterieur du corps
-  const I = 79.38;    // demi-cote du plancher (face interieure des murs)
-  const D = 62.75;    // demi-largeur de la porte (entre les piliers)
-  const P = 96.9;     // bord exterieur des piliers
-  const PV = 134.8;   // bout des piliers, cote perron
+  // Taille unique, comme les arbres : K agrandit toutes les cotes d'un coup
+  // (mesures du vrai jeu x 1,08)
+  const K = 1.08;
+  const B = 116.15 * K;   // demi-cote exterieur du corps
+  const I = 79.38 * K;    // demi-cote du plancher (face interieure des murs)
+  const D = 62.75 * K;    // demi-largeur de la porte (entre les piliers)
+  const P = 96.9 * K;    // bord exterieur des piliers
+  const PV = 134.8 * K;   // bout des piliers, cote perron
   return {
-    B, I, D, R: 230,  // R : rayon qui englobe tout (perron, zone de vue)
+    K, B, I, D, PV, PERRON: 168.1 * K,
+    R: 250,           // R : rayon qui englobe tout (perron, zone de vue)
     murs: [
       [-B, -B,  B, -I],   // fond
       [-B, -I, -I,  B],   // gauche
@@ -139,7 +143,7 @@ function dansHutte(obs, x, y, marge) {
     if (q === 1) { const t = u; u = v; v = -t; }
     else if (q === 2) { u = -u; v = -v; }
     else if (q === 3) { const t = u; u = -v; v = t; }
-    if (Math.abs(u) < HUTTE.B + marge && v > -HUTTE.B - marge && v < 170 + marge) return true;
+    if (Math.abs(u) < HUTTE.B + marge && v > -HUTTE.B - marge && v < HUTTE.PERRON + 2 + marge) return true;
   }
   return false;
 }
@@ -1095,9 +1099,9 @@ function lerpAngle(a, b, maxTurn) {
 const NAV_MARGE = HUTTE.B + R_JOUEUR + 10;        // coins, a distance des murs
 const NAV_POINTS = [
   [-NAV_MARGE, -NAV_MARGE], [NAV_MARGE, -NAV_MARGE],   // coins du fond
-  [-NAV_MARGE, 134.8 + R_JOUEUR + 10], [NAV_MARGE, 134.8 + R_JOUEUR + 10],  // coins de facade
-  [0, 205],                                          // devant la porte
-  [0, 20],                                           // dedans
+  [-NAV_MARGE, HUTTE.PV + R_JOUEUR + 10], [NAV_MARGE, HUTTE.PV + R_JOUEUR + 10],  // coins de facade
+  [0, HUTTE.PERRON + R_JOUEUR + 8],                  // devant la porte
+  [0, 20 * HUTTE.K],                                 // dedans
 ];
 function mursHutte(o) {
   if (!o._murs) o._murs = HUTTE.murs.map(r => rectMonde(o, r));
