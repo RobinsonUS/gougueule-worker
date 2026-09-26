@@ -139,7 +139,7 @@
       <div class="opt" data-type="hutte1"><div class="ic">H1</div>Hutte 1</div>
       <div class="opt" data-type="hutte2"><div class="ic">H2</div>Hutte 2</div>
     </div>
-    <div class="note">Taille fixe : arbre 88, buisson 68</div>
+    <div class="note">Taille fixe : arbre 87,5, buisson 68</div>
     <div id="blocRot">
       <div class="ligne"><button id="bRot">Tourner (R)</button></div>
       <div class="note">Porte vers <b id="vRot">le bas</b>. Une hutte se pose au
@@ -622,7 +622,7 @@ let traceCote = null;         // trait a main levee en cours
 let lissage = 4;              // tolerance du lissage, en pixels ecran
 let portee = 600, densite = 6, rGomme = 300;
 // Un element a toujours sa taille de jeu : elle n'est pas reglable.
-const RAYON = { arbre: Math.round(R_ARBRE), buisson: Math.round(R_BUISSON) };
+const RAYON = { arbre: R_ARBRE, buisson: R_BUISSON };   // valeurs exactes, jamais arrondies
 let histoire = [];
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
@@ -1316,8 +1316,7 @@ function depuisJson(txt) {
       seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0)
     } : ({
       x: Math.round(+o.x), y: Math.round(+o.y),
-      r: Math.round(o.type === 'buisson' ? R_BUISSON          // taille fixe
-           : (isFinite(+o.r) && +o.r > 0 ? +o.r : R_ARBRE)),
+      r: o.type === 'buisson' ? R_BUISSON : R_ARBRE,      // taille fixe, jamais arrondie
       type: o.type === 'buisson' ? 'buisson' : 'arbre',
       seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0)
     }))
