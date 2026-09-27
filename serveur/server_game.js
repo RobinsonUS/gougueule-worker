@@ -54,7 +54,7 @@ const HUTTE = (() => {
   const P = 96.9 * K;    // bord exterieur des piliers
   const PV = 134.8 * K;   // bout des piliers, cote perron
   return {
-    K, B, I, D, PV, PERRON: 168.1 * K,
+    K, B, I, D, P, PV, PERRON: 168.1 * K,
     R: 250,           // R : rayon qui englobe tout (perron, zone de vue)
     murs: [
       [-B, -B,  B, -I],   // fond
@@ -67,7 +67,38 @@ const HUTTE = (() => {
     ],
   };
 })();
+// ─────────────── Maison ───────────────────────────────────────────
+// Indestructible. Une porte (perron) et deux fenetres, une de chaque cote.
+// Les fenetres arretent les joueurs mais laissent passer les balles.
+// Meme repere que les huttes (porte vers +y quand rot = 0). Mesures relevees
+// sur le vrai jeu (tete du joueur et quadrillage de 50 unites).
+const MAISON = (() => {
+  const U = 203.4, V = 230.2;   // demi-cotes exterieurs du corps (u : cotes fenetres)
+  const IU = 165.7, IV = 193.1; // demi-cotes du plancher
+  // La porte est EXACTEMENT celle des huttes : meme largeur, memes piliers,
+  // meme perron, meme zone de vue. Seul le mur autour change.
+  const D = HUTTE.D, P = HUTTE.P;
+  const PV = V + (HUTTE.PV - HUTTE.B), PERRON = V + (HUTTE.PERRON - HUTTE.B);
+  const W = 64.2, WU = 228.4;   // fenetres : demi-largeur, bout exterieur
+  return {
+    U, V, IU, IV, D, PV, W, WU, PERRON,
+    R: 350,
+    // arretent joueurs ET balles
+    murs: [
+      [-U, -V, U, -IV],                          // fond
+      [IU, -IV, U, -W], [IU, W, U, IV],          // cote droit, autour de la fenetre
+      [-U, -IV, -IU, -W], [-U, W, -IU, IV],      // cote gauche, autour de la fenetre
+      [-U, IV, -D, V], [D, IV, U, V],            // facade, de part et d'autre de la porte
+      [-P, V, -D, PV], [D, V, P, PV],            // piliers
+    ],
+    // arretent seulement les joueurs
+    fenetres: [[IU, -W, WU, W], [-WU, -W, -IU, W]],
+    emprise: [-WU, -V, WU, PERRON],
+  };
+})();
 const estHutte = (o) => o.type === 'hutte';
+const estBatiment = (o) => o.type === 'hutte' || o.type === 'maison';
+function geoBat(o) { return o.type === 'maison' ? MAISON : HUTTE; }
 // Une hutte encaisse les balles (pas les poings). A 0 PV elle devient une
 // ruine : plus de toit, plus de murs, donc plus rien de solide.
 const PV_HUTTE = 300;
@@ -82,8 +113,11 @@ function rectMonde(o, r) {
 }
 function mursDe(obs) {
   const out = [];
-  for (const o of obs) if (estHutte(o)) for (const r of HUTTE.murs) {
-    const w = rectMonde(o, r); w.hutte = o; out.push(w);
+  for (const o of obs) {
+    if (!estBatiment(o)) continue;
+    const g = geoBat(o);
+    for (const r of g.murs) { const w = rectMonde(o, r); w.bat = o; out.push(w); }
+    for (const r of (g.fenetres || [])) { const w = rectMonde(o, r); w.bat = o; w.fen = true; out.push(w); }
   }
   return out;
 }
@@ -127,28 +161,33 @@ function pousseMur(a, R, w) {
 // parcourt 50 unites par tick, plus que l'epaisseur d'un mur (37) : tester
 // le seul point d'arrivee la laisserait passer au travers.
 function segmentMur(x0, y0, x1, y1, w, r) {
+  return entreeMur(x0, y0, x1, y1, w, r) >= 0;
+}
+// Fraction du segment ou il entre dans le mur grossi de r (-1 : jamais)
+function entreeMur(x0, y0, x1, y1, w, r) {
   let t0 = 0, t1 = 1;
   const dx = x1 - x0, dy = y1 - y0;
   const bords = [[-dx, x0 - (w.x0 - r)], [dx, (w.x1 + r) - x0],
                  [-dy, y0 - (w.y0 - r)], [dy, (w.y1 + r) - y0]];
   for (const [pp, qq] of bords) {
-    if (pp === 0) { if (qq < 0) return false; continue; }
+    if (pp === 0) { if (qq < 0) return -1; continue; }
     const t = qq / pp;
-    if (pp < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
-    else { if (t < t0) return false; if (t < t1) t1 = t; }
+    if (pp < 0) { if (t > t1) return -1; if (t > t0) t0 = t; }
+    else { if (t < t0) return -1; if (t < t1) t1 = t; }
   }
-  return true;
+  return t0;
 }
 // Dans l'emprise d'une hutte (corps + perron), pour ne rien y faire apparaitre
 function dansHutte(obs, x, y, marge) {
   for (const o of obs) {
-    if (!estHutte(o)) continue;
+    if (!estBatiment(o)) continue;
     const q = ((o.rot | 0) % 4 + 4) % 4;
     let u = x - o.x, v = y - o.y;
     if (q === 1) { const t = u; u = v; v = -t; }
     else if (q === 2) { u = -u; v = -v; }
     else if (q === 3) { const t = u; u = -v; v = t; }
-    if (Math.abs(u) < HUTTE.B + marge && v > -HUTTE.B - marge && v < HUTTE.PERRON + 2 + marge) return true;
+    const e = o.type === 'maison' ? MAISON.emprise : [-HUTTE.B, -HUTTE.B, HUTTE.B, HUTTE.PERRON + 2];
+    if (u > e[0] - marge && u < e[2] + marge && v > e[1] - marge && v < e[3] + marge) return true;
   }
   return false;
 }
@@ -262,6 +301,11 @@ function valideMap(brut, nom) {
     const x = nombre(o.x, NaN), y = nombre(o.y, NaN);
     if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('obs[' + i + '] : x/y invalide');
     // Hutte : modele 1 ou 2, orientation en quarts de tour. Taille fixe.
+    if (o.type === 'maison') {
+      obs.push({ x, y, r: MAISON.R, type: 'maison',
+                 rot: ((nombre(o.rot, 0) | 0) % 4 + 4) % 4, seed: nombre(o.seed, 0) | 0 });
+      continue;
+    }
     if (o.type === 'hutte') {
       obs.push({ x, y, r: HUTTE.R, type: 'hutte', v: o.v === 2 ? 2 : 1,
                  rot: ((nombre(o.rot, 0) | 0) % 4 + 4) % 4, seed: nombre(o.seed, 0) | 0 });
@@ -394,7 +438,9 @@ function placer(rng, map, obs, sansSpawns) {
 // Copie de travail des obstacles d'une carte. Le lobby recoit en plus son
 // orbe central, qui n'est donc dans aucun fichier de carte.
 function obsDeMap(map) {
-  const obs = map.obs.map(o => estHutte(o)
+  const obs = map.obs.map(o => o.type === 'maison'
+    ? { x: o.x, y: o.y, r: o.r, type: 'maison', rot: o.rot, seed: o.seed, secousse: 0, _lt: 'maison' }
+    : estHutte(o)
     ? { x: o.x, y: o.y, r: o.r, type: 'hutte', v: o.v, rot: o.rot, seed: o.seed,
         pv: PV_HUTTE, secousse: 0, _lt: 'hutte' }
     : { x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed,
@@ -466,9 +512,20 @@ function tue(p, c, tueur, etiquette) {
 
 // Simulation des balles, isolee pour pouvoir continuer a tourner une fois
 // la partie terminee.
+// Une balle qui touche un mur ou un arbre n'est pas effacee sur-le-champ :
+// elle est posee contre l'obstacle (pointe au contact) et envoyee une
+// derniere fois, marquee fin ; le client la fait alors disparaitre en fondu.
+const RECUL_IMPACT = R_JOUEUR * 0.46 - R_BALLE;   // demi-longueur du dessin moins le rayon de contact
+function poseImpact(b, dx, dy, t) {
+  const l = Math.hypot(dx, dy) || 1;
+  const d = Math.max(0, t * l - RECUL_IMPACT);
+  b.x += dx / l * d; b.y += dy / l * d;
+  b.fin = 1;
+}
 function majBalles(p, arr) {
   for (let k = p.balles.length - 1; k >= 0; k--) {
     const b = p.balles[k];
+    if (b.fin) { p.balles.splice(k, 1); continue; }   // son impact a deja ete montre
     const dx = b.vx * DT, dy = b.vy * DT;
     b.reste -= Math.hypot(dx, dy);
     if (b.reste <= 0) { p.balles.splice(k, 1); continue; }
@@ -476,27 +533,31 @@ function majBalles(p, arr) {
     const nx2 = b.x + dx, ny2 = b.y + dy;
     if (nx2 < 0 || nx2 > p.monde || ny2 < 0 || ny2 > p.monde) { p.balles.splice(k, 1); continue; }
     const nx = nx2, ny = ny2;
-    let mort = false;
-    // Mur de hutte sur le trajet : la balle s'y arrete et abime la hutte
+    let mort = false, arrete = false;
+    // Mur de batiment sur le trajet (les fenetres laissent passer) : la
+    // balle s'y arrete, et abime la hutte (une maison ne craint rien)
     if (p.mursGrid) {
       const vus = new Set();
-      let touche = null;
+      let touche = null, tMin = 2;
       for (const q of [[b.x, b.y], [nx, ny]]) {
         for (const w of mursPres(p, q[0], q[1])) {
-          if (vus.has(w) || !estHutte(w.hutte)) continue; vus.add(w);
-          if (segmentMur(b.x, b.y, nx, ny, w, R_BALLE)) { touche = w.hutte; break; }
+          if (vus.has(w) || w.fen || !estBatiment(w.bat)) continue; vus.add(w);
+          const t = entreeMur(b.x, b.y, nx, ny, w, R_BALLE);
+          if (t >= 0 && t < tMin) { tMin = t; touche = w.bat; }
         }
-        if (touche) break;
       }
       if (touche) {
-        touche.pv -= p.rng() < 0.5 ? 10 : 11; touche.secousse = 0.22;
-        if (touche.pv <= 0) {
-          touche.pv = 0; touche.type = 'ruine'; touche.secousse = 0;
-          // murs a refaire : ceux de la ruine disparaissent
-          p.murs = mursDe(p.obs);
-          p.mursGrid = p.murs.length ? grilleMurs(p.murs) : null;
+        if (estHutte(touche)) {
+          touche.pv -= p.rng() < 0.5 ? 10 : 11; touche.secousse = 0.22;
+          if (touche.pv <= 0) {
+            touche.pv = 0; touche.type = 'ruine'; touche.secousse = 0;
+            // murs a refaire : ceux de la ruine disparaissent
+            p.murs = mursDe(p.obs);
+            p.mursGrid = p.murs.length ? grilleMurs(p.murs) : null;
+          }
         }
-        p.balles.splice(k, 1); continue;
+        poseImpact(b, dx, dy, tMin);
+        continue;
       }
     }
     for (const o of (p.arbresGrid ? queryGrid(p.arbresGrid, nx, ny) : (p.arbres || p.obs))) {
@@ -504,9 +565,16 @@ function majBalles(p, arr) {
       if (Math.hypot(o.x - nx, o.y - ny) < o.r + R_BALLE) {
         o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
         if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; p.arbresGrid = null; }
-        mort = true; break;
+        // point d'entree dans le cercle (r + R_BALLE) le long du trajet
+        const R = o.r + R_BALLE, fx = b.x - o.x, fy = b.y - o.y;
+        const A = dx * dx + dy * dy || 1, Bq = 2 * (fx * dx + fy * dy), Cq = fx * fx + fy * fy - R * R;
+        const disc = Bq * Bq - 4 * A * Cq;
+        const t = disc > 0 ? Math.max(0, (-Bq - Math.sqrt(disc)) / (2 * A)) : 0;
+        poseImpact(b, dx, dy, t);
+        arrete = true; break;
       }
     }
+    if (arrete) continue;
     // Partie finie : les balles finissent leur trajet mais ne blessent plus
     if (!mort && !p.fini) for (const c of arr) {
       if (!c.vivant || c.id === b.par) continue;
@@ -1115,22 +1183,36 @@ function lerpAngle(a, b, maxTurn) {
 // chemin (Dijkstra) entre ces points, en ne gardant que les segments qui ne
 // traversent aucun mur.
 const NAV_MARGE = HUTTE.B + R_JOUEUR + 10;        // coins, a distance des murs
+const NAV_MAISON = (() => {
+  const mu = MAISON.WU + R_JOUEUR + 10, mv = MAISON.V + R_JOUEUR + 10;
+  return [[-mu, -mv], [mu, -mv],
+          [-mu, MAISON.PV + R_JOUEUR + 10], [mu, MAISON.PV + R_JOUEUR + 10],
+          [0, MAISON.PERRON + R_JOUEUR + 8], [0, 40]];
+})();
 const NAV_POINTS = [
   [-NAV_MARGE, -NAV_MARGE], [NAV_MARGE, -NAV_MARGE],   // coins du fond
   [-NAV_MARGE, HUTTE.PV + R_JOUEUR + 10], [NAV_MARGE, HUTTE.PV + R_JOUEUR + 10],  // coins de facade
   [0, HUTTE.PERRON + R_JOUEUR + 8],                  // devant la porte
   [0, 20 * HUTTE.K],                                 // dedans
 ];
+// Pour marcher : murs et fenetres. Pour tirer : les murs seulement.
 function mursHutte(o) {
-  if (!o._murs) o._murs = HUTTE.murs.map(r => rectMonde(o, r));
+  if (!o._murs) {
+    const g = geoBat(o);
+    o._murs = g.murs.concat(g.fenetres || []).map(r => rectMonde(o, r));
+  }
   return o._murs;
+}
+function mursBalle(o) {
+  if (!o._mursB) o._mursB = geoBat(o).murs.map(r => rectMonde(o, r));
+  return o._mursB;
 }
 function huttesPres(p, x, y, gx, gy) {
   if (!p.mursGrid) return VIDE;
   const out = [];
   for (const o of p.obs) {
-    if (!estHutte(o)) continue;
-    if (Math.hypot(o.x - x, o.y - y) < 650 || Math.hypot(o.x - gx, o.y - gy) < 400) out.push(o);
+    if (!estBatiment(o)) continue;
+    if (Math.hypot(o.x - x, o.y - y) < 650 + (o.type === 'maison' ? 150 : 0) || Math.hypot(o.x - gx, o.y - gy) < 400) out.push(o);
     if (out.length >= 3) break;
   }
   return out;
@@ -1152,7 +1234,7 @@ function prochainPas(p, x, y, gx, gy) {
   const pts = [{ x, y }, { x: gx, y: gy }];
   for (const o of hs) {
     const q = ((o.rot | 0) % 4 + 4) % 4;
-    for (const [u, v] of NAV_POINTS) {
+    for (const [u, v] of (o.type === 'maison' ? NAV_MAISON : NAV_POINTS)) {
       const [dx, dy] = q === 0 ? [u, v] : q === 1 ? [-v, u] : q === 2 ? [-u, -v] : [v, -u];
       pts.push({ x: o.x + dx, y: o.y + dy });
     }
@@ -1242,7 +1324,7 @@ function evite(p, bot, mx, my) {
 function murEntre(p, x0, y0, x1, y1) {
   if (!p.mursGrid) return false;
   for (const o of huttesPres(p, x0, y0, x1, y1))
-    if (!voieLibre(mursHutte(o), x0, y0, x1, y1, R_BALLE)) return true;
+    if (!voieLibre(mursBalle(o), x0, y0, x1, y1, R_BALLE)) return true;
   return false;
 }
 
@@ -1719,7 +1801,9 @@ function envoieSnapshot(room) {
                        fin: p.tVol >= p.avion.duree } : null,
     paraDuree: PARA_DUREE,
     phaseLobby, compteARebours, nbJoueursLobby,
-    balles: p.balles.map(b => ({ id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par })),
+    balles: p.balles.map(b => b.fin
+      ? { id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par, fin: 1 }
+      : { id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par }),
     kills: p.kills, evts: p.evts, decorMaj,
   };
   const agents = {};
