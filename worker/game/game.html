@@ -831,7 +831,15 @@ function dessineBuissonTextureDessin(o) {
 
 // ===================== balle =====================
 // Balles arretees par un obstacle : fondu tres court, contre l'obstacle
-var FONDU_IMPACT = 0.12, _ballesFin = {};
+var FONDU_IMPACT = 0.08, _ballesFin = {}, _ballesFinies = {};
+// Pose la balle contre l'obstacle et lance son fondu, une seule fois par balle.
+function finitBalle(b) {
+  var now = Date.now();
+  if (_ballesFinies[b.id]) return;
+  _ballesFinies[b.id] = now;
+  _ballesFin[b.id] = { id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par, t0: now };
+  for (var k in _ballesFinies) if (now - _ballesFinies[k] > 3000) delete _ballesFinies[k];
+}
 function dessineBalle(b) {
   const ang = (b.ang !== undefined) ? b.ang : Math.atan2(b.vy, b.vx);
   const L = L_BALLE, W = R_BALLE;
@@ -4048,13 +4056,27 @@ function etatAffiche() {
     for (var q0 = 0; q0 < av.balles.length; q0++) parId[av.balles[q0].id] = av.balles[q0];
     for (var q = 0; q < ap.balles.length; q++) {
       var bl = ap.balles[q], b0 = parId[bl.id];
-      if (b0) {
+      if (b0 && bl.fin) {
+        // Dernier bout avant l'obstacle : plus court qu'un pas normal.
+        // On garde la vitesse normale (pas d'etalement sur tout le tick),
+        // puis fondu des que la pointe touche.
+        var dFin = Math.hypot(bl.x - b0.x, bl.y - b0.y);
+        var fait = V_BALLE * Math.max(0, cible - av.st) / 1000;
+        if (fait >= dFin) finitBalle(bl);
+        else {
+          var kf = dFin > 0 ? fait / dFin : 1;
+          vue.balles.push({ id: bl.id, ang: bl.ang, reste: bl.reste, par: bl.par,
+                            x: b0.x + (bl.x - b0.x) * kf,
+                            y: b0.y + (bl.y - b0.y) * kf });
+        }
+      } else if (b0) {
         vue.balles.push({ id: bl.id, ang: bl.ang, reste: bl.reste, par: bl.par,
                           x: b0.x + (bl.x - b0.x) * w,
                           y: b0.y + (bl.y - b0.y) * w });
       } else {
         // balle apparue entre les deux instantanes : on remonte depuis son etat connu
         var dtn = (cible - ap.st) / 1000;
+        if (bl.fin && dtn >= 0) { finitBalle(bl); continue; }
         vue.balles.push({ id: bl.id, ang: bl.ang, reste: bl.reste, par: bl.par,
                           x: bl.x + Math.cos(bl.ang) * V_BALLE * dtn,
                           y: bl.y + Math.sin(bl.ang) * V_BALLE * dtn });
@@ -4067,15 +4089,18 @@ function etatAffiche() {
     for (var q1 = 0; q1 < ap.balles.length; q1++) dansAp[ap.balles[q1].id] = true;
     for (var q2 = 0; q2 < av.balles.length; q2++) {
       var bf = av.balles[q2];
-      if (bf.fin && !dansAp[bf.id] && !_ballesFin[bf.id])
-        _ballesFin[bf.id] = { id: bf.id, x: bf.x, y: bf.y, ang: bf.ang, reste: bf.reste, par: bf.par, t0: Date.now() };
+      if (bf.fin && !dansAp[bf.id]) finitBalle(bf);
     }
   } else {
     for (var id2 in av.agents) {
       // Ne pas afficher un joueur absent ou mort dans le snapshot le plus récent
       if (snapDernier.agents[id2]) vue.agents[id2] = av.agents[id2];
     }
-    vue.balles = av.balles.slice();
+    vue.balles = [];
+    for (var q3 = 0; q3 < av.balles.length; q3++) {
+      var bz = av.balles[q3];
+      if (bz.fin) finitBalle(bz); else vue.balles.push(bz);
+    }
     vue.zone = av.zone;
     // Pas d'instantane suivant : tout se fige ensemble, joueurs et avion.
     // Un seul element qui continuerait d'avancer suffirait a tout saccader.
