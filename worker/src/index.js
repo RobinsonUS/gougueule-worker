@@ -29,6 +29,8 @@ import boisImg      from '../game/bois.png';
 import maisonImg    from '../game/maison.png';
 import maisonToitImg from '../game/maison_toit.png';
 import maisonFenImg from '../game/maison_fen.png';
+import porteImg     from '../game/porte.png';
+import boutonInter  from '../game/bouton_inter.png';
 import arm          from '../game/arm.png';
 import hand         from '../game/hand.png';
 import head         from '../game/head.png';
@@ -197,6 +199,8 @@ export default {
       '/game/maison.png':         maisonImg,
       '/game/maison_toit.png':    maisonToitImg,
       '/game/maison_fen.png':     maisonFenImg,
+      '/game/porte.png':          porteImg,
+      '/game/bouton_inter.png':   boutonInter,
       '/game/arm.png':          arm,
       '/game/hand.png':         hand,
       '/game/head.png':         head,
