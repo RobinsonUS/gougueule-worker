@@ -102,7 +102,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe','feuille','hutte1','hutte1_toit','hutte2','hutte2_toit','hutte1_ruine','hutte2_ruine','bois'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe','feuille','hutte1','hutte1_toit','hutte2','hutte2_toit','hutte1_ruine','hutte2_ruine','bois','maison','maison_toit','maison_fen'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // weapon_XM8 : supprimer le fond blanc
 (function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
   var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
@@ -280,8 +280,9 @@ function voitDansUneHutte(a) {
   if (!a || a.enAvion || (a.para || 0) > 0) return false;
   for (var i = 0; i < localObs.length; i++) {
     var o = localObs[i];
-    if (o.type !== 'hutte') continue;
-    if (Math.abs(a.x - o.x) > HUTTE.R || Math.abs(a.y - o.y) > HUTTE.R) continue;
+    if (!estBat(o)) continue;
+    var Rb = geoBat(o).R;
+    if (Math.abs(a.x - o.x) > Rb || Math.abs(a.y - o.y) > Rb) continue;
     if (voitDansHutte(o, a.x, a.y)) return true;
   }
   return false;
@@ -473,10 +474,10 @@ function dessineBuissonTexture(o) {
   dessineBuissonTextureDessin(o);
 }
 
-// ═══ Huttes (Hu1 et Hu2) ════════════════════════════════════════════
+// ═══ Batiments : huttes (Hu1, Hu2) et maison ═════════════════════════
 // Meme geometrie que le serveur. Repere local : origine au centre du corps,
-// perron vers +y quand rot = 0 ; rot = quarts de tour horaires. Les images
-// sont deja tournees perron en bas, et le corps y est centre en (208, 208).
+// porte vers +y quand rot = 0 ; rot = quarts de tour horaires. Les images
+// sont deja tournees porte en bas.
 var HUTTE = (function () {
   // Taille unique, comme les arbres : K agrandit toutes les cotes d'un coup
   // (mesures du vrai jeu x 1,08). Meme valeur cote serveur et editeur.
@@ -489,11 +490,13 @@ var HUTTE = (function () {
     RCX: 240, RCY: 240,   // idem dans les images de ruine (plus larges : gravats)
     OMBRE: 7.6 * K,       // debord de l'ombre, releve sur le vrai jeu
     OMBRE_DY: 2.0 * K,        // l'ombre descend un peu plus qu'elle ne monte
+    corps: [-B, -B, B, B],
     murs: [
       [-B, -B,  B, -I], [-B, -I, -I,  B], [ I, -I,  B,  B],
       [-B,  I, -D,  B], [ D,  I,  B,  B],
       [-P,  B, -D, PV], [ D,  B,  P, PV],
     ],
+    fenetres: [],
     // On voit l'interieur des que la tete touche l'une de ces zones :
     // le plancher, la porte, et une bande devant la facade (perron compris)
     vue: [
@@ -503,6 +506,34 @@ var HUTTE = (function () {
     ],
   };
 })();
+// Maison : indestructible, une porte et deux fenetres (une de chaque cote).
+// Les fenetres arretent les joueurs, pas les balles, et laissent voir
+// dedans quand on s'en approche. Mesures du vrai jeu.
+var MAISON = (function () {
+  var U = 203.4, V = 230.2, IU = 165.7, IV = 193.1, D = 63.5, P = 97.0, PV = 249.6;
+  var W = 64.2, WU = 228.4;
+  return {
+    R: 350, ECH: 0.5887, CX: 408.5, CY: 408, OMBRE: 7.6, OMBRE_DY: 2.0,
+    corps: [-U, -V, U, V],
+    murs: [
+      [-U, -V, U, -IV],
+      [IU, -IV, U, -W], [IU, W, U, IV], [-U, -IV, -IU, -W], [-U, W, -IU, IV],
+      [-U, IV, -D, V], [D, IV, U, V],
+      [-P, V, -D, PV], [D, V, P, PV],
+    ],
+    fenetres: [[IU, -W, WU, W], [-WU, -W, -IU, W]],
+    vue: [
+      [-IU, -IV, IU, IV],                 // plancher
+      [-D, IV, D, PV],                    // porte
+      [-132.5, 226, 132.5, 311],          // devant la porte (perron compris)
+      [U, -84, U + 84, 84],               // devant chaque fenetre
+      [-U - 84, -84, -U, 84],
+    ],
+  };
+})();
+var FENETRE_ALPHA = 0.7;      // vitres vues de loin, par-dessus les balles
+function estBat(o) { return o.type === 'hutte' || o.type === 'maison'; }
+function geoBat(o) { return o.type === 'maison' ? MAISON : HUTTE; }
 function rectMondeH(o, r) {
   var q = ((o.rot | 0) % 4 + 4) % 4, u0 = r[0], v0 = r[1], u1 = r[2], v1 = r[3];
   var a, b;
@@ -513,12 +544,14 @@ function rectMondeH(o, r) {
   return { x0: o.x + Math.min(a[0], b[0]), y0: o.y + Math.min(a[1], b[1]),
            x1: o.x + Math.max(a[0], b[0]), y1: o.y + Math.max(a[1], b[1]) };
 }
-// Murs et zones de vue en coordonnees monde, calcules une fois par hutte
+// Murs (fenetres comprises, pour les joueurs) et zones de vue en
+// coordonnees monde, calcules une fois par batiment
 function prepareHutte(o) {
-  if (!(o.r > 0)) o.r = HUTTE.R;
-  o._murs = HUTTE.murs.map(function (r) { return rectMondeH(o, r); });
-  o._vue = HUTTE.vue.map(function (r) { return rectMondeH(o, r); });
-  o._corps = rectMondeH(o, [-HUTTE.B, -HUTTE.B, HUTTE.B, HUTTE.B]);
+  var g = geoBat(o);
+  if (!(o.r > 0)) o.r = g.R;
+  o._murs = g.murs.concat(g.fenetres).map(function (r) { return rectMondeH(o, r); });
+  o._vue = g.vue.map(function (r) { return rectMondeH(o, r); });
+  o._corps = rectMondeH(o, g.corps);
   if (o.toitA === undefined) o.toitA = 1;
 }
 function cercleTouche(x, y, R, w) {
@@ -552,27 +585,43 @@ function pousseMur(a, R, w) {
   return true;
 }
 
-function huttePrete(v) { return vegPret('hutte' + v) && vegPret('hutte' + v + '_toit'); }
-// Corps, toit et anneau d'ombre a la taille d'ecran, calcules une fois par
-// taille (arrondie a 8 px pres), jamais a chaque image.
+// Images d'un batiment : corps, toit, et pour la maison les vitres du toit
+// a part (elles se dessinent a 70 %).
+function imagesBat(o, ruine) {
+  if (o.type === 'maison')
+    return { corps: 'maison', toit: 'maison_toit', fen: 'maison_fen', g: MAISON, cx: MAISON.CX, cy: MAISON.CY };
+  var v = o.v === 2 ? 2 : 1;
+  if (ruine) return { corps: 'hutte' + v + '_ruine', toit: null, fen: null, g: HUTTE, cx: HUTTE.RCX, cy: HUTTE.RCY };
+  return { corps: 'hutte' + v, toit: 'hutte' + v + '_toit', fen: null, g: HUTTE, cx: HUTTE.CX, cy: HUTTE.CY };
+}
+function imagesPretes(m) {
+  return vegPret(m.corps) && (!m.toit || vegPret(m.toit)) && (!m.fen || vegPret(m.fen));
+}
+function huttePrete(v) { return imagesPretes(imagesBat({ type: 'hutte', v: v })); }
+function maisonPrete() { return imagesPretes(imagesBat({ type: 'maison' })); }
+// Corps, toit, vitres et anneau d'ombre a la taille d'ecran, calcules une
+// fois par taille (arrondie a 8 px pres), jamais a chaque image.
 var _hutteCache = {};
-function hutteCanevas(v, largeurEcran, ruine) {
-  var sp = SPRITES['hutte' + v + (ruine ? '_ruine' : '')], st = ruine ? sp : SPRITES['hutte' + v + '_toit'];
+function canevasBat(m, largeurEcran) {
+  var sp = SPRITES[m.corps];
   var tPx = Math.max(8, Math.round(largeurEcran / 8) * 8);
-  var d = Math.max(1, Math.round(HUTTE.OMBRE * PXV));
-  var dy = Math.round(HUTTE.OMBRE_DY * PXV);
-  var cle = v + (ruine ? 'r' : '') + ':' + tPx + ':' + d + ':' + dy;
+  var d = Math.max(1, Math.round(m.g.OMBRE * PXV));
+  var dy = Math.round(m.g.OMBRE_DY * PXV);
+  var cle = m.corps + ':' + tPx + ':' + d + ':' + dy;
   var e = _hutteCache[cle];
   if (e) return e;
   var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
   var k = tPx / sw;
-  var cs = document.createElement('canvas');
-  cs.width = tPx; cs.height = Math.max(1, Math.round(sh * k));
-  cs.getContext('2d').drawImage(sp, 0, 0, cs.width, cs.height);
-  var tw = st.naturalWidth || st.width, th = st.naturalHeight || st.height;
-  var ct = document.createElement('canvas');
-  ct.width = Math.max(1, Math.round(tw * k)); ct.height = Math.max(1, Math.round(th * k));
-  ct.getContext('2d').drawImage(st, 0, 0, ct.width, ct.height);
+  var reduit = function (nom) {
+    if (!nom) return null;
+    var s2 = SPRITES[nom];
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round((s2.naturalWidth || s2.width) * k));
+    c.height = Math.max(1, Math.round((s2.naturalHeight || s2.height) * k));
+    c.getContext('2d').drawImage(s2, 0, 0, c.width, c.height);
+    return c;
+  };
+  var cs = reduit(m.corps), ct = reduit(m.toit), cf = reduit(m.fen);
   // Ombre : la silhouette elargie de d pixels et decalee vers le bas, moins
   // la silhouette elle-meme
   var co = document.createElement('canvas');
@@ -588,7 +637,7 @@ function hutteCanevas(v, largeurEcran, ruine) {
   g.fillRect(0, 0, co.width, co.height);
   g.globalCompositeOperation = 'destination-out';
   g.drawImage(cs, d, d);
-  e = { cs: cs, ct: ct, co: co, d: d, k: k };
+  e = { cs: cs, ct: ct, cf: cf, co: co, d: d, k: k };
   _hutteCache[cle] = e;
   return e;
 }
@@ -606,67 +655,57 @@ function fonduRuine(o) {
   if (!o.tRuine) return 1;
   return Math.min(1, (Date.now() - o.tRuine) / (RUINE_FONDU * 1000));
 }
-function ruinePrete(v) { return vegPret('hutte' + v + '_ruine'); }
-// quoi : 0 = corps, 1 = ombre, 2 = toit. ruine : l'image de la hutte detruite.
+// quoi : 0 = corps, 1 = ombre, 2 = toit, 3 = vitres du toit (maison).
+// ruine : l'image de la hutte detruite.
 function dessineHutte(o, quoi, ruine) {
-  var v = o.v === 2 ? 2 : 1;
-  var S = HUTTE.ECH;
+  var m = imagesBat(o, ruine);
+  var S = m.g.ECH;
   var q = secousseHutte(o);
   ctx.save();
   ctx.translate(o.x + q.x, o.y + q.y);
   ctx.rotate(((o.rot | 0) % 4) * Math.PI / 2);
-  if (ruine) {
-    if (!ruinePrete(v) || quoi === 2) { ctx.restore(); return; }
-    var sr = SPRITES['hutte' + v + '_ruine'];
-    var er = hutteCanevas(v, (sr.naturalWidth || sr.width) * S * PXV, true);
-    var fr = S / er.k, oxr = -HUTTE.RCX * S, oyr = -HUTTE.RCY * S;
-    if (quoi === 1) {
-      ctx.globalAlpha *= VEG_OMBRE_ALPHA;
-      ctx.drawImage(er.co, oxr - er.d * fr, oyr - er.d * fr, er.co.width * fr, er.co.height * fr);
-    } else ctx.drawImage(er.cs, oxr, oyr, er.cs.width * fr, er.cs.height * fr);
-    ctx.restore();
-    return;
-  }
-  if (!huttePrete(v)) {                   // le temps que les images arrivent
-    if (quoi !== 1) {
+  if (!imagesPretes(m)) {                 // le temps que les images arrivent
+    if (!ruine && (quoi === 0 || quoi === 2)) {
+      var c0 = m.g.corps;
       ctx.fillStyle = quoi === 2 ? '#7d8a96' : '#a97c6a';
-      ctx.fillRect(-HUTTE.B, -HUTTE.B, 2 * HUTTE.B, 2 * HUTTE.B);
+      ctx.fillRect(c0[0], c0[1], c0[2] - c0[0], c0[3] - c0[1]);
     }
     ctx.restore();
     return;
   }
-  var sp = SPRITES['hutte' + v];
-  var sw = sp.naturalWidth || sp.width;
-  var e = hutteCanevas(v, sw * S * PXV);
-  var f = 1 / (e.k / S);                  // unites monde par px de la toile
-  var ox = -HUTTE.CX * S, oy = -HUTTE.CY * S;
+  var sp = SPRITES[m.corps];
+  var e = canevasBat(m, (sp.naturalWidth || sp.width) * S * PXV);
+  var f = S / e.k;                        // unites monde par px de la toile
+  var ox = -m.cx * S, oy = -m.cy * S;
   if (quoi === 1) {
     ctx.globalAlpha *= VEG_OMBRE_ALPHA;
     ctx.drawImage(e.co, ox - e.d * f, oy - e.d * f, e.co.width * f, e.co.height * f);
   } else if (quoi === 2) {
-    ctx.drawImage(e.ct, ox, oy, e.ct.width * f, e.ct.height * f);
+    if (e.ct) ctx.drawImage(e.ct, ox, oy, e.ct.width * f, e.ct.height * f);
+  } else if (quoi === 3) {
+    if (e.cf) ctx.drawImage(e.cf, ox, oy, e.cf.width * f, e.cf.height * f);
   } else {
     ctx.drawImage(e.cs, ox, oy, e.cs.width * f, e.cs.height * f);
   }
   ctx.restore();
 }
-// Minimap et carte : le toit, reduit une fois pour toutes
+// Minimap et carte : le toit (et ses vitres), reduit une fois pour toutes
 function dessineHutteMini(c, o, k) {
-  var v = o.v === 2 ? 2 : 1, S = HUTTE.ECH;
+  var m = imagesBat(o.type === 'ruine' ? { type: 'hutte', v: o.v } : o, false);
+  var S = m.g.ECH;
   c.save();
   c.translate(o.x, o.y);
   c.rotate(((o.rot | 0) % 4) * Math.PI / 2);
-  if (huttePrete(v)) {
-    var sp = SPRITES['hutte' + v], st = SPRITES['hutte' + v + '_toit'];
-    var sw = sp.naturalWidth || sp.width, tw = st.naturalWidth || st.width;
-    var eb = vegMini('hutte' + v, sw * S * k);
-    var et = vegMini('hutte' + v + '_toit', tw * S * k);
-    var fb = (sw * S) / eb.width;
-    c.drawImage(eb, -HUTTE.CX * S, -HUTTE.CY * S, eb.width * fb, eb.height * fb);
-    c.drawImage(et, -HUTTE.CX * S, -HUTTE.CY * S, tw * S, (st.naturalHeight || st.height) * S);
+  if (imagesPretes(m)) {
+    [m.corps, m.toit, m.fen].forEach(function (nom) {
+      if (!nom) return;
+      var s2 = SPRITES[nom], w2 = s2.naturalWidth || s2.width, h2 = s2.naturalHeight || s2.height;
+      c.drawImage(vegMini(nom, w2 * S * k), -m.cx * S, -m.cy * S, w2 * S, h2 * S);
+    });
   } else {
+    var c0 = m.g.corps;
     c.fillStyle = '#7d8a96';
-    c.fillRect(-HUTTE.B, -HUTTE.B, 2 * HUTTE.B, 2 * HUTTE.B);
+    c.fillRect(c0[0], c0[1], c0[2] - c0[0], c0[3] - c0[1]);
   }
   c.restore();
 }
@@ -787,11 +826,13 @@ function dessineBuissonTextureDessin(o) {
 }
 
 // ===================== balle =====================
+// Balles arretees par un obstacle : fondu tres court, contre l'obstacle
+var FONDU_IMPACT = 0.12, _ballesFin = {};
 function dessineBalle(b) {
   const ang = (b.ang !== undefined) ? b.ang : Math.atan2(b.vy, b.vx);
   const L = L_BALLE, W = R_BALLE;
 
-  const a = Math.max(0, Math.min(1, b.reste / FONDU_BALLE));
+  const a = Math.max(0, Math.min(1, b.reste / FONDU_BALLE)) * (b.alpha === undefined ? 1 : b.alpha);
   if (a <= 0) return;
 
   ctx.save();
@@ -1278,7 +1319,7 @@ function minimapAPeindre() {
 var _vegMini = {};
 function vegToutPret() {
   for (var i = 0; i < VEG_ARBRES.length; i++) if (!vegPret(VEG_ARBRES[i])) return 0;
-  return (vegPret('buisson') && huttePrete(1) && huttePrete(2)) ? 1 : 0;
+  return (vegPret('buisson') && huttePrete(1) && huttePrete(2) && maisonPrete()) ? 1 : 0;
 }
 function vegMini(nom, tPx) {
   tPx = Math.max(4, Math.round(tPx / 2) * 2);
@@ -1302,7 +1343,7 @@ function vegMini(nom, tPx) {
 // y reste l'arbre d'origine. Renvoie faux si l'image n'est pas encore la.
 function dessineVegMini(c, ob, k) {
   if (ob.type === 'vide') return true;             // objet detruit : plus rien
-  if (ob.type === 'hutte' || ob.type === 'ruine') { dessineHutteMini(c, ob, k); return true; }
+  if (estBat(ob) || ob.type === 'ruine') { dessineHutteMini(c, ob, k); return true; }
   var nom = nomVeg(ob);                            // une souche montre l'objet d'origine
   var genre = nom === 'buisson' ? 'buisson' : (nom === 'orbe' ? 'orbe' : 'arbre');
   if (!vegPret(nom)) return false;
@@ -2512,7 +2553,7 @@ function dessine(p, moi, viseur, drag) {
   // viendra bien plus tard, par-dessus les joueurs.
   // Une ruine apparait en fondu (tres court) sur la hutte intacte.
   const huttes = [];
-  for (const o of p.obs) if ((o.type === 'hutte' || o.type === 'ruine') && visible(o)) huttes.push(o);
+  for (const o of p.obs) if ((estBat(o) || o.type === 'ruine') && visible(o)) huttes.push(o);
   // La ruine est posee d'emblee, la hutte intacte s'efface par-dessus :
   // jamais de trou ou l'herbe transparaitrait pendant le fondu.
   const parCouche = (quoi) => {
@@ -2730,7 +2771,7 @@ function dessine(p, moi, viseur, drag) {
     dessineBalle(b);
   }
 
-  // ---- toits des huttes : par-dessus ce qui se passe dedans ----
+  // ---- toits des huttes et maisons : par-dessus ce qui se passe dedans ----
   // On voit l'interieur des que sa tete touche le plancher, la porte ou le
   // devant de la facade. A pied seulement : de l'avion ou en parachute, le
   // toit reste pose.
@@ -2749,6 +2790,8 @@ function dessine(p, moi, viseur, drag) {
     if (o.toitA <= 0) continue;
     ctx.globalAlpha = o.toitA;
     dessineHutte(o, 2);
+    // Maison vue de loin : les vitres, a 70 %, passent par-dessus les balles
+    if (o.type === 'maison') { ctx.globalAlpha = o.toitA * FENETRE_ALPHA; dessineHutte(o, 3); }
     ctx.globalAlpha = 1;
   }
 
@@ -2803,7 +2846,7 @@ function dessine(p, moi, viseur, drag) {
     if (_na === undefined) _na = 1;
     // sous un toit ferme, on ne devine meme pas son nom
     for (var _hi = 0; _hi < huttes.length; _hi++)
-      if (huttes[_hi].type === 'hutte' && sousLeToit(huttes[_hi], _nj.x, _nj.y)) _na *= 1 - (huttes[_hi].toitA || 0);
+      if (estBat(huttes[_hi]) && sousLeToit(huttes[_hi], _nj.x, _nj.y)) _na *= 1 - (huttes[_hi].toitA || 0);
     if (_na <= 0.01) continue;
     dessineNom(_nj.x, _nj.y, _nj.name || '?', _na);
   }
@@ -3380,7 +3423,7 @@ function initObs(decor) {
     // base = ce que l'objet etait avant d'etre abattu : la trace au sol en
     // garde la forme.
     var n = Object.assign({}, o, c, { alphaVis: 1, base: o.type });
-    if (n.type === 'hutte' || n.type === 'ruine') prepareHutte(n);
+    if (estBat(n) || n.type === 'ruine') prepareHutte(n);
     return n;
   });
   prevObsTypes = {};
@@ -3779,9 +3822,10 @@ function deplaceLoc(a, dx, dy) {
     var hit = false;
     for (var i = 0; i < localObs.length; i++) {
       var o = localObs[i];
-      if (o.type === 'hutte') {
-        // murs seulement : on contourne la hutte ou on y entre
-        if (Math.abs(a.x - o.x) > HUTTE.R || Math.abs(a.y - o.y) > HUTTE.R) continue;
+      if (estBat(o)) {
+        // murs (et fenetres) seulement : on contourne le batiment ou on y entre
+        var Rb = geoBat(o).R;
+        if (Math.abs(a.x - o.x) > Rb || Math.abs(a.y - o.y) > Rb) continue;
         if (!o._murs) prepareHutte(o);
         for (var w = 0; w < o._murs.length; w++) if (pousseMur(a, R, o._murs[w])) hit = true;
         continue;
@@ -4012,6 +4056,16 @@ function etatAffiche() {
                           y: bl.y + Math.sin(bl.ang) * V_BALLE * dtn });
       }
     }
+    // Balle arretee par un mur ou un arbre : le serveur l'a posee contre
+    // l'obstacle au dernier instantane. Une fois ce point atteint, elle y
+    // reste un instant et s'efface en fondu.
+    var dansAp = {};
+    for (var q1 = 0; q1 < ap.balles.length; q1++) dansAp[ap.balles[q1].id] = true;
+    for (var q2 = 0; q2 < av.balles.length; q2++) {
+      var bf = av.balles[q2];
+      if (bf.fin && !dansAp[bf.id] && !_ballesFin[bf.id])
+        _ballesFin[bf.id] = { id: bf.id, x: bf.x, y: bf.y, ang: bf.ang, reste: bf.reste, par: bf.par, t0: Date.now() };
+    }
   } else {
     for (var id2 in av.agents) {
       // Ne pas afficher un joueur absent ou mort dans le snapshot le plus récent
@@ -4022,6 +4076,12 @@ function etatAffiche() {
     // Pas d'instantane suivant : tout se fige ensemble, joueurs et avion.
     // Un seul element qui continuerait d'avancer suffirait a tout saccader.
     vue.avion = av.avion || snapDernier.avion;
+  }
+  var maint = Date.now();
+  for (var fid in _ballesFin) {
+    var fb = _ballesFin[fid], fa = 1 - (maint - fb.t0) / (FONDU_IMPACT * 1000);
+    if (fa <= 0) { delete _ballesFin[fid]; continue; }
+    vue.balles.push({ id: fb.id, x: fb.x, y: fb.y, ang: fb.ang, reste: fb.reste, par: fb.par, alpha: fa });
   }
   // Post-correction : forcer vivant=false sur quiconque est mort dans le dernier snap
   for (var zid in vue.agents) {
