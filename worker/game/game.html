@@ -1284,10 +1284,11 @@ function dessineSphereChargement(j) {
   ctx.arc(cx, cy, R + eb / 2, 0, TAU);
   ctx.stroke();
 
-  // disque vert sombre
+  // disque gris translucide : il assombrit le fond, quel qu'il soit
+  // (herbe, eau, sable, plancher), au lieu d'imposer une couleur
   ctx.beginPath();
   ctx.arc(cx, cy, R, 0, TAU);
-  ctx.fillStyle = 'rgba(58, 82, 40, 0.88)';
+  ctx.fillStyle = 'rgba(20, 20, 20, 0.42)';
   ctx.fill();
 
   // arc de progression, en contour interieur
