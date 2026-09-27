@@ -831,7 +831,13 @@ function dessineBuissonTextureDessin(o) {
 
 // ===================== balle =====================
 // Balles arretees par un obstacle : fondu tres court, contre l'obstacle
-var FONDU_IMPACT = 0.08, _ballesFin = {}, _ballesFinies = {};
+// La balle palit deja un peu sur le dernier bout (ALPHA_CONTACT au mur),
+// puis s'efface en douceur : l'opacite tend vers 0 sans couper net.
+var FONDU_IMPACT = 0.16, ALPHA_CONTACT = 0.8, _ballesFin = {}, _ballesFinies = {};
+function alphaImpact(ecoule) {
+  var e = Math.min(1, Math.max(0, ecoule / (FONDU_IMPACT * 1000)));
+  return ALPHA_CONTACT * (1 - e) * (1 - e);
+}
 // Pose la balle contre l'obstacle et lance son fondu, une seule fois par balle.
 function finitBalle(b) {
   var now = Date.now();
@@ -4067,7 +4073,8 @@ function etatAffiche() {
           var kf = dFin > 0 ? fait / dFin : 1;
           vue.balles.push({ id: bl.id, ang: bl.ang, reste: bl.reste, par: bl.par,
                             x: b0.x + (bl.x - b0.x) * kf,
-                            y: b0.y + (bl.y - b0.y) * kf });
+                            y: b0.y + (bl.y - b0.y) * kf,
+                            alpha: 1 - (1 - ALPHA_CONTACT) * kf });
         }
       } else if (b0) {
         vue.balles.push({ id: bl.id, ang: bl.ang, reste: bl.reste, par: bl.par,
@@ -4108,8 +4115,8 @@ function etatAffiche() {
   }
   var maint = Date.now();
   for (var fid in _ballesFin) {
-    var fb = _ballesFin[fid], fa = 1 - (maint - fb.t0) / (FONDU_IMPACT * 1000);
-    if (fa <= 0) { delete _ballesFin[fid]; continue; }
+    var fb = _ballesFin[fid], fa = alphaImpact(maint - fb.t0);
+    if (fa <= 0.005) { delete _ballesFin[fid]; continue; }
     vue.balles.push({ id: fb.id, x: fb.x, y: fb.y, ang: fb.ang, reste: fb.reste, par: fb.par, alpha: fa });
   }
   // Post-correction : forcer vivant=false sur quiconque est mort dans le dernier snap
