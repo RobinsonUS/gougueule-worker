@@ -177,36 +177,57 @@ function entreeMur(x0, y0, x1, y1, w, r) {
   }
   return t0;
 }
-// Atterrissage au-dessus d'un batiment : on passe a travers le toit et on
-// se pose DANS le batiment. Sans ca, un atterrissage sur un mur faisait
-// sortir le joueur par la face la plus proche, souvent dehors.
-function poseDansBatiment(p, a) {
+// Atterrissage au-dessus d'un batiment : impossible de se poser dedans.
+// On est deplace juste a cote, par le bord exterieur le plus proche
+// (corps, fenetres et piliers compris), sans rien toucher.
+function batimentSous(p, x, y) {
   for (const o of p.obs) {
     if (!estBatiment(o)) continue;
     const m = o.type === 'maison';
     const EU = m ? MAISON.U : HUTTE.B, EV = m ? MAISON.V : HUTTE.B;
     const q = ((o.rot | 0) % 4 + 4) % 4;
-    let u = a.x - o.x, v = a.y - o.y;
+    let u = x - o.x, v = y - o.y;
     if (q === 1) { const t = u; u = v; v = -t; }
     else if (q === 2) { u = -u; v = -v; }
     else if (q === 3) { const t = u; u = -v; v = t; }
-    if (Math.abs(u) > EU || Math.abs(v) > EV) continue;   // pas au-dessus du toit
-    // Deja sur le plancher ou dans la porte, sans toucher de mur : on ne bouge pas
-    const essai = { x: a.x, y: a.y };
-    let touche = false;
-    for (const r of geoBat(o).murs.concat(geoBat(o).fenetres || [])) {
-      if (pousseMur({ x: essai.x, y: essai.y }, R_JOUEUR, rectMonde(o, r))) { touche = true; break; }
-    }
-    if (!touche) return;
-    const IU = (m ? MAISON.IU : HUTTE.I) - R_JOUEUR - 1;
-    const IV = (m ? MAISON.IV : HUTTE.I) - R_JOUEUR - 1;
-    u = Math.max(-IU, Math.min(IU, u));
-    v = Math.max(-IV, Math.min(IV, v));
-    const w = q === 0 ? [u, v] : q === 1 ? [-v, u] : q === 2 ? [-u, -v] : [v, -u];
-    a.x = o.x + w[0]; a.y = o.y + w[1];
-    a._px = a.x; a._py = a.y;
-    return;
+    const surCorps = Math.abs(u) < EU + R_JOUEUR && Math.abs(v) < EV + R_JOUEUR;
+    const surFenetre = m && Math.abs(u) < MAISON.WU + R_JOUEUR && Math.abs(v) < MAISON.W + R_JOUEUR;
+    if (surCorps || surFenetre) return { o, u, v, q, m, EV };
   }
+  return null;
+}
+// Les quatre sorties d'un batiment depuis le point (u, v), en coordonnees monde
+function sortiesDe(p, s) {
+  const M = R_JOUEUR + 2, o = s.o, u = s.u, v = s.v;
+  // Boite a quitter : tout ce qui depasse du corps (fenetres, piliers)
+  const XU = s.m ? MAISON.WU : HUTTE.B, BAS = s.m ? MAISON.PV : HUTTE.PV;
+  return [[-XU - M, v], [XU + M, v], [u, -s.EV - M], [u, BAS + M]].map(([lu, lv]) => {
+    const w = s.q === 0 ? [lu, lv] : s.q === 1 ? [-lv, lu] : s.q === 2 ? [-lu, -lv] : [lv, -lu];
+    return { x: Math.min(p.monde - R_JOUEUR, Math.max(R_JOUEUR, o.x + w[0])),
+             y: Math.min(p.monde - R_JOUEUR, Math.max(R_JOUEUR, o.y + w[1])) };
+  });
+}
+function sortDuBatiment(p, a) {
+  const s0 = batimentSous(p, a.x, a.y);
+  if (!s0) return;
+  // On part des quatre sorties ; si une sortie tombe sur un batiment voisin
+  // (deux huttes collees), on essaie aussi les sorties de ce voisin. On garde
+  // le point libre le plus proche de l'endroit ou l'on tombait.
+  let front = sortiesDe(p, s0), meilleur = null, dMin = Infinity;
+  for (let prof = 0; prof < 3 && front.length; prof++) {
+    const suite = [];
+    for (const c of front) {
+      const s = batimentSous(p, c.x, c.y);
+      if (s) { if (prof < 2) suite.push(...sortiesDe(p, s)); continue; }
+      const d = Math.hypot(c.x - a.x, c.y - a.y);
+      if (d < dMin) { dMin = d; meilleur = c; }
+    }
+    if (meilleur) break;
+    front = suite;
+  }
+  if (!meilleur) return;       // cas extreme : les murs feront le reste
+  a.x = meilleur.x; a.y = meilleur.y;
+  a._px = a.x; a._py = a.y;
 }
 // Dans l'emprise d'une hutte (corps + perron), pour ne rien y faire apparaitre
 function dansHutte(obs, x, y, marge) {
@@ -1022,7 +1043,7 @@ function pas(p) {
   for (const a of arr) {
     if (a.para > 0) {
       a.para = Math.max(0, a.para - DT * (a.plonge ? PARA_PLONGE : 1));
-      if (a.para === 0) { a.plonge = false; poseDansBatiment(p, a); }
+      if (a.para === 0) { a.plonge = false; sortDuBatiment(p, a); }
     } else a.plonge = false;
     if (a.secousse > 0) a.secousse = Math.max(0, a.secousse - DT);
     if (a.touche > 0)   a.touche   = Math.max(0, a.touche - DT);
