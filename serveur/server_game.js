@@ -105,7 +105,7 @@ const MAISON = (() => {
 // le vrai jeu : longueur = l'ouverture, epaisseur tiree de l'image.
 const PORTE = (() => {
   const L = 2 * HUTTE.D + 1.5, T = L * 277 / 1141;
-  return { L, T, DUREE: 0.3, PORTEE: R_JOUEUR + 40 };
+  return { L, T, DUREE: 0.15, PORTEE: R_JOUEUR + 40 };
 })();
 const aPorte = (o) => o.type === 'maison';
 // Rectangle local de la porte au repos : 0 fermee, 1 ouverte dedans, -1 dehors
