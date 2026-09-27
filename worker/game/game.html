@@ -549,7 +549,7 @@ function geoBat(o) { return o.type === 'maison' ? MAISON : HUTTE; }
 // s'appuie sur rien pendant qu'elle tourne : solide seulement au repos.
 var PORTE = (function () {
   var L = 2 * HUTTE.D + 1.5, T = L * 277 / 1141;
-  return { L: L, T: T, DUREE: 0.3, PORTEE: R_JOUEUR + 40 };
+  return { L: L, T: T, DUREE: 0.15, PORTEE: R_JOUEUR + 40 };
 })();
 function aPorte(o) { return o.type === 'maison'; }
 function porteRect(etat) {
@@ -3207,17 +3207,22 @@ function dessineBoutonSaut() {
 // seul : on ne peut pas le garder enfonce. Il n'agit que pres d'une porte.
 var btnInter = { x: 0, y: 0, r: 0, t: 0 }, demandeInter = false;
 var INTER_ENFONCE = 150;        // ms
+// Visible tout le temps en partie : lobby d'attente, avion, parachute, sol
+function interVisible() {
+  return etatJeu === 'jeu' && !!moi && moi.vivant !== false;
+}
+// Mais il n'agit qu'a pied (le serveur ignore l'appui en l'air)
 function interDispo() {
-  return etatJeu === 'jeu' && !!moi && moi.vivant !== false && !dansAvion() && !enParachute();
+  return interVisible() && !dansAvion() && !enParachute();
 }
 function posBoutonInter() {
-  var c = joyDroitePos(), r = JOY_STICK * 0.85;
+  var c = joyDroitePos(), r = JOY_STICK * 0.95;
   btnInter.r = r;
-  btnInter.x = c.x + JOY_R * 0.55;
-  btnInter.y = c.y - JOY_R - r - 26;
+  btnInter.x = c.x + JOY_R * 0.45;
+  btnInter.y = c.y - JOY_R - r - 48;
 }
 function surInter(e) {
-  if (!interDispo() || btnInter.r <= 0) return false;
+  if (!interVisible() || btnInter.r <= 0) return false;
   var q = posEcran(e);
   return Math.hypot(q.x - btnInter.x, q.y - btnInter.y) <= btnInter.r * 1.25;
 }
@@ -3226,7 +3231,7 @@ function appuieInter() {
   demandeInter = true;          // part avec la prochaine commande
 }
 function dessineBoutonInter() {
-  if (!interDispo()) return;
+  if (!interVisible()) return;
   posBoutonInter();
   var sp = SPRITES.bouton_inter, r = btnInter.r;
   var enf = Date.now() - btnInter.t < INTER_ENFONCE;
@@ -3263,7 +3268,7 @@ window.addEventListener('touchstart', function (e) {
   }
 }, { capture: true, passive: false });
 window.addEventListener('keydown', function (e) {
-  if ((e.code === 'KeyE' || (e.key || '').toLowerCase() === 'e') && !e.repeat && interDispo()) appuieInter();
+  if ((e.code === 'KeyE' || (e.key || '').toLowerCase() === 'e') && !e.repeat && interVisible()) appuieInter();
 });
 
 // Fin de partie : on laisse les dernieres balles finir leur course, puis on
@@ -3752,9 +3757,10 @@ var shooting = false;
 var JOY_R = 130;          // rayon de la base
 var JOY_STICK = 62;       // rayon du pouce
 var JOY_MARGE = 60;
+var JOY_RENTRE = 28;      // les deux sticks, un peu rapproches du centre
 
-function joyGauchePos() { return {x: JOY_MARGE + JOY_R, y: HAUT - JOY_MARGE - JOY_R}; }
-function joyDroitePos() { return {x: LARG - JOY_MARGE - JOY_R, y: HAUT - JOY_MARGE - JOY_R}; }
+function joyGauchePos() { return {x: JOY_MARGE + JOY_R + JOY_RENTRE, y: HAUT - JOY_MARGE - JOY_R}; }
+function joyDroitePos() { return {x: LARG - JOY_MARGE - JOY_R - JOY_RENTRE, y: HAUT - JOY_MARGE - JOY_R}; }
 
 // etat des deux sticks : dx/dy normalises dans [-1,1]
 var joyG = {id:-1, actif:false, dx:0, dy:0};
@@ -4967,8 +4973,9 @@ function boucle(maintenant) {
   }
   // Le bouton de saut s'affiche aussi sur ordinateur : un clic suffit
   if (etatJeu === 'jeu' && modeBoutonAir()) { repereEcran(); dessineBoutonSaut(); }
-  // Bouton d'interaction, au sol seulement (ordinateur : aussi la touche E)
-  if (interDispo()) { repereEcran(); dessineBoutonInter(); }
+  // Bouton d'interaction : toujours la en partie (lobby, avion, parachute,
+  // sol) ; il n'agit qu'a pied pres d'une porte. Ordinateur : aussi la touche E
+  if (interVisible()) { repereEcran(); dessineBoutonInter(); }
 
   dessineEcranMort(vue);
   dessineCarte();                   // la carte du monde passe par-dessus tout
