@@ -177,6 +177,37 @@ function entreeMur(x0, y0, x1, y1, w, r) {
   }
   return t0;
 }
+// Atterrissage au-dessus d'un batiment : on passe a travers le toit et on
+// se pose DANS le batiment. Sans ca, un atterrissage sur un mur faisait
+// sortir le joueur par la face la plus proche, souvent dehors.
+function poseDansBatiment(p, a) {
+  for (const o of p.obs) {
+    if (!estBatiment(o)) continue;
+    const m = o.type === 'maison';
+    const EU = m ? MAISON.U : HUTTE.B, EV = m ? MAISON.V : HUTTE.B;
+    const q = ((o.rot | 0) % 4 + 4) % 4;
+    let u = a.x - o.x, v = a.y - o.y;
+    if (q === 1) { const t = u; u = v; v = -t; }
+    else if (q === 2) { u = -u; v = -v; }
+    else if (q === 3) { const t = u; u = -v; v = t; }
+    if (Math.abs(u) > EU || Math.abs(v) > EV) continue;   // pas au-dessus du toit
+    // Deja sur le plancher ou dans la porte, sans toucher de mur : on ne bouge pas
+    const essai = { x: a.x, y: a.y };
+    let touche = false;
+    for (const r of geoBat(o).murs.concat(geoBat(o).fenetres || [])) {
+      if (pousseMur({ x: essai.x, y: essai.y }, R_JOUEUR, rectMonde(o, r))) { touche = true; break; }
+    }
+    if (!touche) return;
+    const IU = (m ? MAISON.IU : HUTTE.I) - R_JOUEUR - 1;
+    const IV = (m ? MAISON.IV : HUTTE.I) - R_JOUEUR - 1;
+    u = Math.max(-IU, Math.min(IU, u));
+    v = Math.max(-IV, Math.min(IV, v));
+    const w = q === 0 ? [u, v] : q === 1 ? [-v, u] : q === 2 ? [-u, -v] : [v, -u];
+    a.x = o.x + w[0]; a.y = o.y + w[1];
+    a._px = a.x; a._py = a.y;
+    return;
+  }
+}
 // Dans l'emprise d'une hutte (corps + perron), pour ne rien y faire apparaitre
 function dansHutte(obs, x, y, marge) {
   for (const o of obs) {
@@ -991,7 +1022,7 @@ function pas(p) {
   for (const a of arr) {
     if (a.para > 0) {
       a.para = Math.max(0, a.para - DT * (a.plonge ? PARA_PLONGE : 1));
-      if (a.para === 0) a.plonge = false;
+      if (a.para === 0) { a.plonge = false; poseDansBatiment(p, a); }
     } else a.plonge = false;
     if (a.secousse > 0) a.secousse = Math.max(0, a.secousse - DT);
     if (a.touche > 0)   a.touche   = Math.max(0, a.touche - DT);
