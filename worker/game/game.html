@@ -834,7 +834,7 @@ function dessineBuissonTextureDessin(o) {
 // (D_FONDU unites avant) et se termine peu apres (FONDU_IMPACT secondes
 // posee contre l'obstacle). Une seule courbe douce couvre les deux phases :
 // la temps passe sur le mur compte comme une distance virtuelle parcourue.
-var D_FONDU = 200, FONDU_IMPACT = 0.06, _ballesFin = {}, _ballesFinies = {};
+var D_FONDU = 150, FONDU_IMPACT = 0.06, _ballesFin = {}, _ballesFinies = {};
 var RECUL_IMPACT = R_JOUEUR * 0.46 - R_BALLE;   // comme le serveur
 function alphaFondu(s) {        // s : 0 debut du fondu, 1 fin ; pente nulle aux deux bouts
   if (s <= 0) return 1;
@@ -2779,11 +2779,6 @@ function dessine(p, moi, viseur, drag) {
     ctx.globalAlpha=1;ctx.restore();
   }
 
-  // jauges de rechargement : posees au sol, hors du calque des
-  // personnages, sinon elles seraient tronquees par ses bords
-  for (const j of agentsArr)
-    if (j.vivant && j.id === pid) dessineSphereChargement(j);
-
   // ---- particules ----
   for (const q of p.particules) {
     const alphaVal = Math.max(0, Math.min(1, q.vie / q.vieMax));
@@ -2946,6 +2941,11 @@ function dessine(p, moi, viseur, drag) {
     if (_na <= 0.01) continue;
     dessineNom(_nj.x, _nj.y, _nj.name || '?', _na);
   }
+
+  // Jauge de rechargement : comme les pseudos, par-dessus tout le decor
+  // (maisons et toits compris), jamais cachee par un batiment
+  for (const j of agentsArr)
+    if (j.vivant && j.id === pid) dessineSphereChargement(j);
 
   // ---- oeil du cyclone (caché pendant la phase lobby) ----
   if (!snapDernier || !snapDernier.phaseLobby) {
