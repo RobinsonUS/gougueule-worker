@@ -658,6 +658,74 @@ function poseImpact(b, dx, dy, t) {
   b.x += dx / l * d; b.y += dy / l * d;
   b.fin = 1;
 }
+// Fraction du segment (x0,y0)+t(dx,dy) ou il entre dans le cercle
+// (cx, cy, R) ; 0 s'il part de dedans, -1 s'il ne le touche pas.
+function entreeCercle(x0, y0, dx, dy, cx, cy, R) {
+  const fx = x0 - cx, fy = y0 - cy;
+  const C = fx * fx + fy * fy - R * R;
+  if (C <= 0) return 0;
+  const A = dx * dx + dy * dy;
+  if (A === 0) return -1;
+  const B = 2 * (fx * dx + fy * dy);
+  const disc = B * B - 4 * A * C;
+  if (disc < 0) return -1;
+  const t = (-B - Math.sqrt(disc)) / (2 * A);
+  return t >= 0 && t <= 1 ? t : -1;
+}
+// Premier obstacle sur le trajet d'une balle, tout le long du segment (pas
+// seulement au point d'arrivee : sinon un obstacle fin, ou colle au tireur,
+// se laisse traverser). Murs et portes, arbres, joueurs. Les fenetres,
+// elles, laissent passer. Retourne { t, genre, o } ou null.
+function premierImpact(p, x0, y0, x1, y1, parId, joueurs) {
+  const dx = x1 - x0, dy = y1 - y0;
+  let best = null;
+  const garde = (t, genre, o) => { if (t >= 0 && (!best || t < best.t)) best = { t, genre, o }; };
+  if (p.mursGrid) {
+    const vus = new Set();
+    for (const q of [[x0, y0], [(x0 + x1) / 2, (y0 + y1) / 2], [x1, y1]]) {
+      for (const w of mursPres(p, q[0], q[1])) {
+        if (vus.has(w) || w.fen || !estBatiment(w.bat)) continue; vus.add(w);
+        garde(entreeMur(x0, y0, x1, y1, w, R_BALLE), 'mur', w.bat);
+      }
+    }
+  }
+  const vusA = new Set();
+  const sources = p.arbresGrid
+    ? [queryGrid(p.arbresGrid, x0, y0), queryGrid(p.arbresGrid, x1, y1)]
+    : [p.arbres || p.obs];
+  for (const liste of sources) for (const o of liste) {
+    if (vusA.has(o) || !estSolide(o)) continue; vusA.add(o);
+    garde(entreeCercle(x0, y0, dx, dy, o.x, o.y, o.r + R_BALLE), 'arbre', o);
+  }
+  if (joueurs) for (const c of Object.values(p.agents)) {
+    if (!c.vivant || c.id === parId) continue;
+    if (c.enAvion || c.para > 0) continue;       // un parachutiste est hors d'atteinte
+    garde(entreeCercle(x0, y0, dx, dy, c.x, c.y, R_JOUEUR + R_BALLE), 'joueur', c);
+  }
+  return best;
+}
+// Effet d'un impact sur ce qui est touche (la balle, elle, est geree a part)
+function subitImpact(p, h, tireur) {
+  if (h.genre === 'mur') {
+    const bat = h.o;
+    if (estHutte(bat)) {
+      bat.pv -= p.rng() < 0.5 ? 10 : 11; bat.secousse = 0.22;
+      if (bat.pv <= 0) {
+        bat.pv = 0; bat.type = 'ruine'; bat.secousse = 0;
+        majMurs(p);                        // les murs de la ruine disparaissent
+      }
+    }
+  } else if (h.genre === 'arbre') {
+    const o = h.o;
+    o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
+    if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; p.arbresGrid = null; }
+  } else if (h.genre === 'joueur') {
+    const c = h.o;
+    c.pv -= p.rng() < 0.5 ? 10 : 11;
+    c.secousse = 0.16; c.touche = 0.30; c.revele = 0.35;
+    if (c.pv <= 0) tue(p, c, tireur || null, '?');
+  }
+}
 function majBalles(p, arr) {
   for (let k = p.balles.length - 1; k >= 0; k--) {
     const b = p.balles[k];
@@ -666,65 +734,17 @@ function majBalles(p, arr) {
     b.reste -= Math.hypot(dx, dy);
     if (b.reste <= 0) { p.balles.splice(k, 1); continue; }
     // Supprimer si hors map
-    const nx2 = b.x + dx, ny2 = b.y + dy;
-    if (nx2 < 0 || nx2 > p.monde || ny2 < 0 || ny2 > p.monde) { p.balles.splice(k, 1); continue; }
-    const nx = nx2, ny = ny2;
-    let mort = false, arrete = false;
-    // Mur de batiment sur le trajet (les fenetres laissent passer) : la
-    // balle s'y arrete, et abime la hutte (une maison ne craint rien)
-    if (p.mursGrid) {
-      const vus = new Set();
-      let touche = null, tMin = 2;
-      for (const q of [[b.x, b.y], [nx, ny]]) {
-        for (const w of mursPres(p, q[0], q[1])) {
-          if (vus.has(w) || w.fen || !estBatiment(w.bat)) continue; vus.add(w);
-          const t = entreeMur(b.x, b.y, nx, ny, w, R_BALLE);
-          if (t >= 0 && t < tMin) { tMin = t; touche = w.bat; }
-        }
-      }
-      if (touche) {
-        if (estHutte(touche)) {
-          touche.pv -= p.rng() < 0.5 ? 10 : 11; touche.secousse = 0.22;
-          if (touche.pv <= 0) {
-            touche.pv = 0; touche.type = 'ruine'; touche.secousse = 0;
-            // murs a refaire : ceux de la ruine disparaissent
-            p.murs = mursDe(p.obs);
-            p.mursGrid = p.murs.length ? grilleMurs(p.murs) : null;
-          }
-        }
-        poseImpact(b, dx, dy, tMin);
-        continue;
-      }
-    }
-    for (const o of (p.arbresGrid ? queryGrid(p.arbresGrid, nx, ny) : (p.arbres || p.obs))) {
-      if (!estSolide(o)) continue;
-      if (Math.hypot(o.x - nx, o.y - ny) < o.r + R_BALLE) {
-        o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
-        if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; p.arbresGrid = null; }
-        // point d'entree dans le cercle (r + R_BALLE) le long du trajet
-        const R = o.r + R_BALLE, fx = b.x - o.x, fy = b.y - o.y;
-        const A = dx * dx + dy * dy || 1, Bq = 2 * (fx * dx + fy * dy), Cq = fx * fx + fy * fy - R * R;
-        const disc = Bq * Bq - 4 * A * Cq;
-        const t = disc > 0 ? Math.max(0, (-Bq - Math.sqrt(disc)) / (2 * A)) : 0;
-        poseImpact(b, dx, dy, t);
-        arrete = true; break;
-      }
-    }
-    if (arrete) continue;
+    const nx = b.x + dx, ny = b.y + dy;
+    if (nx < 0 || nx > p.monde || ny < 0 || ny > p.monde) { p.balles.splice(k, 1); continue; }
     // Partie finie : les balles finissent leur trajet mais ne blessent plus
-    if (!mort && !p.fini) for (const c of arr) {
-      if (!c.vivant || c.id === b.par) continue;
-      if (c.enAvion || c.para > 0) continue;      // un parachutiste est hors d'atteinte
-      if (Math.hypot(c.x - nx, c.y - ny) < R_JOUEUR + R_BALLE) {
-        c.pv -= p.rng() < 0.5 ? 10 : 11;
-        c.secousse = 0.16; c.touche = 0.30; c.revele = 0.35;
-        if (c.pv <= 0) tue(p, c, p.agents[b.par] || null, '?');
-        mort = true; break;
-      }
-    }
-    if (mort) p.balles.splice(k, 1); else { b.x = nx; b.y = ny; }
+    const h = premierImpact(p, b.x, b.y, nx, ny, b.par, !p.fini);
+    if (!h) { b.x = nx; b.y = ny; continue; }
+    subitImpact(p, h, p.agents[b.par]);
+    // Mur, porte ou arbre : la balle est posee contre, puis s'efface en
+    // fondu cote client. Joueur : elle disparait dans le joueur.
+    if (h.genre === 'joueur') p.balles.splice(k, 1);
+    else poseImpact(b, dx, dy, h.t);
   }
-
 }
 
 // ─────────────── Avion de largage ──────────────────────────────────
@@ -1086,23 +1106,23 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
     const _co = R_JOUEUR * 0.2;
     const bx = a.x + Math.cos(a.angle) * CANON_L - Math.sin(a.angle) * _co;
     const by = a.y + Math.sin(a.angle) * CANON_L + Math.cos(a.angle) * _co;
-    const liveArr = Object.values(p.agents);
-    let spawnHit = false;
-    for (const c of liveArr) {
-      if (!c.vivant || c.id === a.id) continue;
-      if (Math.hypot(c.x - bx, c.y - by) < R_JOUEUR + R_BALLE) {
-        const dg = p.rng() < 0.5 ? 10 : 11;
-        c.pv -= dg; c.secousse = 0.16; c.touche = 0.30; c.revele = 0.35;
-        if (c.pv <= 0) tue(p, c, a);
-        spawnHit = true; break;
+    // La balle nait au bout du canon, mais le canon depasse du joueur : colle
+    // a un mur fin, une porte, un arbre ou un autre joueur, sa bouche est
+    // deja de l'autre cote. On suit donc le trajet depuis le centre du
+    // tireur jusqu'a la bouche : le premier obstacle arrete la balle.
+    const h = premierImpact(p, a.x, a.y, bx, by, a.id, true);
+    const balle = { id: ++p.balleId, x: bx, y: by,
+                    vx: Math.cos(at) * V_BALLE, vy: Math.sin(at) * V_BALLE,
+                    ang: at, reste: PORTEE, par: a.id };
+    if (!h) p.balles.push(balle);
+    else {
+      subitImpact(p, h, a);
+      if (h.genre !== 'joueur') {
+        // posee contre l'obstacle, cote tireur, pour que l'impact se voie
+        balle.x = a.x; balle.y = a.y;
+        poseImpact(balle, bx - a.x, by - a.y, h.t);
+        p.balles.push(balle);
       }
-    }
-    if (!spawnHit) {
-      p.balles.push({
-        id: ++p.balleId, x: bx, y: by,
-        vx: Math.cos(at) * V_BALLE, vy: Math.sin(at) * V_BALLE,
-        ang: at, reste: PORTEE, par: a.id,
-      });
     }
     p.evts.push({ e: 'tir', id: a.id, x: a.x, y: a.y, ang: a.angle });
     if (a.munitions <= 0) { a.rechargement = RECHARGE_DUREE; a.dureeRechargeMax = RECHARGE_DUREE; }
