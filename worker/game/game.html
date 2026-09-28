@@ -543,20 +543,25 @@ function estBat(o) { return o.type === 'hutte' || o.type === 'maison'; }
 function geoBat(o) { return o.type === 'maison' ? MAISON : HUTTE; }
 
 // ===================== porte (maison) =====================
-// Meme geometrie que le serveur. Fermee, elle bouche l'ouverture entre les
-// piliers, centree sur la ligne du mur. Ouverte (+1 vers l'interieur, -1
-// vers l'exterieur), elle se range contre le pilier cote +u. Elle ne
-// s'appuie sur rien pendant qu'elle tourne : solide seulement au repos.
+// Meme geometrie que le serveur, cotes relevees au pixel sur le vrai jeu et
+// rapportees aux piliers de maison.png :
+//  - fermee : ses deux bouts recouvrent exactement la bordure interieure
+//    des piliers, son bord bas affleure le bas des piliers ;
+//  - ouverte (+1 vers l'interieur, -1 vers l'exterieur) : elle recouvre
+//    exactement le pilier cote +u, le bout pivot a V_DEDANS ou V_DEHORS.
+// Elle ne s'appuie sur rien pendant qu'elle tourne : solide seulement au repos.
 var PORTE = (function () {
-  var L = 2 * HUTTE.D + 1.5, T = L * 277 / 1141;
-  return { L: L, T: T, DUREE: 0.15, PORTEE: R_JOUEUR + 40 };
+  var L = 151.8, T = L * 277 / 1141;
+  return { L: L, T: T, V_FERMEE: 243.0, U_OUVERTE: 85.35, V_DEDANS: 227.1, V_DEHORS: 221.9,
+           DUREE: 0.15, PORTEE: R_JOUEUR + 40,
+           OMBRE: 7.6, OMBRE_DY: 2.0, OMBRE_ALPHA: 0.077 };   // ombre mesuree sur le vrai jeu
 })();
 function aPorte(o) { return o.type === 'maison'; }
 function porteRect(etat) {
-  var F = MAISON.V, D = HUTTE.D, L = PORTE.L, T = PORTE.T;
-  if (etat === 1)  return [D, F - L, D + T, F];
-  if (etat === -1) return [D, F, D + T, F + L];
-  return [-L / 2, F - T / 2, L / 2, F + T / 2];
+  var L = PORTE.L, T = PORTE.T, U = PORTE.U_OUVERTE;
+  if (etat === 1)  return [U - T / 2, PORTE.V_DEDANS - L, U + T / 2, PORTE.V_DEDANS];
+  if (etat === -1) return [U - T / 2, PORTE.V_DEHORS, U + T / 2, PORTE.V_DEHORS + L];
+  return [-L / 2, PORTE.V_FERMEE - T, L / 2, PORTE.V_FERMEE];
 }
 function porteAuRepos(o) { return (o.porteA || 0) === (o.porte || 0); }
 function versLocal(o, x, y) {
@@ -598,20 +603,69 @@ function porteProcheLoc(x, y) {
 // Pose de la porte a l'instant : centre (monde) et angle de l'image. La
 // rotation se fait autour d'un pivot choisi pour que les deux positions de
 // repos tombent exactement sur les rectangles ci-dessus.
+// Centre d'un rectangle local
+function centreRect(r) { return [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2]; }
+// Pivot de la rotation d'un quart de tour (sens +1 : (x,y)->(-y,x) ; sens
+// -1 : (x,y)->(y,-x)) qui envoie le centre C0 sur le centre C1
+function pivotQuart(C0, C1, sens) {
+  var R0 = sens > 0 ? [-C0[1], C0[0]] : [C0[1], -C0[0]];
+  var X = C1[0] - R0[0], Y = C1[1] - R0[1];
+  return sens > 0 ? [(X - Y) / 2, (X + Y) / 2] : [(X + Y) / 2, (Y - X) / 2];
+}
+var _pivotsPorte = null;
+function pivotsPorte() {
+  if (!_pivotsPorte) {
+    var c0 = centreRect(porteRect(0));
+    _pivotsPorte = { dedans: pivotQuart(c0, centreRect(porteRect(1)), 1),
+                     dehors: pivotQuart(c0, centreRect(porteRect(-1)), -1) };
+  }
+  return _pivotsPorte;
+}
 function posePorte(o) {
-  var F = MAISON.V, L = PORTE.L, T = PORTE.T, uo = HUTTE.D + T / 2;
   var a = Math.max(-1, Math.min(1, o.porteA || 0)), th = a * Math.PI / 2;
-  var pu = (uo + L / 2) / 2, pv = a >= 0 ? pu + F - L / 2 : F + L / 2 - pu;
-  var x0 = 0 - pu, y0 = F - pv, c = Math.cos(th), s = Math.sin(th);
-  var cu = pu + x0 * c - y0 * s, cv = pv + x0 * s + y0 * c;
+  var c0 = centreRect(porteRect(0)), pv = a >= 0 ? pivotsPorte().dedans : pivotsPorte().dehors;
+  var x0 = c0[0] - pv[0], y0 = c0[1] - pv[1], c = Math.cos(th), s = Math.sin(th);
+  var cu = pv[0] + x0 * c - y0 * s, cv = pv[1] + x0 * s + y0 * c;
   var w = vecMonde(o, cu, cv), f = vecMonde(o, -c, -s);   // f : vers le bout libre (poignees)
   return { x: o.x + w[0], y: o.y + w[1], ang: Math.atan2(f[0], -f[1]) };
+}
+// Ombre de la porte : sa silhouette elargie de OMBRE, en noir, comme celle
+// des batiments. Calculee une fois par taille d'ecran, tournee avec la porte,
+// et decalee vers le bas de l'ecran (pas avec la porte).
+var _ombrePorte = null;
+function ombrePorte(sp, largeurPx, hauteurPx) {
+  var d = Math.max(1, Math.round(PORTE.OMBRE * PXV));
+  var w = Math.max(8, Math.round(largeurPx / 8) * 8), h = Math.max(8, Math.round(hauteurPx / 8) * 8);
+  var cle = w + ':' + h + ':' + d;
+  if (_ombrePorte && _ombrePorte.cle === cle) return _ombrePorte;
+  var cs = document.createElement('canvas'); cs.width = w; cs.height = h;
+  cs.getContext('2d').drawImage(sp, 0, 0, w, h);
+  var co = document.createElement('canvas'); co.width = w + 2 * d; co.height = h + 2 * d;
+  var g = co.getContext('2d');
+  for (var i = 0; i < 24; i++) {
+    var an = i / 24 * Math.PI * 2;
+    g.drawImage(cs, d + Math.cos(an) * d, d + Math.sin(an) * d);
+  }
+  g.drawImage(cs, d, d);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, co.width, co.height);
+  _ombrePorte = { cle: cle, cv: co, d: d };
+  return _ombrePorte;
 }
 function dessinePorte(o) {
   var sp = SPRITES.porte;
   if (!sp || !(sp.naturalWidth || sp.width)) return;
   var ps = posePorte(o);
   var L = PORTE.L, W = L * (sp.naturalWidth || sp.width) / (sp.naturalHeight || sp.height);
+  // ombre d'abord, toujours la, meme pendant la rotation
+  var om = ombrePorte(sp, W * PXV, L * PXV), dm = om.d / PXV;
+  ctx.save();
+  ctx.translate(ps.x, ps.y + PORTE.OMBRE_DY);
+  ctx.rotate(ps.ang);
+  ctx.globalAlpha *= PORTE.OMBRE_ALPHA;
+  ctx.drawImage(om.cv, -W / 2 - dm, -L / 2 - dm, W + 2 * dm, L + 2 * dm);
+  ctx.restore();
   ctx.save();
   ctx.translate(ps.x, ps.y);
   ctx.rotate(ps.ang);
