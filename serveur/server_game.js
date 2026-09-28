@@ -103,17 +103,24 @@ const MAISON = (() => {
 // vers l'interieur depuis dehors (+1), vers l'exterieur depuis dedans (-1).
 // Ouverte, elle se range contre le pilier (cote +u). Mesures relevees sur
 // le vrai jeu : longueur = l'ouverture, epaisseur tiree de l'image.
+// Cotes relevees au pixel sur le vrai jeu, rapportees aux piliers de
+// maison.png (meme valeurs cote client) :
+//  - fermee : ses deux bouts recouvrent exactement la bordure interieure
+//    des piliers, son bord bas affleure le bas des piliers ;
+//  - ouverte : elle recouvre exactement le pilier cote +u, le bout pivot a
+//    V_DEDANS (vers l'interieur) ou V_DEHORS (vers l'exterieur).
 const PORTE = (() => {
-  const L = 2 * HUTTE.D + 1.5, T = L * 277 / 1141;
-  return { L, T, DUREE: 0.15, PORTEE: R_JOUEUR + 40 };
+  const L = 151.8, T = L * 277 / 1141;
+  return { L, T, V_FERMEE: 243.0, U_OUVERTE: 85.35, V_DEDANS: 227.1, V_DEHORS: 221.9,
+           DUREE: 0.15, PORTEE: R_JOUEUR + 40 };
 })();
 const aPorte = (o) => o.type === 'maison';
 // Rectangle local de la porte au repos : 0 fermee, 1 ouverte dedans, -1 dehors
 function porteRect(etat) {
-  const F = MAISON.V, D = MAISON.D, L = PORTE.L, T = PORTE.T;
-  if (etat === 1)  return [D, F - L, D + T, F];
-  if (etat === -1) return [D, F, D + T, F + L];
-  return [-L / 2, F - T / 2, L / 2, F + T / 2];
+  const L = PORTE.L, T = PORTE.T, U = PORTE.U_OUVERTE;
+  if (etat === 1)  return [U - T / 2, PORTE.V_DEDANS - L, U + T / 2, PORTE.V_DEDANS];
+  if (etat === -1) return [U - T / 2, PORTE.V_DEHORS, U + T / 2, PORTE.V_DEHORS + L];
+  return [-L / 2, PORTE.V_FERMEE - T, L / 2, PORTE.V_FERMEE];
 }
 // Porte au repos (pas en train de tourner) : alors seulement elle est solide
 const porteAuRepos = (o) => (o.porteA || 0) === (o.porte || 0);
@@ -149,7 +156,8 @@ function basculePorte(p, a) {
   if (o.porte) o.porte = 0;
   else {
     const [, v] = versLocal(o, a.x, a.y);
-    o.porte = v > MAISON.V ? 1 : -1;     // dehors : vers l'interieur
+    // dehors (au-dela de la porte fermee) : elle s'ouvre vers l'interieur
+    o.porte = v > PORTE.V_FERMEE - PORTE.T / 2 ? 1 : -1;
   }
   majMurs(p);                             // en mouvement, la porte n'arrete rien
 }
