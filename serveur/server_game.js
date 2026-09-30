@@ -120,7 +120,7 @@ const NOUVEAUX_BATS = {"batiment1":{"R":453.5,"corps":[-327.64,-195.13,327.64,19
 const PORTE = (() => {
   const L = 151.8, T = L * 277 / 1141;
   return { L, T, V_FERMEE: 243.0, U_OUVERTE: 85.35, V_DEDANS: 227.1, V_DEHORS: 221.9,
-           DUREE: 0.15, PORTEE: R_JOUEUR + 40 };
+           DUREE: 0.17, PORTEE: R_JOUEUR + 40 };
 })();
 // La porte de la maison, au meme format que celles des nouveaux batiments
 MAISON.portes = [(() => {
@@ -521,6 +521,15 @@ function valideMap(brut, nom) {
     duree: Math.max(1, nombre(z.duree, ZONE_DUREE)),
     vagues,
   };
+  // Au depart, le cyclone doit rester hors de la carte depliee tout entiere,
+  // bande d'eau autour comprise (CARTE_MARGE = 0,055 du cote de la fenetre
+  // cote client) : sinon son bord se voit des l'ouverture de la carte. On
+  // l'eloigne donc au besoin jusqu'au coin le plus lointain, plus une marge.
+  const bandeCarte = monde * 0.055 / (1 - 2 * 0.055);
+  let coinLoin = 0;
+  for (const x of [-bandeCarte, monde + bandeCarte]) for (const y of [-bandeCarte, monde + bandeCarte])
+    coinLoin = Math.max(coinLoin, Math.hypot(x - zone.cx, y - zone.cy));
+  zone.r0 = Math.max(zone.r0, Math.ceil(coinLoin + 250));
 
   // Contour de l'ile : tout ce qui est dehors est de l'eau. Pas de contour
   // = carte entierement terrestre, comme avant.
