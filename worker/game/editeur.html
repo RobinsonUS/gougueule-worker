@@ -140,6 +140,7 @@
     <div class="opt" data-outil="pinceau"><div class="ic">~</div>Pinceau</div>
     <div class="opt" data-outil="gomme"><div class="ic">x</div>Gomme</div>
     <div class="opt" data-outil="cote"><div class="ic">~~</div>Cote</div>
+    <div class="opt large" data-outil="chemin"><div class="ic">=</div>Chemin</div>
   </div>
 
   <div id="blocObjet">
@@ -153,6 +154,7 @@
       <div class="opt" data-type="batiment1"><div class="ic">B1</div>Batiment 1</div>
       <div class="opt" data-type="batiment2"><div class="ic">B2</div>Batiment 2</div>
       <div class="opt" data-type="batiment3"><div class="ic">B3</div>Batiment 3</div>
+      <div class="opt" data-type="batiment4"><div class="ic">B4</div>Batiment 4</div>
     </div>
     <div class="note">Taille fixe : arbre 87,5, buisson 68</div>
     <div id="blocRot">
@@ -175,6 +177,21 @@
     <button class="act" id="coteRect">Partir d'un rectangle</button>
     <button class="act rouge" id="coteVide">Tout effacer (plus d'eau)</button>
     <div class="ligne">Points <b id="vCote">0</b></div>
+  </div>
+
+  <div id="blocChemin">
+    <h2>Chemins de terre</h2>
+    <div class="note">Cliquez pour poser les coins d'un chemin, un a la fois ;
+      Maj garde le trait droit (pas de 45°). Pour le fermer : cliquez sur le
+      premier point, double-cliquez ou appuyez sur Entree. Echap abandonne,
+      Retour arriere retire le dernier point. Les coins sont arrondis comme
+      en jeu. Deux chemins qui se chevauchent n'en font qu'un.<br>
+      Pour retoucher : glissez une poignee, ou le milieu d'un bord pour
+      ajouter un coin. Clic droit sur une poignee : la retirer. Clic droit
+      dans un chemin : le supprimer. Decor seulement : on y marche comme
+      sur l'herbe.</div>
+    <button class="act rouge" id="cheminsVide">Effacer tous les chemins</button>
+    <div class="ligne">Chemins <b id="vChemins">0</b></div>
   </div>
 
   <div id="blocSel">
@@ -265,6 +282,8 @@ const C = {
   eau:         '#0071bc',
   eauLoin:     '#075a92',
   ligneEau:    '#006ab0',
+  chemin:      '#b48b4d',   // memes valeurs que le jeu (capture ramenee en sRGB)
+  ligneChemin: '#a98248',
   ombre:       'rgba(0,0,0,0.13)',
   ombreDouce:  'rgba(0,0,0,0.11)',   // arbres, buissons, joueurs
   buisson: {
@@ -356,7 +375,7 @@ const SPRITES = {};
 ['arbre_vert', 'arbre_orange', 'arbre_rouge', 'arbre_sombre', 'buisson',
  'hutte1', 'hutte1_toit', 'hutte2', 'hutte2_toit', 'maison', 'maison_toit', 'maison_fen',
  'batiment1', 'batiment1_toit', 'batiment1_fen', 'batiment2', 'batiment2_toit', 'batiment2_fen',
- 'batiment3', 'batiment3_toit', 'batiment3_fen'].forEach(function (n) {
+ 'batiment3', 'batiment3_toit', 'batiment3_fen', 'batiment4', 'batiment4_toit', 'batiment4_fen'].forEach(function (n) {
   const i = new Image(); i.src = '/game/' + n + '.png'; SPRITES[n] = i;
 });
 let PXV = 1;                 // pixels reels par unite monde, mis a jour a chaque image
@@ -631,7 +650,7 @@ let carte = {
                     { r: 950,  duree: 20, pause: 15, degats: 5 },
                     { r: 300,  duree: 10, pause: 20, degats: 10 },
                     { r: 0,    duree: 45, pause: 0,  degats: 10 } ] },
-  ile: null, spawns: [], obs: []
+  ile: null, chemins: [], spawns: [], obs: []
 };
 let vue = { x: 6400, y: 6400, z: 0.06 };
 // ═══ Batiments (huttes, maison) : meme geometrie et meme dessin que le jeu ═══
@@ -649,11 +668,11 @@ const MAISON = {
 };
 // Batiments 1, 2 et 3 : memes donnees que le jeu (generees au pixel a partir
 // des images ; portes a la taille exacte de celle de la maison)
-const NOUVEAUX_BATS = {"batiment1":{"R":453.5,"ECH":0.6325,"CX":609.5,"CY":355.0,"corps":[-327.64,-195.13,327.64,195.13],"emprise":[-383.61,-222.64,354.52,222.01]},"batiment2":{"R":451.9,"ECH":0.62857,"CX":522.5,"CY":355.0,"corps":[-325.6,-193.91,325.6,193.91],"emprise":[-326.54,-221.26,382.49,220.63]},"batiment3":{"R":648.1,"ECH":0.62988,"CX":582.5,"CY":834.0,"corps":[-309.27,-467.05,309.27,467.05],"emprise":[-365.01,-523.43,337.3,494.45]}};
+const NOUVEAUX_BATS = {"batiment1":{"R":453.5,"ECH":0.6325,"CX":609.5,"CY":355.0,"corps":[-327.64,-195.13,327.64,195.13],"emprise":[-383.61,-222.64,354.52,222.01]},"batiment2":{"R":451.9,"ECH":0.62857,"CX":522.5,"CY":355.0,"corps":[-325.6,-193.91,325.6,193.91],"emprise":[-326.54,-221.26,382.49,220.63]},"batiment3":{"R":648.1,"ECH":0.62988,"CX":582.5,"CY":834.0,"corps":[-309.27,-467.05,309.27,467.05],"emprise":[-365.01,-523.43,337.3,494.45]},"batiment4":{"R":1095.1,"ECH":1.265,"CX":426.0,"CY":746.5,"corps":[-502.84,-882.97,502.84,882.97],"emprise":[-535.1,-940.53,538.89,941.79]}};
 for (const g of Object.values(NOUVEAUX_BATS)) { g.OMBRE = 7.6; g.OMBRE_DY = 2.0; }
 const BATS = Object.assign({ hutte: HUTTE, maison: MAISON }, NOUVEAUX_BATS);
-const NOMS_BAT = { maison: 'Maison', batiment1: 'Batiment 1', batiment2: 'Batiment 2', batiment3: 'Batiment 3' };
-const COUL_BAT = { maison: '#d4834f', batiment1: '#a9404f', batiment2: '#8f9aa3', batiment3: '#a9404f' };
+const NOMS_BAT = { maison: 'Maison', batiment1: 'Batiment 1', batiment2: 'Batiment 2', batiment3: 'Batiment 3', batiment4: 'Batiment 4' };
+const COUL_BAT = { maison: '#d4834f', batiment1: '#a9404f', batiment2: '#8f9aa3', batiment3: '#a9404f', batiment4: '#a9404f' };
 const estBat = (o) => !!BATS[o.type];
 const geoBat = (o) => BATS[o.type] || HUTTE;
 const SENS_ROT = ['0°', '90°', '180°', '270°'];
@@ -811,7 +830,9 @@ function annule() {
   carte = JSON.parse(histoire.pop());
   // on garde la meme selection apres l'annulation, si l'element existe encore
   if (graineSel !== null) choisit(carte.obs.find(o => o.seed === graineSel) || null);
-  cacheCos.clear(); reindexe(); majCote(); synchronisePanneau();
+  if (!carte.chemins) carte.chemins = [];
+  prisChemin = null;
+  cacheCos.clear(); reindexe(); majCote(); majChemins(); synchronisePanneau();
   signale('Annule');
 }
 
@@ -885,6 +906,14 @@ function dessine() {
     ctx.restore();
   } else {
     ctx.strokeStyle = C.ligne; grille();
+  }
+  // chemins de terre : sur le sol et son quadrillage, sous le decor
+  if (carte.chemins && carte.chemins.length) {
+    traceChemins(carte.chemins);
+    ctx.fillStyle = C.chemin; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.strokeStyle = C.ligneChemin; ctx.lineWidth = 1 / vue.z; grille();
+    ctx.restore();
   }
   // bordure
   ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 3 / vue.z;
@@ -980,6 +1009,50 @@ function dessine() {
       ctx.fillStyle = (i === poignee) ? '#ffd24a' : '#ffffff';
       ctx.fill();
       ctx.lineWidth = 1.5 / vue.z; ctx.strokeStyle = '#1b3a52'; ctx.stroke();
+    }
+  }
+
+  // outil Chemin : contours, poignees et chemin en cours de trace
+  if (outil === 'chemin') {
+    const rp = rayonPoignee();
+    ctx.lineJoin = 'round';
+    for (const ch of (carte.chemins || [])) {
+      ctx.beginPath();
+      ctx.moveTo(ch[0].x, ch[0].y);
+      for (let i = 1; i < ch.length; i++) ctx.lineTo(ch[i].x, ch[i].y);
+      ctx.closePath();
+      ctx.setLineDash([6 / vue.z, 5 / vue.z]);
+      ctx.lineWidth = 1.5 / vue.z; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.stroke();
+      ctx.setLineDash([]);
+      for (const q of ch) {
+        ctx.beginPath(); ctx.arc(q.x, q.y, rp, 0, 6.2832);
+        ctx.fillStyle = '#ffffff'; ctx.fill();
+        ctx.lineWidth = 1.5 / vue.z; ctx.strokeStyle = '#5a3d17'; ctx.stroke();
+      }
+    }
+    if (traceChemin && traceChemin.length) {
+      const pts = traceChemin.slice();
+      if (souris.dedans) pts.push(aimante(souris.mx, souris.my, souris.shift));
+      // apercu du chemin tel qu'il sera, coins arrondis compris
+      if (pts.length >= 3) {
+        traceChemins([pts]);
+        ctx.globalAlpha = 0.55; ctx.fillStyle = C.chemin; ctx.fill(); ctx.globalAlpha = 1;
+      }
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.lineWidth = 2.5 / vue.z; ctx.strokeStyle = '#ffffff'; ctx.stroke();
+      if (pts.length > 2) {
+        ctx.setLineDash([10 / vue.z, 8 / vue.z]);
+        ctx.beginPath(); ctx.moveTo(pts[pts.length - 1].x, pts[pts.length - 1].y); ctx.lineTo(pts[0].x, pts[0].y);
+        ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      traceChemin.forEach((q, i) => {
+        ctx.beginPath(); ctx.arc(q.x, q.y, rp, 0, 6.2832);
+        ctx.fillStyle = i === 0 ? '#ffd24a' : '#ffffff'; ctx.fill();
+        ctx.lineWidth = 1.5 / vue.z; ctx.strokeStyle = '#5a3d17'; ctx.stroke();
+      });
     }
   }
 
@@ -1228,25 +1301,37 @@ function debut(e) {
       if (!carte.ile.length) carte.ile = null;
       majCote(); return; }
   }
+  // Chemins, clic droit : dernier coin du trace, poignee, ou chemin entier
+  if (outil === 'chemin' && e.button === 2 && !espace) {
+    if (traceChemin) { traceChemin.pop(); if (!traceChemin.length) traceChemin = null; return; }
+    const h = poigneeChemin(m.x, m.y);
+    if (h) {
+      memorise(); carte.chemins[h.c].splice(h.i, 1);
+      if (carte.chemins[h.c].length < 3) carte.chemins.splice(h.c, 1);
+      majChemins(); return;
+    }
+    const c = cheminSous(m.x, m.y);
+    if (c >= 0) { memorise(); carte.chemins.splice(c, 1); majChemins(); signale('Chemin supprime'); return; }
+  }
   if (espace || e.button === 2 || (e.touches && e.touches.length === 2)) { deplace = true; dernier = p; return; }
   appuye = true; aMemorise = false; dernierJet = null;
-  agit(m.x, m.y, true);
+  agit(m.x, m.y, true, e.shiftKey);
 }
 function bouge(e) {
   const p = pointDe(e);
   const m = versMonde(p.x, p.y);
-  souris.mx = m.x; souris.my = m.y; souris.dedans = true;
+  souris.mx = m.x; souris.my = m.y; souris.dedans = true; souris.shift = !!e.shiftKey;
   if (deplace && dernier) {
     vue.x -= (p.x - dernier.x) / vue.z; vue.y -= (p.y - dernier.y) / vue.z;
     dernier = p; return;
   }
-  if (appuye) agit(m.x, m.y, false);
+  if (appuye) agit(m.x, m.y, false, e.shiftKey);
 }
 function fin() {
   if (traceCote) termineTrait();     // relacher referme le contour
   if (prise && prise.bouge) reindexe();
   prise = null;
-  appuye = false; deplace = false; dernier = null; poignee = null;
+  appuye = false; deplace = false; dernier = null; poignee = null; prisChemin = null;
 }
 
 // Points regulierement espaces le long d'une boucle fermee. Un trait a la
@@ -1325,6 +1410,110 @@ function courbeIle(ctrl) {
   return pts;
 }
 
+// ─── Chemins de terre ───
+// Meme arrondi des coins que le jeu : ce que l'on voit ici est le chemin
+// que l'on aura en partie.
+const CHEMIN_ARRONDI = 40, CHEMIN_PAS = 6;
+function arrondiChemin(pts) {
+  const n = pts.length, out = [];
+  for (let i = 0; i < n; i++) {
+    const P = pts[i], A = pts[(i + n - 1) % n], B = pts[(i + 1) % n];
+    const da = Math.hypot(A.x - P.x, A.y - P.y), db = Math.hypot(B.x - P.x, B.y - P.y);
+    const r = Math.min(CHEMIN_ARRONDI, da / 2, db / 2);
+    if (r < 0.5) { out.push({ x: P.x, y: P.y }); continue; }
+    const x0 = P.x + (A.x - P.x) / da * r, y0 = P.y + (A.y - P.y) / da * r;
+    const x1 = P.x + (B.x - P.x) / db * r, y1 = P.y + (B.y - P.y) / db * r;
+    for (let k = 0; k <= CHEMIN_PAS; k++) {
+      const t = k / CHEMIN_PAS, u = 1 - t;
+      out.push({ x: u * u * x0 + 2 * u * t * P.x + t * t * x1,
+                 y: u * u * y0 + 2 * u * t * P.y + t * t * y1 });
+    }
+  }
+  let aire = 0;
+  for (let j = 0; j < out.length; j++) {
+    const p = out[j], q = out[(j + 1) % out.length];
+    aire += p.x * q.y - q.x * p.y;
+  }
+  if (aire < 0) out.reverse();       // tous dans le meme sens : l'union reste pleine
+  return out;
+}
+// Trace de tous les chemins, en un seul chemin de canevas
+function traceChemins(liste) {
+  ctx.beginPath();
+  for (const ch of liste) {
+    const c = arrondiChemin(ch);
+    ctx.moveTo(c[0].x, c[0].y);
+    for (let i = 1; i < c.length; i++) ctx.lineTo(c[i].x, c[i].y);
+    ctx.closePath();
+  }
+}
+let traceChemin = null;       // coins deja poses du chemin en cours
+let prisChemin = null;        // { c, i, bouge } : poignee de chemin en cours de deplacement
+function majChemins() {
+  const el = document.getElementById('vChemins');
+  if (el) el.textContent = (carte.chemins || []).length;
+}
+// Maj : le trait depuis le dernier coin reste horizontal, vertical ou a 45°
+function aimante(x, y, shift) {
+  if (!shift || !traceChemin || !traceChemin.length) return { x: x, y: y };
+  const q = traceChemin[traceChemin.length - 1];
+  const a = Math.round(Math.atan2(y - q.y, x - q.x) / (Math.PI / 4)) * (Math.PI / 4);
+  const l = Math.hypot(x - q.x, y - q.y);
+  return { x: q.x + Math.cos(a) * l, y: q.y + Math.sin(a) * l };
+}
+function poigneeChemin(x, y) {
+  const r = rayonPoignee() * 1.6;
+  const L = carte.chemins || [];
+  for (let c = L.length - 1; c >= 0; c--)
+    for (let i = 0; i < L[c].length; i++)
+      if (Math.hypot(L[c][i].x - x, L[c][i].y - y) <= r) return { c, i };
+  return null;
+}
+// Bord de chemin sous le curseur : { c, i } = entre le coin i et le suivant
+function bordChemin(x, y) {
+  const r = rayonPoignee() * 1.2;
+  const L = carte.chemins || [];
+  for (let c = L.length - 1; c >= 0; c--) {
+    const pts = L[c];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / l2));
+      if (Math.hypot(a.x + dx * t - x, a.y + dy * t - y) <= r) return { c, i };
+    }
+  }
+  return null;
+}
+function dansPolygone(pts, x, y) {
+  let d = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) d = !d;
+  }
+  return d;
+}
+function cheminSous(x, y) {
+  const L = carte.chemins || [];
+  for (let c = L.length - 1; c >= 0; c--) if (dansPolygone(arrondiChemin(L[c]), x, y)) return c;
+  return -1;
+}
+function fermeChemin() {
+  if (!traceChemin) return;
+  // un double-clic pose deux fois le meme coin : on retire les doublons
+  const pts = [];
+  for (const q of traceChemin) {
+    const p = pts[pts.length - 1];
+    if (!p || Math.hypot(q.x - p.x, q.y - p.y) > 2 / vue.z) pts.push(q);
+  }
+  while (pts.length > 1 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) <= 2 / vue.z) pts.pop();
+  traceChemin = null;
+  if (pts.length < 3) { signale('Un chemin a besoin de 3 coins au moins', true); return; }
+  memorise();
+  if (!carte.chemins) carte.chemins = [];
+  carte.chemins.push(pts.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) })));
+  majChemins();
+}
+
 function termineTrait() {
   const brut = traceCote;
   traceCote = null;
@@ -1385,7 +1574,35 @@ function poigneeSous(x, y) {
 }
 
 let dernierJet = null;
-function agit(x, y, presse) {
+function agit(x, y, presse, shift) {
+  if (outil === 'chemin') {
+    if (presse) {
+      if (traceChemin) {
+        // clic sur le premier coin : le chemin se ferme
+        const p0 = traceChemin[0];
+        if (traceChemin.length >= 3 && Math.hypot(p0.x - x, p0.y - y) <= rayonPoignee() * 1.6) { fermeChemin(); return; }
+        traceChemin.push(aimante(x, y, shift));
+        return;
+      }
+      const h = poigneeChemin(x, y);
+      if (h) { prisChemin = { c: h.c, i: h.i, bouge: false }; return; }
+      const b = bordChemin(x, y);
+      if (b) {
+        // un coin de plus au milieu d'un bord, aussitot deplacable
+        memorise();
+        carte.chemins[b.c].splice(b.i + 1, 0, { x: Math.round(x), y: Math.round(y) });
+        prisChemin = { c: b.c, i: b.i + 1, bouge: true };
+        return;
+      }
+      traceChemin = [{ x: x, y: y }];
+      return;
+    }
+    if (prisChemin && carte.chemins[prisChemin.c]) {
+      if (!prisChemin.bouge) { memorise(); prisChemin.bouge = true; }
+      carte.chemins[prisChemin.c][prisChemin.i] = { x: Math.round(x), y: Math.round(y) };
+    }
+    return;
+  }
   if (outil === 'select') {
     if (presse) {
       choisit(objetSous(x, y));
@@ -1431,6 +1648,7 @@ function agit(x, y, presse) {
 }
 
 cv.addEventListener('mousedown', debut);
+cv.addEventListener('dblclick', () => { if (outil === 'chemin' && traceChemin) fermeChemin(); });
 cv.addEventListener('mousemove', bouge);
 addEventListener('mouseup', fin);
 cv.addEventListener('mouseleave', () => { souris.dedans = false; fin(); });
@@ -1470,6 +1688,13 @@ addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); annule(); }
   const saisie = document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA';
   if (saisie) return;
+  if (outil === 'chemin' && traceChemin) {
+    if (e.key === 'Enter') { e.preventDefault(); fermeChemin(); return; }
+    if (e.key === 'Escape') { traceChemin = null; return; }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault(); traceChemin.pop(); if (!traceChemin.length) traceChemin = null; return;
+    }
+  }
   if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey) {
     if (outil === 'select' && sel && estBat(sel)) modifieSel(o => { o.rot = ((o.rot | 0) + 1) % 4; });
     else tourne();
@@ -1525,7 +1750,9 @@ function majBlocs() {
   document.getElementById('blocRot').style.display = estTypeHutte(typeObj) ? 'block' : 'none';
   document.getElementById('blocGomme').style.display = outil === 'gomme' ? 'block' : 'none';
   document.getElementById('blocCote').style.display = outil === 'cote' ? 'block' : 'none';
-  majCote();
+  document.getElementById('blocChemin').style.display = outil === 'chemin' ? 'block' : 'none';
+  if (outil !== 'chemin') { traceChemin = null; prisChemin = null; }
+  majCote(); majChemins();
 }
 
 // Compteur de points du contour
@@ -1540,6 +1767,11 @@ document.getElementById('coteRect').onclick = () => {
   const m = carte.monde, k = Math.round(m * 0.12);
   carte.ile = [{ x: k, y: k }, { x: m - k, y: k }, { x: m - k, y: m - k }, { x: k, y: m - k }];
   majCote();
+};
+document.getElementById('cheminsVide').onclick = () => {
+  if (!carte.chemins || !carte.chemins.length) return signale('Aucun chemin');
+  if (!confirm('Effacer tous les chemins ?')) return;
+  memorise(); carte.chemins = []; traceChemin = null; majChemins();
 };
 document.getElementById('coteVide').onclick = () => {
   memorise(); carte.ile = null; majCote();
@@ -1579,6 +1811,8 @@ function versJson() {
             vagues: carte.zone.vagues },
     ile: (carte.ile && carte.ile.length >= 3)
       ? carte.ile.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) })) : undefined,
+    chemins: (carte.chemins && carte.chemins.length)
+      ? carte.chemins.map(ch => ch.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))) : undefined,
     spawns: carte.spawns, obs: carte.obs
   }, null, 1);
 }
@@ -1617,6 +1851,13 @@ function depuisJson(txt) {
             .map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }));
           return pts.length >= 3 ? pts : null;
         })() : null,
+    // Chemins de terre : contours fermes, 3 coins au moins
+    chemins: Array.isArray(m.chemins)
+      ? m.chemins.filter(Array.isArray).map(ch => ch
+          .map(q => Array.isArray(q) ? { x: +q[0], y: +q[1] } : { x: +(q && q.x), y: +(q && q.y) })
+          .filter(q => isFinite(q.x) && isFinite(q.y))
+          .map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))).filter(ch => ch.length >= 3)
+      : [],
     spawns: Array.isArray(m.spawns)
       ? m.spawns.filter(s => s && isFinite(+s.x) && isFinite(+s.y))
                 .map(s => ({ x: Math.round(+s.x), y: Math.round(+s.y) })) : [],
@@ -1635,7 +1876,8 @@ function depuisJson(txt) {
       seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0)
     }))
   };
-  cacheCos.clear(); reindexe(); majCote();
+  traceChemin = null; prisChemin = null;
+  cacheCos.clear(); reindexe(); majCote(); majChemins();
   vue = { x: carte.monde / 2, y: carte.monde / 2, z: Math.min(1, 900 / carte.monde) };
   synchronisePanneau();
   return carte.obs.length;
