@@ -39,6 +39,9 @@ import bat2FenImg from '../game/batiment2_fen.png';
 import bat3Img from '../game/batiment3.png';
 import bat3ToitImg from '../game/batiment3_toit.png';
 import bat3FenImg from '../game/batiment3_fen.png';
+import bat4Img from '../game/batiment4.png';
+import bat4ToitImg from '../game/batiment4_toit.png';
+import bat4FenImg from '../game/batiment4_fen.png';
 import boutonInter  from '../game/bouton_inter.png';
 import arm          from '../game/arm.png';
 import hand         from '../game/hand.png';
@@ -218,6 +221,9 @@ export default {
       '/game/batiment3.png': bat3Img,
       '/game/batiment3_toit.png': bat3ToitImg,
       '/game/batiment3_fen.png': bat3FenImg,
+      '/game/batiment4.png': bat4Img,
+      '/game/batiment4_toit.png': bat4ToitImg,
+      '/game/batiment4_fen.png': bat4FenImg,
       '/game/bouton_inter.png':   boutonInter,
       '/game/arm.png':          arm,
       '/game/hand.png':         hand,
