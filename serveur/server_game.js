@@ -169,7 +169,7 @@ function distRect(u, v, r) {
 // ouverte. Une double porte : c'est le battant le plus proche qui repond.
 function porteProche(p, x, y) {
   let best = null, dMin = PORTE.PORTEE;
-  for (const o of p.obs) {
+  for (const o of batimentsDe(p)) {
     if (!aPorte(o)) continue;
     const g = geoBat(o);
     if (Math.abs(o.x - x) > g.R + 100 || Math.abs(o.y - y) > g.R + 100) continue;
@@ -203,7 +203,7 @@ function majMurs(p) {
 }
 function majPortes(p, dt) {
   let change = false;
-  for (const o of p.obs) {
+  for (const o of batimentsDe(p)) {
     if (!aPorte(o)) continue;
     for (const s of o.portes) {
       if (battantAuRepos(s)) continue;
@@ -304,7 +304,7 @@ function entreeMur(x0, y0, x1, y1, w, r) {
 // On est deplace juste a cote, par le bord exterieur le plus proche
 // (corps, fenetres et piliers compris), sans rien toucher.
 function batimentSous(p, x, y) {
-  for (const o of p.obs) {
+  for (const o of batimentsDe(p)) {
     if (!estBatiment(o)) continue;
     const g = geoBat(o), c = g.corps;
     const q = ((o.rot | 0) % 4 + 4) % 4;
@@ -397,6 +397,14 @@ function buildGrid(arbres) {
     }
   }
   return g;
+}
+// Liste et grille des obstacles ronds solides, refaites des qu'un arbre
+// tombe. Les remettre a null en plein tick faisait retomber les
+// deplacements suivants sur le decor complet : buissons et batiments
+// devenaient des cercles pleins, et les joueurs sautaient de cote.
+function majArbres(p) {
+  p.arbres = p.obs.filter(estSolide);
+  p.arbresGrid = buildGrid(p.arbres);
 }
 function queryGrid(g, x, y) {
   const k = Math.floor(x / GRID_CELL_SZ) * 10000 + Math.floor(y / GRID_CELL_SZ);
@@ -639,7 +647,7 @@ function creePartie(nomMap) {
   const murs = mursDe(obs);
   return {
     map, monde: map.monde, mapVer: 1, avionPrevu,
-    rng, obs, arbres: obs.filter(estSolide), arbresGrid: null,
+    rng, obs, arbres: obs.filter(estSolide), arbresGrid: null,   // grille : voir majArbres
     murs, mursGrid: murs.length ? grilleMurs(murs) : null,
     t: 0, tick: 0, fini: false, vainqueur: null,
     demarree: false, nbMax: 0, balleId: 0,
@@ -751,7 +759,7 @@ function subitImpact(p, h, tireur) {
   } else if (h.genre === 'arbre') {
     const o = h.o;
     o.pv -= p.rng() < 0.5 ? 10 : 11; o.secousse = 0.22;
-    if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; p.arbresGrid = null; }
+    if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; majArbres(p); }
   } else if (h.genre === 'joueur') {
     const c = h.o;
     c.pv -= p.rng() < 0.5 ? 10 : 11;
@@ -1051,6 +1059,23 @@ function separeJoueurs(arr, monde) {
   }
 }
 
+// Une commande venue du reseau : que des nombres finis, sinon un seul NaN
+// (x += NaN) rendait la position du joueur definitivement invalide.
+const fini = (v) => typeof v === 'number' && Number.isFinite(v);
+function nettoieCmd(c) {
+  if (!c || typeof c !== 'object' || !fini(c.seq)) return null;
+  const out = {
+    seq: c.seq,
+    mx: fini(c.mx) ? Math.max(-1, Math.min(1, c.mx)) : 0,
+    my: fini(c.my) ? Math.max(-1, Math.min(1, c.my)) : 0,
+    dt: fini(c.dt) ? c.dt : DT,
+    tire: !!c.tire, poing: !!c.poing, recharger: !!c.recharger,
+    plonge: !!c.plonge, inter: !!c.inter,
+  };
+  if (fini(c.angle)) out.angle = c.angle;
+  return out;
+}
+
 // ─────────────── Commande d'un joueur ─────────────────────────────
 function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   // Dans l'avion : le joueur n'a pas encore de prise sur le monde
@@ -1077,7 +1102,11 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   // sorties plus haut.
   const vit = VITESSE * (dansIle(p, a.x, a.y) ? 1 : EAU_LENTEUR);
   // Bots : 1 itération de collision (précision réduite mais 3× plus rapide)
-  deplaceSolo(a, mx * vit * dt, my * vit * dt, p.arbres || p.obs, a.estBot ? 1 : 3, p.monde, p.arbresGrid, p);
+  // Bots comme joueurs : 3 passes de collision. Une seule laissait un bot
+  // pris entre deux murs (un coin, une porte) ressortir d'un cote puis de
+  // l'autre d'un tick a l'autre : il tremblait sur place.
+  if (!p.arbresGrid) majArbres(p);
+  deplaceSolo(a, mx * vit * dt, my * vit * dt, p.arbres, 3, p.monde, p.arbresGrid, p);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
   if (cmd.poing && a._pCd < 0.02) {
@@ -1085,8 +1114,9 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
     a.poingTimer = 0.60;  // animation pleine pour tous les écrans
     a.punchSide = 1 - a.punchSide;
     a.revele = 0.35;
-    // Dégâts aux arbres (même en lobby)
-    for (const o of p.obs) {
+    // Dégâts aux arbres (même en lobby) : la liste des arbres suffit, dans
+    // le meme ordre que le decor
+    for (const o of (p.arbres || p.obs)) {
       if (!estSolide(o)) continue;
       const ex = o.x - a.x, ey = o.y - a.y;
       const dist = Math.hypot(ex, ey);
@@ -1096,7 +1126,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
         const dot = (ex * Math.cos(a.angle) + ey * Math.sin(a.angle)) / dist;
         if (dot > 0.1) {
           o.pv -= MELEE_DEGATS; o.secousse = 0.22;
-          if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; p.arbres = null; }
+          if (o.pv <= 0) { o.pv = 0; o.type = 'souche'; o.secousse = 0; majArbres(p); }
         }
       }
     }
@@ -1200,10 +1230,7 @@ function pas(p) {
   }
 
   // Cache arbres (mis à jour si une souche apparaît, max toutes les 5s)
-  if (!p.arbres || p.tick % 150 === 0) {
-    p.arbres = p.obs.filter(estSolide);
-    p.arbresGrid = buildGrid(p.arbres);
-  }
+  if (!p.arbres || !p.arbresGrid || p.tick % 150 === 0) majArbres(p);
 
   // Suivi de vitesse + précalcul _inBush en une seule passe
   for (const a of arr) {
@@ -1308,7 +1335,20 @@ function pas(p) {
 // ─────────────── Serveur WebSocket ────────────────────────────────
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => { res.writeHead(200); res.end('OK'); });
-const wss = new WebSocket.Server({ server });
+// Compression des messages : un snapshot (noms de champs repetes, positions
+// voisines d'un tick a l'autre) passe d'environ 12 Ko a moins de 1 Ko avec
+// 30 joueurs. Moins de donnees a faire passer, moins d'a-coups sur un
+// reseau mobile. Niveau 1 : le plus rapide ; les petits messages (pong,
+// statut du lobby) partent tels quels. Un navigateur qui ne la propose pas
+// recoit simplement les messages non compresses.
+const wss = new WebSocket.Server({
+  server,
+  perMessageDeflate: {
+    zlibDeflateOptions: { level: 1, memLevel: 7 },
+    threshold: 1024,
+    concurrencyLimit: 10,
+  },
+});
 
 // Heartbeat protocol-level : termine les connexions mortes en ~25s
 // Résout les rooms fantômes quand le client ferme la page sans close frame
@@ -1420,15 +1460,26 @@ function mursBalle(o) {
   if (!o._mursB) o._mursB = geoBat(o).murs.map(r => rectMonde(o, r));
   return o._mursB;
 }
+// Batiments de la carte (ruines comprises), tenus a part : inutile de
+// parcourir tout le decor pour les retrouver.
+function batimentsDe(p) {
+  if (p._batsObs !== p.obs) { p._bats = p.obs.filter(o => BATS[o.type] || o.type === 'ruine'); p._batsObs = p.obs; }
+  return p._bats;
+}
+// Les 3 batiments les plus proches (et non les 3 premiers de la liste) :
+// un batiment voisin oublie laissait le bot foncer dans ses murs.
 function huttesPres(p, x, y, gx, gy) {
   if (!p.mursGrid) return VIDE;
-  const out = [];
-  for (const o of p.obs) {
+  const cands = [];
+  for (const o of batimentsDe(p)) {
     if (!estBatiment(o)) continue;
-    const g = geoBat(o);
-    if (Math.hypot(o.x - x, o.y - y) < 650 + Math.max(0, g.R - HUTTE.R) || Math.hypot(o.x - gx, o.y - gy) < 400 + Math.max(0, g.R - HUTTE.R)) out.push(o);
-    if (out.length >= 3) break;
+    const g = geoBat(o), m = Math.max(0, g.R - HUTTE.R);
+    const d1 = Math.hypot(o.x - x, o.y - y), d2 = Math.hypot(o.x - gx, o.y - gy);
+    if (d1 < 650 + m || d2 < 400 + m) cands.push({ o, d: Math.min(d1, d2) - m });
   }
+  if (cands.length > 3) cands.sort((u, v) => u.d - v.d);
+  const out = [];
+  for (let i = 0; i < cands.length && i < 3; i++) out.push(cands[i].o);
   return out;
 }
 // Marge un peu sous le rayon du joueur : un bot colle a un mur (pousse
@@ -1793,6 +1844,7 @@ wss.on('connection', (ws) => {
     // Handler SYNCHRONE — plus d'await, plus de race conditions
     try {
       let msg; try { msg = JSON.parse(raw); } catch { return; }
+      if (!msg || typeof msg !== 'object') return;
 
       // ── solo : rejoindre la matchmaking automatique ─────────────
       if (msg.type === 'solo') {
@@ -1849,7 +1901,7 @@ wss.on('connection', (ws) => {
       if (msg.type === 'invChange' && pid && rooms[gid] && rooms[gid].partie) {
         const a = rooms[gid].partie.agents[pid];
         if (a) {
-          if (typeof msg.slot === 'number' && msg.slot >= 0 && msg.slot < 6) a.slot = msg.slot;
+          if (Number.isInteger(msg.slot) && msg.slot >= 0 && msg.slot < 6) a.slot = msg.slot;
           if (Array.isArray(msg.inv) && msg.inv.length === 6)
             a.inv = msg.inv.map(x => [null,'fusil','mains'].includes(x) ? x : null);
         }
@@ -1871,7 +1923,11 @@ wss.on('connection', (ws) => {
         // Commandes produites avant la bascule : elles visaient l'ancienne
         // carte, on les jette au lieu de les appliquer ici.
         if (msg.mv && msg.mv !== rooms[gid].partie.mapVer) return;
-        for (const c of (msg.c || [])) { if (c.seq > a.lastSeq + a.file.length) a.file.push(c); }
+        if (!Array.isArray(msg.c)) return;
+        for (const c0 of msg.c) {
+          const c = nettoieCmd(c0);
+          if (c && c.seq > a.lastSeq + a.file.length) a.file.push(c);
+        }
         if (a.file.length > 40) a.file.splice(0, a.file.length - 40);
         return;
       }
@@ -1970,7 +2026,10 @@ function boucleServeur() {
       }
       prochain += TICK_MS; tours++;
     }
-    if (tours >= 5) prochain = maintenant + TICK_MS;
+    // Gros retard (machine gelee un instant) : on ne rattrape pas une
+    // rafale de ticks, qui ferait tout avancer d'un coup chez les clients.
+    // Au-dela de quelques ticks, on repart de maintenant.
+    if (maintenant - prochain > TICK_MS * 6) prochain = maintenant;
   } catch (e) {
     console.error('[boucleServeur]', e.message);
     prochain = Date.now() + TICK_MS; // éviter la boucle infinie sur erreur
@@ -1987,6 +2046,13 @@ function retardPour(a) {
   return Math.round(Math.min(320, Math.max(90, moitie + 60)));
 }
 
+// Arrondis pour l'envoi : un flottant complet prend 17 chiffres, deux
+// decimales suffisent largement a l'ecran (1/100 d'unite monde). Le
+// snapshot, envoye 30 fois par seconde a chaque joueur, fond de moitie.
+const r2 = (v) => typeof v === 'number' ? Math.round(v * 100) / 100 : v;
+const r3 = (v) => typeof v === 'number' ? Math.round(v * 1000) / 1000 : v;
+const r4 = (v) => typeof v === 'number' ? Math.round(v * 10000) / 10000 : v;
+
 function envoieSnapshot(room) {
   if (!room.partie) return;
   const p = room.partie;
@@ -1995,7 +2061,7 @@ function envoieSnapshot(room) {
     const sig = aPorte(o) ? o.portes.map(st => st.e).join(',') : '';
     const porteChange = aPorte(o) && o._lp !== sig;
     if (o._lt !== o.type || o.secousse > 0 || porteChange) {
-      const m = { idx, type: o.type, pv: o.pv, secousse: o.secousse };
+      const m = { idx, type: o.type, pv: o.pv, secousse: r3(o.secousse) };
       if (aPorte(o)) { m.portes = o.portes.map(st => st.e); o._lp = sig; }
       decorMaj.push(m);
       o._lt = o.type;
@@ -2010,30 +2076,32 @@ function envoieSnapshot(room) {
   const nbJoueursLobby = phaseLobby ? Object.keys(room.players).length : undefined;
 
   const base = {
-    type: 'snap', tick: p.tick, t: p.t, st: Date.now(), attente: !p.demarree, mapVer: p.mapVer,
-    fini: p.fini, vainqueur: p.vainqueur, zone: p.zone,
+    type: 'snap', tick: p.tick, t: r3(p.t), st: Date.now(), attente: !p.demarree, mapVer: p.mapVer,
+    fini: p.fini, vainqueur: p.vainqueur, zone: { x: r2(p.zone.x), y: r2(p.zone.y), r: r2(p.zone.r) },
     // Le cercle d'arrivee n'est revele qu'au moment ou le cyclone se met
     // en marche, pas pendant la pause qui precede.
-    zoneCible: p.zoneBouge ? p.zoneCible : null, zoneT: p.zoneT,
-    avion: p.avion ? { x: p.avion.x, y: p.avion.y, angle: p.avion.angle, v: AVION_V,
+    zoneCible: p.zoneBouge && p.zoneCible ? { x: r2(p.zoneCible.x), y: r2(p.zoneCible.y), r: r2(p.zoneCible.r) } : null,
+    zoneT: r3(p.zoneT),
+    avion: p.avion ? { x: r2(p.avion.x), y: r2(p.avion.y), angle: r4(p.avion.angle), v: AVION_V,
                        vol: !!p.avion.enVol, largage: p.phaseVol,
                        fin: p.tVol >= p.avion.duree } : null,
     paraDuree: PARA_DUREE,
     phaseLobby, compteARebours, nbJoueursLobby,
     balles: p.balles.map(b => b.fin
-      ? { id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par, fin: 1 }
-      : { id: b.id, x: b.x, y: b.y, ang: b.ang, reste: b.reste, par: b.par }),
-    kills: p.kills, evts: p.evts, decorMaj,
+      ? { id: b.id, x: r2(b.x), y: r2(b.y), ang: r4(b.ang), reste: r2(b.reste), par: b.par, fin: 1 }
+      : { id: b.id, x: r2(b.x), y: r2(b.y), ang: r4(b.ang), reste: r2(b.reste), par: b.par }),
+    // (p.evts reste interne : le client ne s'en sert pas, inutile de l'envoyer)
+    kills: p.kills, decorMaj,
   };
   const agents = {};
   for (const [id, a] of Object.entries(p.agents)) {
-    agents[id] = { id: a.id, name: a.name, x: a.x, y: a.y, angle: a.angle, pv: a.pv, vivant: a.vivant,
+    agents[id] = { id: a.id, name: a.name, x: r2(a.x), y: r2(a.y), angle: r4(a.angle), pv: a.pv, vivant: a.vivant,
       tueurId: a.tueurId || null, place: a.place || 0,
-      enAvion: !!a.enAvion, para: a.para || 0, plonge: !!a.plonge,
-      munitions: a.munitions, rechargement: a.rechargement, dureeRechargeMax: a.dureeRechargeMax,
-      secousse: a.secousse, touche: a.touche, tirTimer: a.tirTimer, recul: a.recul,
-      revele: a.revele, slot: a.slot, inv: a.inv,
-      poingTimer: a.poingTimer, punchSide: a.punchSide };
+      enAvion: !!a.enAvion, para: r4(a.para || 0), plonge: !!a.plonge,
+      munitions: a.munitions, rechargement: r4(a.rechargement), dureeRechargeMax: a.dureeRechargeMax,
+      secousse: r3(a.secousse), touche: r3(a.touche), tirTimer: r3(a.tirTimer), recul: r3(a.recul),
+      revele: r3(a.revele), slot: a.slot, inv: a.inv,
+      poingTimer: r3(a.poingTimer), punchSide: a.punchSide };
   }
   base.agents = agents;
   // Sérialiser UNE FOIS puis injecter l'ack par joueur (string replace = O(1))
