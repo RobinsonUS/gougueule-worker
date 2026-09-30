@@ -540,17 +540,23 @@ function valideMap(brut, nom) {
     : [];
 
   // Chemins de terre : purement decoratifs (ni collision ni ralentissement).
-  // Chacun est un contour ferme de points de controle ; le client en
-  // arrondit les coins. On les transmet tels quels.
-  const chemins = [];
-  if (Array.isArray(brut.chemins)) for (const ch of brut.chemins) {
-    if (!Array.isArray(ch)) continue;
-    const pts = ch
-      .map(q => Array.isArray(q) ? { x: Number(q[0]), y: Number(q[1]) }
-                                 : { x: Number(q && q.x), y: Number(q && q.y) })
-      .filter(q => Number.isFinite(q.x) && Number.isFinite(q.y))
-      .map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }));
-    if (pts.length >= 3) chemins.push(pts);
+  // traces : les lignes dessinees dans l'editeur (points + graine du trace
+  // irregulier) ; raccords : les arrondis aux croisements, calcules par
+  // l'editeur. Le client en deduit la forme ; ici on ne fait que verifier.
+  const point = q => Array.isArray(q) ? [Number(q[0]), Number(q[1])] : [Number(q && q.x), Number(q && q.y)];
+  const points = l => Array.isArray(l) ? l.map(point).filter(q => Number.isFinite(q[0]) && Number.isFinite(q[1]))
+                                              .map(q => [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10]) : [];
+  const chemins = { traces: [], raccords: [] };
+  const bc = brut.chemins;
+  if (bc && typeof bc === 'object' && !Array.isArray(bc)) {
+    for (const t of (Array.isArray(bc.traces) ? bc.traces : [])) {
+      const pts = points(t && t.pts);
+      if (pts.length >= 2) chemins.traces.push({ seed: nombre(t.seed, 1) | 0, pts });
+    }
+    for (const r of (Array.isArray(bc.raccords) ? bc.raccords : [])) {
+      const pts = points(r);
+      if (pts.length >= 3) chemins.raccords.push(pts);
+    }
   }
 
   // La carte ne stocke que des points de controle : la vraie cote, arrondie,
@@ -1826,7 +1832,7 @@ function apercuPartie(p) {
   const mp = chargeMap('partie');
   const av = p.avionPrevu;
   return {
-    monde: mp.monde, ile: mp.ile, chemins: mp.chemins || [],
+    monde: mp.monde, ile: mp.ile, chemins: mp.chemins || { traces: [], raccords: [] },
     decor: mp.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed, v: o.v, rot: o.rot })),
     avion: { x0: av.x0, y0: av.y0, x1: av.x1, y1: av.y1, angle: av.angle, v: AVION_V },
   };
@@ -1843,7 +1849,7 @@ function payloadCarte(p) {
       ZONE_ATTENTE: zc.attente, ZONE_DUREE: zc.duree, ZONE_R0: zc.r0, ZONE_R1: zc.r1,
     },
     ile: p.map.ile,
-    chemins: p.map.chemins || [],
+    chemins: p.map.chemins || { traces: [], raccords: [] },
     decor: p.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, seed: o.seed, v: o.v, rot: o.rot,
                              portes: o.portes ? o.portes.map(st => [st.e, st.a]) : undefined })),
     // Apercu de la carte de partie pendant l'attente : de quoi ouvrir la
