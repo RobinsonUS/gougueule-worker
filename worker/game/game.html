@@ -3870,11 +3870,11 @@ function cheminIle(c, suite) { cheminIlePts(c, ILE, suite); }
 
 // ═══ Chemins de terre : geometrie (meme code dans le jeu et l'editeur) ═══
 // Un chemin est trace comme une ligne (points de controle). Sa largeur
-// varie un peu d'un point a l'autre et son axe se decale legerement, tire
-// d'une graine propre au chemin : les bords ne sont jamais tout droits,
-// et le rendu est le meme partout. Morceaux : un trapeze par troncon et un
+// change d'un chemin a l'autre et varie le long du chemin, et son axe se
+// decale legerement : les bords ne sont jamais tout droits, et le rendu
+// est le meme partout (tirages deterministes). Morceaux : un trapeze par troncon et un
 // petit triangle au virage, cote exterieur ; les coins sont arrondis.
-var CHEMIN_LARGE = 265, CHEMIN_VARIE = 0.12, CHEMIN_DECALE = 12;
+var CHEMIN_LARGE = 265, CHEMIN_VARIE_BASE = 0.10, CHEMIN_VARIE = 0.16, CHEMIN_DECALE = 12;
 var CHEMIN_RACCORD = 90, CHEMIN_CASE = 8, CHEMIN_ARRONDI = 70, CHEMIN_PAS = 6;
 function rngChemin(graine) {
   var a = graine | 0;
@@ -3884,6 +3884,14 @@ function rngChemin(graine) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+// Nombre de -1 a 1 tire d'un point (au dixieme d'unite pres) et d'un canal
+function aleaPoint(p, canal) {
+  var h = Math.imul(Math.round(p[0] * 10) | 0, 0x9E3779B1) ^ Math.imul(Math.round(p[1] * 10) | 0, 0x85EBCA77) ^ Math.imul(canal, 0xC2B2AE3D);
+  h = Math.imul(h ^ (h >>> 16), 0x7FEB352D);
+  h = Math.imul(h ^ (h >>> 15), 0x846CA68B);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967295 * 2 - 1;
 }
 function aireChemin(p) {
   var s = 0;
@@ -3896,27 +3904,21 @@ function aireChemin(p) {
 function rubanChemin(tr) {
   var pts = tr.pts, n = pts.length, rng = rngChemin(tr.seed | 0), out = [];
   if (n < 2) return out;
-  var nx = [], ny = [];                     // normale de chaque troncon
-  for (var s = 0; s < n - 1; s++) {
-    var dx = pts[s + 1][0] - pts[s][0], dy = pts[s + 1][1] - pts[s][1], l = Math.hypot(dx, dy) || 1;
-    nx.push(-dy / l); ny.push(dx / l);
-  }
-  // tirages bruts, puis moyennes glissantes : la largeur et le decalage
-  // changent en douceur sur plusieurs troncons, sans a-coups
-  var rw = [], rd = [];
-  for (var i0 = 0; i0 < n; i0++) { rw.push(rng() * 2 - 1); rd.push(rng() * 2 - 1); }
-  var doux = function (t, i) {
-    var s = 0, k = 0;
-    for (var o = -2; o <= 2; o++) { var j = i + o; if (j >= 0 && j < n) { s += t[j]; k++; } }
-    return s / k * 1.6;           // la moyenne ecrase l'ecart : on le redonne en partie
-  };
+  // Largeur de base propre au chemin : d'un chemin a l'autre, elle change
+  var base = CHEMIN_LARGE * (1 + (rng() * 2 - 1) * CHEMIN_VARIE_BASE);
+  // En chaque point, largeur et petit decalage sont tires de la POSITION du
+  // point et non du chemin : un point partage par deux chemins (croisement,
+  // jonction) est donc decale pareil dans les deux, ils s'y rejoignent pile.
+  var rw = [];
+  for (var i0 = 0; i0 < n; i0++) rw.push(aleaPoint(pts[i0], 1));
   var c = [], w = [];
   for (var i = 0; i < n; i++) {
-    w.push(CHEMIN_LARGE * (1 + Math.max(-1, Math.min(1, doux(rw, i))) * CHEMIN_VARIE));
-    var dec = Math.max(-1, Math.min(1, doux(rd, i))) * CHEMIN_DECALE;
-    var ax = nx[Math.max(0, i - 1)] + nx[Math.min(n - 2, i)], ay = ny[Math.max(0, i - 1)] + ny[Math.min(n - 2, i)];
-    var la = Math.hypot(ax, ay) || 1;
-    c.push([pts[i][0] + ax / la * dec, pts[i][1] + ay / la * dec]);
+    // moyenne sur le point et ses voisins : la largeur varie par endroits,
+    // en douceur, sans dents de scie
+    var s = 0, kk = 0;
+    for (var o = -1; o <= 1; o++) { var j2 = i + o; if (j2 >= 0 && j2 < n) { s += rw[j2]; kk++; } }
+    w.push(base * (1 + Math.max(-1, Math.min(1, s / kk * 1.3)) * CHEMIN_VARIE));
+    c.push([pts[i][0] + aleaPoint(pts[i], 2) * CHEMIN_DECALE, pts[i][1] + aleaPoint(pts[i], 3) * CHEMIN_DECALE]);
   }
   // Coins legerement arrondis : a chaque point, l'axe (et la largeur) suit
   // une petite courbe sur CHEMIN_ARRONDI unites au plus de part et d'autre.
