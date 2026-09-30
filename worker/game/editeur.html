@@ -181,15 +181,15 @@
 
   <div id="blocChemin">
     <h2>Chemins de terre</h2>
-    <div class="note">Cliquez pour poser les coins d'un chemin, un a la fois ;
-      Maj garde le trait droit (pas de 45°). Pour le fermer : cliquez sur le
-      premier point, double-cliquez ou appuyez sur Entree. Echap abandonne,
-      Retour arriere retire le dernier point. Les coins sont arrondis comme
-      en jeu. Deux chemins qui se chevauchent n'en font qu'un.<br>
-      Pour retoucher : glissez une poignee, ou le milieu d'un bord pour
-      ajouter un coin. Clic droit sur une poignee : la retirer. Clic droit
-      dans un chemin : le supprimer. Decor seulement : on y marche comme
-      sur l'herbe.</div>
+    <div class="note">Tracez un chemin d'un seul trait, comme au crayon :
+      appuyez, suivez le trajet, relachez. Il prend tout seul sa largeur,
+      avec des bords un peu irreguliers. Commencez ou finissez sur un point
+      d'un autre chemin pour les relier, ou passez simplement par-dessus :
+      les croisements s'arrondissent (l'arrondi apparait apres un court
+      calcul).<br>
+      Pour retoucher : Maj + glisser une poignee. Clic droit sur une
+      poignee : la retirer. Clic droit sur un chemin : le supprimer.
+      Decor seulement : on y marche comme sur l'herbe.</div>
     <button class="act rouge" id="cheminsVide">Effacer tous les chemins</button>
     <div class="ligne">Chemins <b id="vChemins">0</b></div>
   </div>
@@ -650,7 +650,7 @@ let carte = {
                     { r: 950,  duree: 20, pause: 15, degats: 5 },
                     { r: 300,  duree: 10, pause: 20, degats: 10 },
                     { r: 0,    duree: 45, pause: 0,  degats: 10 } ] },
-  ile: null, chemins: [], spawns: [], obs: []
+  ile: null, chemins: { traces: [], raccords: [] }, spawns: [], obs: []
 };
 let vue = { x: 6400, y: 6400, z: 0.06 };
 // ═══ Batiments (huttes, maison) : meme geometrie et meme dessin que le jeu ═══
@@ -830,8 +830,8 @@ function annule() {
   carte = JSON.parse(histoire.pop());
   // on garde la meme selection apres l'annulation, si l'element existe encore
   if (graineSel !== null) choisit(carte.obs.find(o => o.seed === graineSel) || null);
-  if (!carte.chemins) carte.chemins = [];
-  prisChemin = null;
+  carte.chemins = cheminsValides(carte.chemins);
+  prisChemin = null; calculeRaccords();
   cacheCos.clear(); reindexe(); majCote(); majChemins(); synchronisePanneau();
   signale('Annule');
 }
@@ -908,8 +908,8 @@ function dessine() {
     ctx.strokeStyle = C.ligne; grille();
   }
   // chemins de terre : sur le sol et son quadrillage, sous le decor
-  if (carte.chemins && carte.chemins.length) {
-    traceChemins(carte.chemins);
+  if (carte.chemins.traces.length) {
+    traceChemins();
     ctx.fillStyle = C.chemin; ctx.fill();
     ctx.save(); ctx.clip();
     ctx.strokeStyle = C.ligneChemin; ctx.lineWidth = 1 / vue.z; grille();
@@ -1012,47 +1012,29 @@ function dessine() {
     }
   }
 
-  // outil Chemin : contours, poignees et chemin en cours de trace
+  // outil Chemin : poignees des traces et trait en cours
   if (outil === 'chemin') {
     const rp = rayonPoignee();
-    ctx.lineJoin = 'round';
-    for (const ch of (carte.chemins || [])) {
+    if (vue.z >= 0.05) for (const t of carte.chemins.traces) {
       ctx.beginPath();
-      ctx.moveTo(ch[0].x, ch[0].y);
-      for (let i = 1; i < ch.length; i++) ctx.lineTo(ch[i].x, ch[i].y);
-      ctx.closePath();
+      ctx.moveTo(t.pts[0][0], t.pts[0][1]);
+      for (let i = 1; i < t.pts.length; i++) ctx.lineTo(t.pts[i][0], t.pts[i][1]);
       ctx.setLineDash([6 / vue.z, 5 / vue.z]);
       ctx.lineWidth = 1.5 / vue.z; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.stroke();
       ctx.setLineDash([]);
-      for (const q of ch) {
-        ctx.beginPath(); ctx.arc(q.x, q.y, rp, 0, 6.2832);
+      for (const q of t.pts) {
+        ctx.beginPath(); ctx.arc(q[0], q[1], rp, 0, 6.2832);
         ctx.fillStyle = '#ffffff'; ctx.fill();
         ctx.lineWidth = 1.5 / vue.z; ctx.strokeStyle = '#5a3d17'; ctx.stroke();
       }
     }
-    if (traceChemin && traceChemin.length) {
-      const pts = traceChemin.slice();
-      if (souris.dedans) pts.push(aimante(souris.mx, souris.my, souris.shift));
-      // apercu du chemin tel qu'il sera, coins arrondis compris
-      if (pts.length >= 3) {
-        traceChemins([pts]);
-        ctx.globalAlpha = 0.55; ctx.fillStyle = C.chemin; ctx.fill(); ctx.globalAlpha = 1;
-      }
+    if (traceChemin && traceChemin.length > 1) {
       ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.lineWidth = 2.5 / vue.z; ctx.strokeStyle = '#ffffff'; ctx.stroke();
-      if (pts.length > 2) {
-        ctx.setLineDash([10 / vue.z, 8 / vue.z]);
-        ctx.beginPath(); ctx.moveTo(pts[pts.length - 1].x, pts[pts.length - 1].y); ctx.lineTo(pts[0].x, pts[0].y);
-        ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.stroke();
-        ctx.setLineDash([]);
-      }
-      traceChemin.forEach((q, i) => {
-        ctx.beginPath(); ctx.arc(q.x, q.y, rp, 0, 6.2832);
-        ctx.fillStyle = i === 0 ? '#ffd24a' : '#ffffff'; ctx.fill();
-        ctx.lineWidth = 1.5 / vue.z; ctx.strokeStyle = '#5a3d17'; ctx.stroke();
-      });
+      ctx.moveTo(traceChemin[0].x, traceChemin[0].y);
+      for (let i = 1; i < traceChemin.length; i++) ctx.lineTo(traceChemin[i].x, traceChemin[i].y);
+      ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
+      ctx.lineWidth = CHEMIN_LARGE; ctx.globalAlpha = 0.5; ctx.strokeStyle = C.chemin; ctx.stroke();
+      ctx.globalAlpha = 1; ctx.lineWidth = 2.5 / vue.z; ctx.strokeStyle = '#ffffff'; ctx.stroke();
     }
   }
 
@@ -1301,17 +1283,16 @@ function debut(e) {
       if (!carte.ile.length) carte.ile = null;
       majCote(); return; }
   }
-  // Chemins, clic droit : dernier coin du trace, poignee, ou chemin entier
+  // Chemins, clic droit : une poignee, sinon le chemin entier
   if (outil === 'chemin' && e.button === 2 && !espace) {
-    if (traceChemin) { traceChemin.pop(); if (!traceChemin.length) traceChemin = null; return; }
     const h = poigneeChemin(m.x, m.y);
     if (h) {
-      memorise(); carte.chemins[h.c].splice(h.i, 1);
-      if (carte.chemins[h.c].length < 3) carte.chemins.splice(h.c, 1);
-      majChemins(); return;
+      memorise(); carte.chemins.traces[h.t].pts.splice(h.i, 1);
+      if (carte.chemins.traces[h.t].pts.length < 2) carte.chemins.traces.splice(h.t, 1);
+      calculeRaccords(true); majChemins(); return;
     }
-    const c = cheminSous(m.x, m.y);
-    if (c >= 0) { memorise(); carte.chemins.splice(c, 1); majChemins(); signale('Chemin supprime'); return; }
+    const t = cheminSous(m.x, m.y);
+    if (t >= 0) { memorise(); carte.chemins.traces.splice(t, 1); calculeRaccords(true); majChemins(); signale('Chemin supprime'); return; }
   }
   if (espace || e.button === 2 || (e.touches && e.touches.length === 2)) { deplace = true; dernier = p; return; }
   appuye = true; aMemorise = false; dernierJet = null;
@@ -1329,6 +1310,8 @@ function bouge(e) {
 }
 function fin() {
   if (traceCote) termineTrait();     // relacher referme le contour
+  if (traceChemin) termineChemin();
+  if (prisChemin && prisChemin.bouge) calculeRaccords(true);
   if (prise && prise.bouge) reindexe();
   prise = null;
   appuye = false; deplace = false; dernier = null; poignee = null; prisChemin = null;
@@ -1410,107 +1393,415 @@ function courbeIle(ctrl) {
   return pts;
 }
 
-// ─── Chemins de terre ───
-// Meme arrondi des coins que le jeu : ce que l'on voit ici est le chemin
-// que l'on aura en partie.
-const CHEMIN_ARRONDI = 40, CHEMIN_PAS = 6;
-function arrondiChemin(pts) {
-  const n = pts.length, out = [];
-  for (let i = 0; i < n; i++) {
-    const P = pts[i], A = pts[(i + n - 1) % n], B = pts[(i + 1) % n];
-    const da = Math.hypot(A.x - P.x, A.y - P.y), db = Math.hypot(B.x - P.x, B.y - P.y);
-    const r = Math.min(CHEMIN_ARRONDI, da / 2, db / 2);
-    if (r < 0.5) { out.push({ x: P.x, y: P.y }); continue; }
-    const x0 = P.x + (A.x - P.x) / da * r, y0 = P.y + (A.y - P.y) / da * r;
-    const x1 = P.x + (B.x - P.x) / db * r, y1 = P.y + (B.y - P.y) / db * r;
-    for (let k = 0; k <= CHEMIN_PAS; k++) {
-      const t = k / CHEMIN_PAS, u = 1 - t;
-      out.push({ x: u * u * x0 + 2 * u * t * P.x + t * t * x1,
-                 y: u * u * y0 + 2 * u * t * P.y + t * t * y1 });
-    }
+// ═══ Chemins de terre : geometrie (meme code dans le jeu et l'editeur) ═══
+// Un chemin est trace comme une ligne (points de controle). Sa largeur
+// varie un peu d'un point a l'autre et son axe se decale legerement, tire
+// d'une graine propre au chemin : les bords ne sont jamais tout droits,
+// et le rendu est le meme partout. Morceaux : un trapeze par troncon et
+// un disque a chaque coin (virage arrondi cote exterieur).
+var CHEMIN_LARGE = 265, CHEMIN_VARIE = 0.12, CHEMIN_DECALE = 12;
+var CHEMIN_RACCORD = 90, CHEMIN_CASE = 8;
+function rngChemin(graine) {
+  var a = graine | 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function aireChemin(p) {
+  var s = 0;
+  for (var i = 0; i < p.length; i++) {
+    var a = p[i], b = p[(i + 1) % p.length];
+    s += a[0] * b[1] - b[0] * a[1];
   }
-  let aire = 0;
-  for (let j = 0; j < out.length; j++) {
-    const p = out[j], q = out[(j + 1) % out.length];
-    aire += p.x * q.y - q.x * p.y;
+  return s / 2;
+}
+function rubanChemin(tr) {
+  var pts = tr.pts, n = pts.length, rng = rngChemin(tr.seed | 0), out = [];
+  if (n < 2) return out;
+  var nx = [], ny = [];                     // normale de chaque troncon
+  for (var s = 0; s < n - 1; s++) {
+    var dx = pts[s + 1][0] - pts[s][0], dy = pts[s + 1][1] - pts[s][1], l = Math.hypot(dx, dy) || 1;
+    nx.push(-dy / l); ny.push(dx / l);
   }
-  if (aire < 0) out.reverse();       // tous dans le meme sens : l'union reste pleine
+  // tirages bruts, puis moyennes glissantes : la largeur et le decalage
+  // changent en douceur sur plusieurs troncons, sans a-coups
+  var rw = [], rd = [];
+  for (var i0 = 0; i0 < n; i0++) { rw.push(rng() * 2 - 1); rd.push(rng() * 2 - 1); }
+  var doux = function (t, i) {
+    var s = 0, k = 0;
+    for (var o = -2; o <= 2; o++) { var j = i + o; if (j >= 0 && j < n) { s += t[j]; k++; } }
+    return s / k * 1.6;           // la moyenne ecrase l'ecart : on le redonne en partie
+  };
+  var c = [], w = [];
+  for (var i = 0; i < n; i++) {
+    w.push(CHEMIN_LARGE * (1 + Math.max(-1, Math.min(1, doux(rw, i))) * CHEMIN_VARIE));
+    var dec = Math.max(-1, Math.min(1, doux(rd, i))) * CHEMIN_DECALE;
+    var ax = nx[Math.max(0, i - 1)] + nx[Math.min(n - 2, i)], ay = ny[Math.max(0, i - 1)] + ny[Math.min(n - 2, i)];
+    var la = Math.hypot(ax, ay) || 1;
+    c.push([pts[i][0] + ax / la * dec, pts[i][1] + ay / la * dec]);
+  }
+  for (var k = 0; k < n - 1; k++) {
+    var a = c[k], b = c[k + 1];
+    var dx2 = b[0] - a[0], dy2 = b[1] - a[1], l2 = Math.hypot(dx2, dy2) || 1;
+    var ux = -dy2 / l2, uy = dx2 / l2, h0 = w[k] / 2, h1 = w[k + 1] / 2;
+    var q = [[a[0] + ux * h0, a[1] + uy * h0], [b[0] + ux * h1, b[1] + uy * h1],
+             [b[0] - ux * h1, b[1] - uy * h1], [a[0] - ux * h0, a[1] - uy * h0]];
+    if (aireChemin(q) < 0) q.reverse();
+    out.push(q);
+  }
+  for (var j = 1; j < n - 1; j++) {
+    var d = [], r = w[j] / 2;
+    // 32 cotes, tangents au vrai cercle : aucun coin de trapeze ne depasse
+    var rc = r / Math.cos(Math.PI / 32);
+    for (var m = 0; m < 32; m++) { var an = (m + 0.5) / 32 * Math.PI * 2; d.push([c[j][0] + Math.cos(an) * rc, c[j][1] + Math.sin(an) * rc]); }
+    if (aireChemin(d) < 0) d.reverse();
+    out.push(d);
+  }
   return out;
 }
-// Trace de tous les chemins, en un seul chemin de canevas
-function traceChemins(liste) {
-  ctx.beginPath();
-  for (const ch of liste) {
-    const c = arrondiChemin(ch);
-    ctx.moveTo(c[0].x, c[0].y);
-    for (let i = 1; i < c.length; i++) ctx.lineTo(c[i].x, c[i].y);
-    ctx.closePath();
-  }
-}
-let traceChemin = null;       // coins deja poses du chemin en cours
-let prisChemin = null;        // { c, i, bouge } : poignee de chemin en cours de deplacement
-function majChemins() {
-  const el = document.getElementById('vChemins');
-  if (el) el.textContent = (carte.chemins || []).length;
-}
-// Maj : le trait depuis le dernier coin reste horizontal, vertical ou a 45°
-function aimante(x, y, shift) {
-  if (!shift || !traceChemin || !traceChemin.length) return { x: x, y: y };
-  const q = traceChemin[traceChemin.length - 1];
-  const a = Math.round(Math.atan2(y - q.y, x - q.x) / (Math.PI / 4)) * (Math.PI / 4);
-  const l = Math.hypot(x - q.x, y - q.y);
-  return { x: q.x + Math.cos(a) * l, y: q.y + Math.sin(a) * l };
-}
-function poigneeChemin(x, y) {
-  const r = rayonPoignee() * 1.6;
-  const L = carte.chemins || [];
-  for (let c = L.length - 1; c >= 0; c--)
-    for (let i = 0; i < L[c].length; i++)
-      if (Math.hypot(L[c][i].x - x, L[c][i].y - y) <= r) return { c, i };
-  return null;
-}
-// Bord de chemin sous le curseur : { c, i } = entre le coin i et le suivant
-function bordChemin(x, y) {
-  const r = rayonPoignee() * 1.2;
-  const L = carte.chemins || [];
-  for (let c = L.length - 1; c >= 0; c--) {
-    const pts = L[c];
-    for (let i = 0; i < pts.length; i++) {
-      const a = pts[i], b = pts[(i + 1) % pts.length];
-      const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
-      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / l2));
-      if (Math.hypot(a.x + dx * t - x, a.y + dy * t - y) <= r) return { c, i };
+// ─── Raccords (editeur seulement) ───
+// La ou deux chemins se croisent ou se rejoignent (et a l'interieur des
+// virages), l'angle rentrant est comble par un arrondi de rayon
+// CHEMIN_RACCORD : c'est une fermeture morphologique de l'ensemble des
+// chemins, calculee sur une grille de CHEMIN_CASE unites. Le contour
+// obtenu est range dans la carte : le jeu n'a plus qu'a le peindre.
+// Il est pris un peu en retrait (une case) : le long des bords droits il
+// reste cache sous les morceaux exacts, seuls les arrondis depassent.
+function edtChemin(g, W, H) {
+  // distance euclidienne au carre (Felzenszwalb-Huttenlocher), en place
+  var N = Math.max(W, H), f = new Float64Array(N), d = new Float64Array(N);
+  var v = new Int32Array(N), z = new Float64Array(N + 1), INF = 1e20;
+  function passe(n) {
+    var k = 0; v[0] = 0; z[0] = -INF; z[1] = INF;
+    for (var q = 1; q < n; q++) {
+      var s;
+      for (;;) {
+        var p = v[k];
+        s = ((f[q] + q * q) - (f[p] + p * p)) / (2 * q - 2 * p);
+        if (s <= z[k]) { k--; if (k < 0) { k = 0; break; } } else break;
+      }
+      if (k === 0 && s <= z[0]) { v[0] = q; z[0] = -INF; z[1] = INF; continue; }
+      k++; v[k] = q; z[k] = s; z[k + 1] = INF;
+    }
+    k = 0;
+    for (var q2 = 0; q2 < n; q2++) {
+      while (z[k + 1] < q2) k++;
+      var dd = q2 - v[k]; d[q2] = dd * dd + f[v[k]];
     }
   }
+  for (var x = 0; x < W; x++) {
+    for (var y = 0; y < H; y++) f[y] = g[y * W + x];
+    passe(H);
+    for (var y2 = 0; y2 < H; y2++) g[y2 * W + x] = d[y2];
+  }
+  for (var y3 = 0; y3 < H; y3++) {
+    for (var x2 = 0; x2 < W; x2++) f[x2] = g[y3 * W + x2];
+    passe(W);
+    for (var x3 = 0; x3 < W; x3++) g[y3 * W + x3] = d[x3];
+  }
+}
+function raccordsChemins(traces) {
+  var morceaux = [];
+  for (var i = 0; i < traces.length; i++) morceaux = morceaux.concat(rubanChemin(traces[i]));
+  if (!morceaux.length) return [];
+  var G = CHEMIN_CASE, R = CHEMIN_RACCORD;
+  var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  morceaux.forEach(function (p) { p.forEach(function (q) {
+    if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; }); });
+  var marge = R + 4 * G;
+  x0 = Math.floor((x0 - marge) / G) * G; y0 = Math.floor((y0 - marge) / G) * G;
+  var W = Math.ceil((x1 + marge - x0) / G) + 1, H = Math.ceil((y1 + marge - y0) / G) + 1;
+  var INF = 1e20, g = new Float64Array(W * H).fill(INF);
+  // 1. remplissage (regle non nulle) des morceaux, au centre des cases
+  var lignes = [];
+  for (var r0 = 0; r0 < H; r0++) lignes.push([]);
+  morceaux.forEach(function (p) {
+    for (var k = 0; k < p.length; k++) {
+      var a = p[k], b = p[(k + 1) % p.length];
+      if (a[1] === b[1]) continue;
+      var sens = b[1] > a[1] ? 1 : -1;
+      var ya = Math.min(a[1], b[1]), yb = Math.max(a[1], b[1]);
+      var j0 = Math.ceil((ya - y0) / G - 0.5), j1 = Math.ceil((yb - y0) / G - 0.5) - 1;
+      for (var j = Math.max(0, j0); j <= Math.min(H - 1, j1); j++) {
+        var yc = y0 + (j + 0.5) * G, t = (yc - a[1]) / (b[1] - a[1]);
+        lignes[j].push([a[0] + (b[0] - a[0]) * t, sens]);
+      }
+    }
+  });
+  for (var j2 = 0; j2 < H; j2++) {
+    var L = lignes[j2]; if (!L.length) continue;
+    L.sort(function (u, v) { return u[0] - v[0]; });
+    var enr = 0;
+    for (var m = 0; m < L.length - 1; m++) {
+      enr += L[m][1];
+      if (!enr) continue;
+      var ia = Math.ceil((L[m][0] - x0) / G - 0.5), ib = Math.ceil((L[m + 1][0] - x0) / G - 0.5) - 1;
+      for (var ii = Math.max(0, ia); ii <= Math.min(W - 1, ib); ii++) g[j2 * W + ii] = 0;
+    }
+  }
+  // 2. dilatation de R puis erosion de R (+ une case de retrait)
+  edtChemin(g, W, H);
+  var R2 = (R / G) * (R / G);
+  for (var c = 0; c < W * H; c++) g[c] = g[c] <= R2 ? INF : 0;   // fond de l'ensemble dilate
+  edtChemin(g, W, H);
+  var seuil = R / G + 1;
+  var phi = new Float64Array(W * H);
+  for (var c2 = 0; c2 < W * H; c2++) phi[c2] = Math.sqrt(g[c2]) - seuil;   // >= 0 : dedans
+  // 3. contour phi = 0 (carres qui marchent), segments relies en boucles
+  var pt = {}, seg = [];
+  function cle(i, j, v) { return ((j * W + i) * 2 + v); }
+  function pos(i, j, v) {           // point du bord (i,j)-(i+1,j) (v=0) ou (i,j)-(i,j+1) (v=1)
+    var k = cle(i, j, v);
+    if (pt[k]) return k;
+    var a = phi[j * W + i], b = v ? phi[(j + 1) * W + i] : phi[j * W + i + 1], t = a / (a - b);
+    pt[k] = v ? [x0 + (i + 0.5) * G, y0 + (j + 0.5 + t) * G] : [x0 + (i + 0.5 + t) * G, y0 + (j + 0.5) * G];
+    return k;
+  }
+  for (var j3 = 0; j3 < H - 1; j3++) for (var i3 = 0; i3 < W - 1; i3++) {
+    var a0 = phi[j3 * W + i3] >= 0, a1 = phi[j3 * W + i3 + 1] >= 0, a2 = phi[(j3 + 1) * W + i3 + 1] >= 0, a3 = phi[(j3 + 1) * W + i3] >= 0;
+    var cas = (a0 ? 1 : 0) | (a1 ? 2 : 0) | (a2 ? 4 : 0) | (a3 ? 8 : 0);
+    if (cas === 0 || cas === 15) continue;
+    var H0 = function () { return pos(i3, j3, 0); }, H1 = function () { return pos(i3, j3 + 1, 0); };
+    var V0 = function () { return pos(i3, j3, 1); }, V1 = function () { return pos(i3 + 1, j3, 1); };
+    var e = [];
+    switch (cas) {
+      case 1: case 14: e = [[H0(), V0()]]; break;
+      case 2: case 13: e = [[H0(), V1()]]; break;
+      case 4: case 11: e = [[V1(), H1()]]; break;
+      case 8: case 7: e = [[V0(), H1()]]; break;
+      case 3: case 12: e = [[V0(), V1()]]; break;
+      case 6: case 9: e = [[H0(), H1()]]; break;
+      case 5: case 10:
+        var centre = (phi[j3 * W + i3] + phi[j3 * W + i3 + 1] + phi[(j3 + 1) * W + i3 + 1] + phi[(j3 + 1) * W + i3]) / 4 >= 0;
+        if ((cas === 5) === centre) e = [[H0(), V1()], [V0(), H1()]];
+        else e = [[H0(), V0()], [V1(), H1()]];
+        break;
+    }
+    for (var q = 0; q < e.length; q++) seg.push(e[q]);
+  }
+  var voisins = {};
+  seg.forEach(function (s, idx) {
+    (voisins[s[0]] = voisins[s[0]] || []).push(idx);
+    (voisins[s[1]] = voisins[s[1]] || []).push(idx);
+  });
+  var vu = new Uint8Array(seg.length), boucles = [];
+  for (var s0 = 0; s0 < seg.length; s0++) {
+    if (vu[s0]) continue;
+    vu[s0] = 1;
+    var boucle = [seg[s0][0]], cur = seg[s0][1];
+    while (cur !== boucle[0]) {
+      boucle.push(cur);
+      var suiv = -1, lst = voisins[cur] || [];
+      for (var t2 = 0; t2 < lst.length; t2++) if (!vu[lst[t2]]) { suiv = lst[t2]; break; }
+      if (suiv < 0) break;
+      vu[suiv] = 1;
+      cur = seg[suiv][0] === cur ? seg[suiv][1] : seg[suiv][0];
+    }
+    if (boucle.length >= 3) boucles.push(boucle.map(function (k2) { return pt[k2]; }));
+  }
+  // 4. simplification, tri dehors / trous, orientation, arrondi au dixieme
+  function dp(p, tol) {
+    if (p.length < 4) return p;
+    var garde = new Uint8Array(p.length); garde[0] = garde[p.length - 1] = 1;
+    var pile = [[0, p.length - 1]];
+    while (pile.length) {
+      var ab = pile.pop(), A = p[ab[0]], B = p[ab[1]], dmax = -1, im = -1;
+      var dx = B[0] - A[0], dy = B[1] - A[1], l = Math.hypot(dx, dy) || 1e-9;
+      for (var u = ab[0] + 1; u < ab[1]; u++) {
+        var dd = Math.abs((p[u][0] - A[0]) * dy - (p[u][1] - A[1]) * dx) / l;
+        if (dd > dmax) { dmax = dd; im = u; }
+      }
+      if (dmax > tol) { garde[im] = 1; pile.push([ab[0], im], [im, ab[1]]); }
+    }
+    return p.filter(function (_, u) { return garde[u]; });
+  }
+  function dedans(p, x, y) {
+    var r = false;
+    for (var a = 0, b = p.length - 1; a < p.length; b = a++)
+      if ((p[a][1] > y) !== (p[b][1] > y) && x < (p[b][0] - p[a][0]) * (y - p[a][1]) / (p[b][1] - p[a][1]) + p[a][0]) r = !r;
+    return r;
+  }
+  boucles = boucles.filter(function (b) { return Math.abs(aireChemin(b)) > 20 * G * G; });
+  // Le contour suit la grille : on efface ses petites marches (lissage
+  // gaussien le long de la boucle, sur une case environ)
+  function lisse(b) {
+    var n = b.length, lg = 0, cum = [0];
+    for (var u = 0; u < n; u++) { var p = b[u], q = b[(u + 1) % n]; lg += Math.hypot(q[0] - p[0], q[1] - p[1]); cum.push(lg); }
+    var m = Math.max(8, Math.round(lg / (G / 2))), pas = lg / m, rs = [], k = 0;
+    for (var e = 0; e < m; e++) {
+      var sv = e * pas;
+      while (k < n - 1 && cum[k + 1] < sv) k++;
+      var p1 = b[k], p2 = b[(k + 1) % n], l1 = cum[k + 1] - cum[k], t = l1 > 1e-9 ? (sv - cum[k]) / l1 : 0;
+      rs.push([p1[0] + (p2[0] - p1[0]) * t, p1[1] + (p2[1] - p1[1]) * t]);
+    }
+    var sig = G / pas, demi = Math.ceil(3 * sig), ws = [], sw = 0;
+    for (var o = -demi; o <= demi; o++) { var wv = Math.exp(-o * o / (2 * sig * sig)); ws.push(wv); sw += wv; }
+    var out = [];
+    for (var i = 0; i < m; i++) {
+      var x = 0, y = 0;
+      for (var o2 = -demi; o2 <= demi; o2++) { var r = rs[((i + o2) % m + m) % m], w2 = ws[o2 + demi]; x += r[0] * w2; y += r[1] * w2; }
+      out.push([x / sw, y / sw]);
+    }
+    return out;
+  }
+  boucles = boucles.map(lisse);
+  var res = boucles.map(function (b) {
+    // fermee : coupee en deux au point le plus loin du premier
+    var loin = 0, dm = -1;
+    for (var u = 1; u < b.length; u++) { var d0 = Math.hypot(b[u][0] - b[0][0], b[u][1] - b[0][1]); if (d0 > dm) { dm = d0; loin = u; } }
+    var p1 = dp(b.slice(0, loin + 1), 0.6), p2 = dp(b.slice(loin).concat([b[0]]), 0.6);
+    return p1.slice(0, -1).concat(p2.slice(0, -1));
+  });
+  return res.map(function (b, idx) {
+    var n = 0;
+    for (var o = 0; o < boucles.length; o++) if (o !== idx && dedans(boucles[o], b[0][0], b[0][1])) n++;
+    var trou = n % 2 === 1;
+    if ((aireChemin(b) > 0) === trou) b.reverse();
+    return b.map(function (q) { return [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10]; });
+  });
+}
+
+// ─── Chemins dans l'editeur ───
+// carte.chemins = { traces: [{ seed, pts: [[x, y], ...] }], raccords: [...] }
+function cheminsValides(ch) {
+  const out = { traces: [], raccords: [] };
+  if (!ch || typeof ch !== 'object' || Array.isArray(ch)) return out;
+  const pts = l => (Array.isArray(l) ? l : [])
+    .map(q => Array.isArray(q) ? [+q[0], +q[1]] : [+(q && q.x), +(q && q.y)])
+    .filter(q => isFinite(q[0]) && isFinite(q[1]));
+  for (const t of (Array.isArray(ch.traces) ? ch.traces : [])) {
+    const p = pts(t && t.pts);
+    if (p.length >= 2) out.traces.push({ seed: (+t.seed | 0) || 1, pts: p });
+  }
+  for (const r of (Array.isArray(ch.raccords) ? ch.raccords : [])) { const p = pts(r); if (p.length >= 3) out.raccords.push(p); }
+  return out;
+}
+// Les arrondis demandent un calcul d'une fraction de seconde (plus sur une
+// grande carte) : il tourne a cote, dans un worker, pour que l'editeur ne
+// se fige jamais. En attendant, les chemins s'affichent sans arrondis.
+let _worker = null, _demande = 0, _raccordsAJour = true;
+function workerRaccords() {
+  if (_worker !== null) return _worker;
+  try {
+    const src = ['var CHEMIN_LARGE = ' + CHEMIN_LARGE, 'var CHEMIN_VARIE = ' + CHEMIN_VARIE,
+      'var CHEMIN_DECALE = ' + CHEMIN_DECALE, 'var CHEMIN_RACCORD = ' + CHEMIN_RACCORD, 'var CHEMIN_CASE = ' + CHEMIN_CASE,
+      rngChemin, aireChemin, rubanChemin, edtChemin, raccordsChemins].map(String).join('\n') +
+      '\nonmessage = function (e) { postMessage({ id: e.data.id, raccords: raccordsChemins(e.data.traces) }); };';
+    _worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    _worker.onmessage = e => {
+      if (e.data.id !== _demande) return;            // une demande plus recente est en route
+      carte.chemins.raccords = e.data.raccords; _raccordsAJour = true;
+    };
+  } catch (err) { _worker = false; }
+  return _worker;
+}
+// efface : les anciens arrondis ne valent plus (chemin retire ou deplace)
+function calculeRaccords(efface) {
+  if (efface) carte.chemins.raccords = [];
+  _raccordsAJour = false;
+  const id = ++_demande, traces = carte.chemins.traces;
+  const w = workerRaccords();
+  if (w) w.postMessage({ id, traces });
+  else { carte.chemins.raccords = raccordsChemins(traces); _raccordsAJour = true; }
+}
+// Morceaux d'un trace, gardes tant qu'il ne bouge pas
+const _morceaux = new WeakMap();
+function morceaux(t) {
+  const cle = t.seed + ':' + t.pts.join(';');
+  let e = _morceaux.get(t);
+  if (!e || e.cle !== cle) { e = { cle, m: rubanChemin(t) }; _morceaux.set(t, e); }
+  return e.m;
+}
+// Tous les morceaux et les raccords, en un seul chemin de canevas (regle non nulle)
+function traceChemins() {
+  ctx.beginPath();
+  const ajoute = p => { ctx.moveTo(p[0][0], p[0][1]); for (let i = 1; i < p.length; i++) ctx.lineTo(p[i][0], p[i][1]); ctx.closePath(); };
+  for (const t of carte.chemins.traces) for (const m of morceaux(t)) ajoute(m);
+  for (const r of carte.chemins.raccords) ajoute(r);
+}
+let traceChemin = null;       // trait a main levee en cours
+let prisChemin = null;        // { t, i, bouge } : poignee de chemin en cours de deplacement
+function majChemins() {
+  const el = document.getElementById('vChemins');
+  if (el) el.textContent = carte.chemins.traces.length;
+}
+function poigneeChemin(x, y) {
+  const r = rayonPoignee() * 1.6, L = carte.chemins.traces;
+  for (let t = L.length - 1; t >= 0; t--)
+    for (let i = 0; i < L[t].pts.length; i++)
+      if (Math.hypot(L[t].pts[i][0] - x, L[t].pts[i][1] - y) <= r) return { t, i };
   return null;
 }
-function dansPolygone(pts, x, y) {
+function dansPoly(p, x, y) {
   let d = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
-    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) d = !d;
-  }
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++)
+    if ((p[i][1] > y) !== (p[j][1] > y) && x < (p[j][0] - p[i][0]) * (y - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0]) d = !d;
   return d;
 }
 function cheminSous(x, y) {
-  const L = carte.chemins || [];
-  for (let c = L.length - 1; c >= 0; c--) if (dansPolygone(arrondiChemin(L[c]), x, y)) return c;
+  const L = carte.chemins.traces;
+  for (let t = L.length - 1; t >= 0; t--) for (const m of morceaux(L[t])) if (dansPoly(m, x, y)) return t;
   return -1;
 }
-function fermeChemin() {
-  if (!traceChemin) return;
-  // un double-clic pose deux fois le meme coin : on retire les doublons
-  const pts = [];
-  for (const q of traceChemin) {
-    const p = pts[pts.length - 1];
-    if (!p || Math.hypot(q.x - p.x, q.y - p.y) > 2 / vue.z) pts.push(q);
+// Point d'un chemin existant le plus proche, pour relier exactement
+function pointProche(x, y, rayon) {
+  let best = null, dm = rayon;
+  for (const t of carte.chemins.traces) for (const q of t.pts) {
+    const d = Math.hypot(q[0] - x, q[1] - y);
+    if (d <= dm) { dm = d; best = q; }
   }
-  while (pts.length > 1 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) <= 2 / vue.z) pts.pop();
+  return best;
+}
+// Trait a main levee -> points de controle : on efface le tremblement de
+// la main, puis on garde un point tous les CHEMIN_ESPACE environ.
+const CHEMIN_ESPACE = 220;
+function termineChemin() {
+  const brut = traceChemin;
   traceChemin = null;
-  if (pts.length < 3) { signale('Un chemin a besoin de 3 coins au moins', true); return; }
+  if (!brut || brut.length < 2) return;
+  const lg = p => { let l = 0; for (let i = 1; i < p.length; i++) l += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return l; };
+  const reech = (p, pas) => {
+    const L = lg(p), m = Math.max(1, Math.round(L / pas)), out = [];
+    let i = 0, deb = 0;
+    for (let k = 0; k <= m; k++) {
+      const s = k * L / m;
+      while (i < p.length - 2 && deb + Math.hypot(p[i + 1].x - p[i].x, p[i + 1].y - p[i].y) < s) {
+        deb += Math.hypot(p[i + 1].x - p[i].x, p[i + 1].y - p[i].y); i++;
+      }
+      const a = p[i], b = p[i + 1], l = Math.hypot(b.x - a.x, b.y - a.y);
+      const t = l > 1e-9 ? Math.min(1, (s - deb) / l) : 0;
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+    return out;
+  };
+  if (lg(brut) < CHEMIN_LARGE * 0.5) { signale('Trait trop court pour un chemin', true); return; }
+  // lissage gaussien le long du trait, les deux bouts restent en place
+  let pts = reech(brut, 8);
+  const sigma = 60, pas = lg(pts) / (pts.length - 1), demi = Math.max(1, Math.round(3 * sigma / pas));
+  const ws = []; let sw = 0;
+  for (let k = -demi; k <= demi; k++) { const w = Math.exp(-(k * pas) * (k * pas) / (2 * sigma * sigma)); ws.push(w); }
+  const n = pts.length, lis = [];
+  for (let i = 0; i < n; i++) {
+    let x = 0, y = 0, s = 0;
+    for (let k = -demi; k <= demi; k++) {
+      const j = Math.min(n - 1, Math.max(0, i + k)), w = ws[k + demi];
+      x += pts[j].x * w; y += pts[j].y * w; s += w;
+    }
+    lis.push({ x: x / s, y: y / s });
+  }
+  lis[0] = pts[0]; lis[n - 1] = pts[n - 1];
+  pts = reech(lis, CHEMIN_ESPACE).map(q => [Math.round(q.x), Math.round(q.y)]);
+  // un bout pose pres d'un point d'un autre chemin s'y accroche exactement
+  const r = Math.max(24 / vue.z, 70);
+  const d0 = pointProche(pts[0][0], pts[0][1], r), d1 = pointProche(pts[pts.length - 1][0], pts[pts.length - 1][1], r);
+  if (d0) pts[0] = [d0[0], d0[1]];
+  if (d1) pts[pts.length - 1] = [d1[0], d1[1]];
   memorise();
-  if (!carte.chemins) carte.chemins = [];
-  carte.chemins.push(pts.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) })));
+  carte.chemins.traces.push({ seed: (Math.random() * 2147483647) | 1, pts });
+  calculeRaccords(false);
   majChemins();
 }
 
@@ -1577,29 +1868,21 @@ let dernierJet = null;
 function agit(x, y, presse, shift) {
   if (outil === 'chemin') {
     if (presse) {
-      if (traceChemin) {
-        // clic sur le premier coin : le chemin se ferme
-        const p0 = traceChemin[0];
-        if (traceChemin.length >= 3 && Math.hypot(p0.x - x, p0.y - y) <= rayonPoignee() * 1.6) { fermeChemin(); return; }
-        traceChemin.push(aimante(x, y, shift));
-        return;
-      }
-      const h = poigneeChemin(x, y);
-      if (h) { prisChemin = { c: h.c, i: h.i, bouge: false }; return; }
-      const b = bordChemin(x, y);
-      if (b) {
-        // un coin de plus au milieu d'un bord, aussitot deplacable
-        memorise();
-        carte.chemins[b.c].splice(b.i + 1, 0, { x: Math.round(x), y: Math.round(y) });
-        prisChemin = { c: b.c, i: b.i + 1, bouge: true };
-        return;
-      }
+      // Maj sur une poignee : on la deplace. Sinon : nouveau trait (il peut
+      // partir d'un point existant, il s'y accrochera)
+      const h = shift ? poigneeChemin(x, y) : null;
+      if (h) { prisChemin = { t: h.t, i: h.i, bouge: false }; return; }
       traceChemin = [{ x: x, y: y }];
       return;
     }
-    if (prisChemin && carte.chemins[prisChemin.c]) {
-      if (!prisChemin.bouge) { memorise(); prisChemin.bouge = true; }
-      carte.chemins[prisChemin.c][prisChemin.i] = { x: Math.round(x), y: Math.round(y) };
+    if (prisChemin && carte.chemins.traces[prisChemin.t]) {
+      if (!prisChemin.bouge) { memorise(); prisChemin.bouge = true; carte.chemins.raccords = []; }
+      carte.chemins.traces[prisChemin.t].pts[prisChemin.i] = [Math.round(x), Math.round(y)];
+      return;
+    }
+    if (traceChemin) {
+      const q = traceChemin[traceChemin.length - 1];
+      if (Math.hypot(x - q.x, y - q.y) >= 3 / vue.z) traceChemin.push({ x: x, y: y });
     }
     return;
   }
@@ -1648,7 +1931,6 @@ function agit(x, y, presse, shift) {
 }
 
 cv.addEventListener('mousedown', debut);
-cv.addEventListener('dblclick', () => { if (outil === 'chemin' && traceChemin) fermeChemin(); });
 cv.addEventListener('mousemove', bouge);
 addEventListener('mouseup', fin);
 cv.addEventListener('mouseleave', () => { souris.dedans = false; fin(); });
@@ -1688,13 +1970,6 @@ addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); annule(); }
   const saisie = document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA';
   if (saisie) return;
-  if (outil === 'chemin' && traceChemin) {
-    if (e.key === 'Enter') { e.preventDefault(); fermeChemin(); return; }
-    if (e.key === 'Escape') { traceChemin = null; return; }
-    if (e.key === 'Backspace' || e.key === 'Delete') {
-      e.preventDefault(); traceChemin.pop(); if (!traceChemin.length) traceChemin = null; return;
-    }
-  }
   if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey) {
     if (outil === 'select' && sel && estBat(sel)) modifieSel(o => { o.rot = ((o.rot | 0) + 1) % 4; });
     else tourne();
@@ -1769,9 +2044,9 @@ document.getElementById('coteRect').onclick = () => {
   majCote();
 };
 document.getElementById('cheminsVide').onclick = () => {
-  if (!carte.chemins || !carte.chemins.length) return signale('Aucun chemin');
+  if (!carte.chemins.traces.length) return signale('Aucun chemin');
   if (!confirm('Effacer tous les chemins ?')) return;
-  memorise(); carte.chemins = []; traceChemin = null; majChemins();
+  memorise(); carte.chemins = { traces: [], raccords: [] }; traceChemin = null; calculeRaccords(true); majChemins();
 };
 document.getElementById('coteVide').onclick = () => {
   memorise(); carte.ile = null; majCote();
@@ -1811,8 +2086,11 @@ function versJson() {
             vagues: carte.zone.vagues },
     ile: (carte.ile && carte.ile.length >= 3)
       ? carte.ile.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) })) : undefined,
-    chemins: (carte.chemins && carte.chemins.length)
-      ? carte.chemins.map(ch => ch.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))) : undefined,
+    chemins: carte.chemins.traces.length ? {
+      traces: carte.chemins.traces.map(t => ({ seed: t.seed, pts: t.pts.map(q => [Math.round(q[0]), Math.round(q[1])]) })),
+      // arrondis a jour, meme si le calcul en arriere-plan n'a pas fini
+      raccords: _raccordsAJour ? carte.chemins.raccords : raccordsChemins(carte.chemins.traces),
+    } : undefined,
     spawns: carte.spawns, obs: carte.obs
   }, null, 1);
 }
@@ -1851,13 +2129,8 @@ function depuisJson(txt) {
             .map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }));
           return pts.length >= 3 ? pts : null;
         })() : null,
-    // Chemins de terre : contours fermes, 3 coins au moins
-    chemins: Array.isArray(m.chemins)
-      ? m.chemins.filter(Array.isArray).map(ch => ch
-          .map(q => Array.isArray(q) ? { x: +q[0], y: +q[1] } : { x: +(q && q.x), y: +(q && q.y) })
-          .filter(q => isFinite(q.x) && isFinite(q.y))
-          .map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))).filter(ch => ch.length >= 3)
-      : [],
+    // Chemins de terre : traces et arrondis deja calcules
+    chemins: cheminsValides(m.chemins),
     spawns: Array.isArray(m.spawns)
       ? m.spawns.filter(s => s && isFinite(+s.x) && isFinite(+s.y))
                 .map(s => ({ x: Math.round(+s.x), y: Math.round(+s.y) })) : [],
@@ -1876,7 +2149,8 @@ function depuisJson(txt) {
       seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0)
     }))
   };
-  traceChemin = null; prisChemin = null;
+  traceChemin = null; prisChemin = null; _demande++; _raccordsAJour = true;
+  if (carte.chemins.traces.length && !carte.chemins.raccords.length) calculeRaccords();
   cacheCos.clear(); reindexe(); majCote(); majChemins();
   vue = { x: carte.monde / 2, y: carte.monde / 2, z: Math.min(1, 900 / carte.monde) };
   synchronisePanneau();
