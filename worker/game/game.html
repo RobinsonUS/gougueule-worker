@@ -102,7 +102,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe','feuille','hutte1','hutte1_toit','hutte2','hutte2_toit','hutte1_ruine','hutte2_ruine','bois','maison','maison_toit','maison_fen','porte','bouton_inter'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe','feuille','hutte1','hutte1_toit','hutte2','hutte2_toit','hutte1_ruine','hutte2_ruine','bois','maison','maison_toit','maison_fen','batiment1','batiment1_toit','batiment1_fen','batiment2','batiment2_toit','batiment2_fen','batiment3','batiment3_toit','batiment3_fen','porte','bouton_inter'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // weapon_XM8 : supprimer le fond blanc
 (function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
   var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
@@ -281,7 +281,7 @@ function voitDansUneHutte(a) {
   for (var i = 0; i < localObs.length; i++) {
     var o = localObs[i];
     if (!estBat(o)) continue;
-    var Rb = geoBat(o).R;
+    var Rb = geoBat(o).R + PORTE.L;   // une porte ouverte vers dehors depasse du rayon
     if (Math.abs(a.x - o.x) > Rb || Math.abs(a.y - o.y) > Rb) continue;
     if (voitDansHutte(o, a.x, a.y)) return true;
   }
@@ -539,31 +539,43 @@ var MAISON = (function () {
   };
 })();
 var FENETRE_ALPHA = 0.7;      // vitres vues de loin, par-dessus les balles
-function estBat(o) { return o.type === 'hutte' || o.type === 'maison'; }
-function geoBat(o) { return o.type === 'maison' ? MAISON : HUTTE; }
+// Batiments 1, 2 et 3 : generes au pixel a partir des images (memes donnees
+// que le serveur). Echelle choisie pour que chaque porte ait exactement la
+// taille de celle de la maison. portes : un element par battant (une double
+// porte en a deux, independants).
+var NOUVEAUX_BATS = {"batiment1":{"ECH":0.6325,"CX":609.5,"CY":355.0,"R":453.5,"corps":[-327.64,-195.13,327.64,195.13],"sol":[-287.16,-154.65,287.16,155.28],"emprise":[-383.61,-222.64,354.52,222.01],"murs":[[-347.88,-103.41,-287.79,-67.36],[-347.24,69.26,-287.79,105.31],[-327.64,-195.13,-68.94,-154.65],[68.94,-195.13,327.64,-154.65],[-327.64,155.28,-68.94,195.13],[68.94,155.28,327.64,195.13],[-327.64,-154.65,-287.16,-66.82],[-327.64,68.72,-287.16,155.28],[287.16,-154.65,327.64,-67.99],[287.16,69.89,327.64,155.28]],"fenetres":[[-68.94,-195.13,68.94,-154.65],[-68.94,155.28,68.94,195.13],[287.16,-67.99,327.64,69.89]],"vue":[[-287.16,-154.65,287.16,155.28],[-84.0,-279.13,84.0,-195.13],[-84.0,195.13,84.0,279.13],[327.64,-83.05,411.64,84.95],[-338.41,-66.82,-287.16,68.72],[-411.41,-125.62,-319.61,127.52]],"portes":[{"r0":[-340.4,-74.95,-303.55,76.85],"r1":[-323.61,68.86,-171.81,105.71],"rm1":[-469.9,68.86,-318.1,105.71],"eb":[-1,0],"f0":[0,-1]}]},"batiment2":{"ECH":0.62857,"CX":522.5,"CY":355.0,"R":451.9,"corps":[-325.6,-193.91,325.6,193.91],"sol":[-285.37,-153.69,285.37,154.31],"emprise":[-326.54,-221.26,382.49,220.63],"murs":[[286.0,-180.09,345.71,-145.51],[286.0,143.0,345.71,178.2],[-325.6,-193.91,-75.43,-153.69],[61.6,-193.91,325.6,-153.69],[-325.6,154.31,-68.51,193.91],[68.51,154.31,325.6,193.91],[-325.6,-153.69,-285.37,154.31],[285.37,-153.69,325.6,-144.77],[285.37,142.57,325.6,154.31]],"fenetres":[[-75.43,-193.91,61.6,-153.69],[-68.51,154.31,68.51,193.91]],"vue":[[-285.37,-153.69,285.37,154.31],[-90.91,-277.91,77.09,-193.91],[-84.0,193.91,84.0,277.91],[285.37,-144.77,336.57,142.57],[317.77,-203.57,409.57,201.37]],"portes":[{"r0":[301.44,-1.1,338.29,150.7],"r1":[169.8,142.17,321.6,179.03],"rm1":[316.13,142.17,467.93,179.03],"eb":[1,0],"f0":[0,-1]},{"r0":[301.44,-152.9,338.29,-1.1],"r1":[169.8,-181.23,321.6,-144.37],"rm1":[316.13,-181.23,467.93,-144.37],"eb":[1,0],"f0":[0,1]}]},"batiment3":{"ECH":0.62988,"CX":582.5,"CY":834.0,"R":648.1,"corps":[-309.27,-467.05,309.27,467.05],"sol":[-268.33,-426.74,268.33,426.74],"emprise":[-365.01,-523.43,337.3,494.45],"murs":[[-178.88,-487.21,-143.61,-427.37],[144.87,-487.21,180.14,-427.37],[-329.42,167.23,-269.59,202.5],[-329.42,339.19,-269.59,374.46],[-309.27,-467.05,-143.04,-426.74],[144.3,-467.05,309.27,-426.74],[-309.27,426.74,-190.85,467.05],[-53.54,426.74,97.63,467.05],[234.94,426.74,309.27,467.05],[-309.27,-426.74,-268.33,-244.71],[-309.27,-107.39,-268.33,203.08],[-309.27,338.62,-268.33,426.74],[268.33,-426.74,309.27,-244.71],[268.33,-107.39,309.27,212.58],[268.33,349.9,309.27,426.74],[146.13,74.64,268.33,114.95],[33.38,288.8,56.06,426.74]],"fenetres":[[-309.27,-244.71,-268.33,-107.39],[268.33,-244.71,309.27,-107.39],[268.33,212.58,309.27,349.9],[-190.85,426.74,-53.54,467.05],[97.63,426.74,234.94,467.05]],"vue":[[-268.33,-426.74,268.33,426.74],[-393.27,-260.05,-309.27,-92.05],[309.27,-260.05,393.27,-92.05],[309.27,197.24,393.27,365.24],[-206.2,467.05,-38.2,551.05],[82.29,467.05,250.29,551.05],[-143.04,-477.96,144.3,-426.74],[-201.84,-550.96,203.1,-459.16],[-320.18,203.08,-268.33,338.62],[-393.18,144.28,-301.38,397.42]],"portes":[{"r0":[0.63,-479.77,152.43,-442.92],"r1":[144.08,-463.04,180.93,-311.24],"rm1":[144.08,-609.36,180.93,-457.56],"eb":[0,-1],"f0":[-1,0]},{"r0":[-151.17,-479.77,0.63,-442.92],"r1":[-179.67,-463.04,-142.82,-311.24],"rm1":[-179.67,-609.36,-142.82,-457.56],"eb":[0,-1],"f0":[1,0]},{"r0":[-321.99,194.95,-285.13,346.75],"r1":[-305.26,338.4,-153.46,375.25],"rm1":[-451.58,338.4,-299.78,375.25],"eb":[-1,0],"f0":[0,-1]}]}};
+for (var _nb in NOUVEAUX_BATS) { NOUVEAUX_BATS[_nb].OMBRE = 7.6; NOUVEAUX_BATS[_nb].OMBRE_DY = 2.0; }
+var BATS = { hutte: HUTTE, maison: MAISON };
+for (var _nb2 in NOUVEAUX_BATS) BATS[_nb2] = NOUVEAUX_BATS[_nb2];
+function estBat(o) { return !!BATS[o.type]; }
+function geoBat(o) { return BATS[o.type] || HUTTE; }
 
-// ===================== porte (maison) =====================
+// ===================== portes =====================
 // Meme geometrie que le serveur, cotes relevees au pixel sur le vrai jeu et
 // rapportees aux piliers de maison.png :
 //  - fermee : ses deux bouts recouvrent exactement la bordure interieure
 //    des piliers, son bord bas affleure le bas des piliers ;
 //  - ouverte (+1 vers l'interieur, -1 vers l'exterieur) : elle recouvre
-//    exactement le pilier cote +u, le bout pivot a V_DEDANS ou V_DEHORS.
-// Elle ne s'appuie sur rien pendant qu'elle tourne : solide seulement au repos.
+//    exactement son pilier, le bout pivot a V_DEDANS ou V_DEHORS.
+// Un battant ne s'appuie sur rien pendant qu'il tourne : solide seulement au repos.
 var PORTE = (function () {
   var L = 151.8, T = L * 277 / 1141;
   return { L: L, T: T, V_FERMEE: 243.0, U_OUVERTE: 85.35, V_DEDANS: 227.1, V_DEHORS: 221.9,
            DUREE: 0.15, PORTEE: R_JOUEUR + 40,
            OMBRE: 7.6, OMBRE_DY: 2.0, OMBRE_ALPHA: 0.077 };   // ombre mesuree sur le vrai jeu
 })();
-function aPorte(o) { return o.type === 'maison'; }
-function porteRect(etat) {
+// La porte de la maison, au meme format que celles des nouveaux batiments
+MAISON.portes = [(function () {
   var L = PORTE.L, T = PORTE.T, U = PORTE.U_OUVERTE;
-  if (etat === 1)  return [U - T / 2, PORTE.V_DEDANS - L, U + T / 2, PORTE.V_DEDANS];
-  if (etat === -1) return [U - T / 2, PORTE.V_DEHORS, U + T / 2, PORTE.V_DEHORS + L];
-  return [-L / 2, PORTE.V_FERMEE - T, L / 2, PORTE.V_FERMEE];
-}
-function porteAuRepos(o) { return (o.porteA || 0) === (o.porte || 0); }
+  return { r0: [-L / 2, PORTE.V_FERMEE - T, L / 2, PORTE.V_FERMEE],
+           r1: [U - T / 2, PORTE.V_DEDANS - L, U + T / 2, PORTE.V_DEDANS],
+           rm1: [U - T / 2, PORTE.V_DEHORS, U + T / 2, PORTE.V_DEHORS + L],
+           eb: [0, 1], f0: [-1, 0] };
+})()];
+HUTTE.portes = [];
+function aPorte(o) { return estBat(o) && geoBat(o).portes.length > 0 && !!o.portes; }
+function battantRect(b, etat) { return etat === 1 ? b.r1 : etat === -1 ? b.rm1 : b.r0; }
+function battantAuRepos(st) { return st.a === st.e; }
 function versLocal(o, x, y) {
   var q = ((o.rot | 0) % 4 + 4) % 4, u = x - o.x, v = y - o.y, t;
   if (q === 1) { t = u; u = v; v = -t; }
@@ -579,31 +591,41 @@ function distRect(u, v, r) {
   var du = Math.max(r[0] - u, 0, u - r[2]), dv = Math.max(r[1] - v, 0, v - r[3]);
   return Math.hypot(du, dv);
 }
-// Rectangle monde de la porte au repos (null si elle tourne)
-function murPorte(o) {
-  if (!porteAuRepos(o)) return null;
-  var e = o.porte || 0;
-  if (!o._mp || o._mpE !== e) { o._mp = rectMondeH(o, porteRect(e)); o._mpE = e; }
-  return o._mp;
+// Rectangles monde des battants au repos (ceux qui tournent n'arretent rien)
+function mursPortes(o) {
+  var g = geoBat(o), out = [];
+  if (!o._mp) o._mp = [];
+  for (var i = 0; i < g.portes.length; i++) {
+    var st = o.portes[i];
+    if (!battantAuRepos(st)) continue;
+    var c = o._mp[i];
+    if (!c || c.e !== st.e) c = o._mp[i] = { e: st.e, r: rectMondeH(o, battantRect(g.portes[i], st.e)) };
+    out.push(c.r);
+  }
+  return out;
 }
-// Porte a portee de main (meme regle que le serveur)
+// Battant a portee de main (meme regle que le serveur) : { o, i }
 function porteProcheLoc(x, y) {
   var best = null, dMin = PORTE.PORTEE;
-  for (var i = 0; i < localObs.length; i++) {
-    var o = localObs[i];
+  for (var k = 0; k < localObs.length; k++) {
+    var o = localObs[k];
     if (!aPorte(o)) continue;
-    if (Math.abs(o.x - x) > 500 || Math.abs(o.y - y) > 500) continue;
+    var g = geoBat(o);
+    if (Math.abs(o.x - x) > g.R + 100 || Math.abs(o.y - y) > g.R + 100) continue;
     var l = versLocal(o, x, y);
-    var d = distRect(l[0], l[1], porteRect(0));
-    if (o.porte) d = Math.min(d, distRect(l[0], l[1], porteRect(o.porte)));
-    if (d <= dMin) { dMin = d; best = o; }
+    for (var i = 0; i < g.portes.length; i++) {
+      var b = g.portes[i], st = o.portes[i];
+      var d = distRect(l[0], l[1], b.r0);
+      if (st.e) d = Math.min(d, distRect(l[0], l[1], battantRect(b, st.e)));
+      if (d <= dMin) { dMin = d; best = { o: o, i: i }; }
+    }
   }
   return best;
 }
-// Pose de la porte a l'instant : centre (monde) et angle de l'image. La
-// rotation se fait autour d'un pivot choisi pour que les deux positions de
-// repos tombent exactement sur les rectangles ci-dessus.
-// Centre d'un rectangle local
+// Pose d'un battant a l'instant : centre (monde) et angle de l'image. La
+// rotation se fait autour d'un pivot choisi pour que les positions de repos
+// tombent exactement sur les rectangles ci-dessus, dans le bon sens (le bout
+// libre part vers l'interieur ou vers l'exterieur).
 function centreRect(r) { return [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2]; }
 // Pivot de la rotation d'un quart de tour (sens +1 : (x,y)->(-y,x) ; sens
 // -1 : (x,y)->(y,-x)) qui envoie le centre C0 sur le centre C1
@@ -612,21 +634,26 @@ function pivotQuart(C0, C1, sens) {
   var X = C1[0] - R0[0], Y = C1[1] - R0[1];
   return sens > 0 ? [(X - Y) / 2, (X + Y) / 2] : [(X + Y) / 2, (Y - X) / 2];
 }
-var _pivotsPorte = null;
-function pivotsPorte() {
-  if (!_pivotsPorte) {
-    var c0 = centreRect(porteRect(0));
-    _pivotsPorte = { dedans: pivotQuart(c0, centreRect(porteRect(1)), 1),
-                     dehors: pivotQuart(c0, centreRect(porteRect(-1)), -1) };
-  }
-  return _pivotsPorte;
+function sensQuart(f0, cible) {           // +1 si (-y,x) envoie f0 sur cible, sinon -1
+  return (Math.abs(-f0[1] - cible[0]) < 1e-6 && Math.abs(f0[0] - cible[1]) < 1e-6) ? 1 : -1;
 }
-function posePorte(o) {
-  var a = Math.max(-1, Math.min(1, o.porteA || 0)), th = a * Math.PI / 2;
-  var c0 = centreRect(porteRect(0)), pv = a >= 0 ? pivotsPorte().dedans : pivotsPorte().dehors;
-  var x0 = c0[0] - pv[0], y0 = c0[1] - pv[1], c = Math.cos(th), s = Math.sin(th);
+function prepBattant(b) {
+  if (b._p) return b._p;
+  var c0 = centreRect(b.r0);
+  var sIn = sensQuart(b.f0, [-b.eb[0], -b.eb[1]]), sOut = sensQuart(b.f0, [b.eb[0], b.eb[1]]);
+  b._p = { c0: c0, sIn: sIn, sOut: sOut,
+           pIn: pivotQuart(c0, centreRect(b.r1), sIn), pOut: pivotQuart(c0, centreRect(b.rm1), sOut) };
+  return b._p;
+}
+function poseBattant(o, b, st) {
+  var P = prepBattant(b);
+  var a = Math.max(-1, Math.min(1, st.a || 0));
+  var th = a >= 0 ? a * Math.PI / 2 * P.sIn : -a * Math.PI / 2 * P.sOut;
+  var pv = a >= 0 ? P.pIn : P.pOut;
+  var x0 = P.c0[0] - pv[0], y0 = P.c0[1] - pv[1], c = Math.cos(th), s = Math.sin(th);
   var cu = pv[0] + x0 * c - y0 * s, cv = pv[1] + x0 * s + y0 * c;
-  var w = vecMonde(o, cu, cv), f = vecMonde(o, -c, -s);   // f : vers le bout libre (poignees)
+  var fu = b.f0[0] * c - b.f0[1] * s, fv = b.f0[0] * s + b.f0[1] * c;
+  var w = vecMonde(o, cu, cv), f = vecMonde(o, fu, fv);   // f : vers le bout libre (poignees)
   return { x: o.x + w[0], y: o.y + w[1], ang: Math.atan2(f[0], -f[1]) };
 }
 // Ombre de la porte : sa silhouette elargie de OMBRE, en noir, comme celle
@@ -653,24 +680,27 @@ function ombrePorte(sp, largeurPx, hauteurPx) {
   _ombrePorte = { cle: cle, cv: co, d: d };
   return _ombrePorte;
 }
-function dessinePorte(o) {
+// Tous les battants d'un batiment (chacun avec son ombre, toujours la)
+function dessinePortes(o) {
   var sp = SPRITES.porte;
   if (!sp || !(sp.naturalWidth || sp.width)) return;
-  var ps = posePorte(o);
+  var g = geoBat(o);
   var L = PORTE.L, W = L * (sp.naturalWidth || sp.width) / (sp.naturalHeight || sp.height);
-  // ombre d'abord, toujours la, meme pendant la rotation
   var om = ombrePorte(sp, W * PXV, L * PXV), dm = om.d / PXV;
-  ctx.save();
-  ctx.translate(ps.x, ps.y + PORTE.OMBRE_DY);
-  ctx.rotate(ps.ang);
-  ctx.globalAlpha *= PORTE.OMBRE_ALPHA;
-  ctx.drawImage(om.cv, -W / 2 - dm, -L / 2 - dm, W + 2 * dm, L + 2 * dm);
-  ctx.restore();
-  ctx.save();
-  ctx.translate(ps.x, ps.y);
-  ctx.rotate(ps.ang);
-  ctx.drawImage(spriteEchelle(sp, 'porte', W * PXV).cv, -W / 2, -L / 2, W, L);
-  ctx.restore();
+  for (var i = 0; i < g.portes.length; i++) {
+    var ps = poseBattant(o, g.portes[i], o.portes[i]);
+    ctx.save();
+    ctx.translate(ps.x, ps.y + PORTE.OMBRE_DY);
+    ctx.rotate(ps.ang);
+    ctx.globalAlpha *= PORTE.OMBRE_ALPHA;
+    ctx.drawImage(om.cv, -W / 2 - dm, -L / 2 - dm, W + 2 * dm, L + 2 * dm);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(ps.x, ps.y);
+    ctx.rotate(ps.ang);
+    ctx.drawImage(spriteEchelle(sp, 'porte', W * PXV).cv, -W / 2, -L / 2, W, L);
+    ctx.restore();
+  }
 }
 function rectMondeH(o, r) {
   var q = ((o.rot | 0) % 4 + 4) % 4, u0 = r[0], v0 = r[1], u1 = r[2], v1 = r[3];
@@ -726,8 +756,10 @@ function pousseMur(a, R, w) {
 // Images d'un batiment : corps, toit, et pour la maison les vitres du toit
 // a part (elles se dessinent a 70 %).
 function imagesBat(o, ruine) {
-  if (o.type === 'maison')
-    return { corps: 'maison', toit: 'maison_toit', fen: 'maison_fen', g: MAISON, cx: MAISON.CX, cy: MAISON.CY };
+  if (o.type !== 'hutte' && o.type !== 'ruine' && BATS[o.type]) {
+    var gb = BATS[o.type];   // maison et batiments 1 a 3 : corps, toit et vitres du toit
+    return { corps: o.type, toit: o.type + '_toit', fen: o.type + '_fen', g: gb, cx: gb.CX, cy: gb.CY };
+  }
   var v = o.v === 2 ? 2 : 1;
   if (ruine) return { corps: 'hutte' + v + '_ruine', toit: null, fen: null, g: HUTTE, cx: HUTTE.RCX, cy: HUTTE.RCY };
   return { corps: 'hutte' + v, toit: 'hutte' + v + '_toit', fen: null, g: HUTTE, cx: HUTTE.CX, cy: HUTTE.CY };
@@ -736,7 +768,10 @@ function imagesPretes(m) {
   return vegPret(m.corps) && (!m.toit || vegPret(m.toit)) && (!m.fen || vegPret(m.fen));
 }
 function huttePrete(v) { return imagesPretes(imagesBat({ type: 'hutte', v: v })); }
-function maisonPrete() { return imagesPretes(imagesBat({ type: 'maison' })); }
+function maisonPrete() {
+  for (var t in BATS) if (t !== 'hutte' && !imagesPretes(imagesBat({ type: t }))) return false;
+  return true;
+}
 // Corps, toit, vitres et anneau d'ombre a la taille d'ecran, calcules une
 // fois par taille (arrondie a 8 px pres), jamais a chaque image.
 var _hutteCache = {};
@@ -1011,13 +1046,13 @@ function prevoitImpact(b) {
     var o = localObs[i];
     var bat = estBat(o), arbre = o.type === 'arbre' || o.type === 'orbe';
     if (!bat && !arbre) continue;
-    var R = bat ? geoBat(o).R : o.r + R_BALLE;
+    var R = bat ? geoBat(o).R + PORTE.L : o.r + R_BALLE;   // porte ouverte vers dehors comprise
     if (o.x + R < xa || o.x - R > xb || o.y + R < ya || o.y - R > yb) continue;
     if (bat) {
       if (!o._mursB) o._mursB = geoBat(o).murs.map(function (r) { return rectMondeH(o, r); });
-      var mb = aPorte(o) ? murPorte(o) : null;
-      for (var k = 0; k < o._mursB.length + (mb ? 1 : 0); k++) {
-        var t = entreeRect(b.x, b.y, dx, dy, k < o._mursB.length ? o._mursB[k] : mb, R_BALLE);
+      var mb = aPorte(o) ? mursPortes(o) : [];
+      for (var k = 0; k < o._mursB.length + mb.length; k++) {
+        var t = entreeRect(b.x, b.y, dx, dy, k < o._mursB.length ? o._mursB[k] : mb[k - o._mursB.length], R_BALLE);
         if (t > 0 && t < tMin) tMin = t;
       }
     } else {
@@ -1454,8 +1489,8 @@ function dessineSphereChargement(j) {
 // Meme fond gris translucide que la jauge : il s'adapte a tous les sols.
 function dessineInfoPorte(j) {
   if (!interDispo()) return;
-  var o = porteProcheLoc(moi.x, moi.y);
-  if (!o) return;
+  var pp = porteProcheLoc(moi.x, moi.y);
+  if (!pp) return;
   var R = R_JOUEUR, w = R * 4.3, h = R * 1.75;
   var x = j.x - w / 2, y = j.y + R * 4.35;
   ctx.save();
@@ -1466,10 +1501,10 @@ function dessineInfoPorte(j) {
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#ffffff';
   ctx.font = '800 ' + Math.round(R * 0.62) + 'px system-ui, -apple-system, sans-serif';
-  ctx.fillText('Porte', x + R * 0.42, y + h * 0.46);
+  ctx.fillText('Door', x + R * 0.42, y + h * 0.46);
   ctx.fillStyle = 'rgba(255, 255, 255, 0.62)';
   ctx.font = '700 ' + Math.round(R * 0.5) + 'px system-ui, -apple-system, sans-serif';
-  ctx.fillText(o.porte ? 'Fermer' : 'Ouvrir', x + R * 0.42, y + h * 0.82);
+  ctx.fillText(pp.o.portes[pp.i].e ? 'Close' : 'Open', x + R * 0.42, y + h * 0.82);
   ctx.restore();
 }
 
@@ -2823,7 +2858,7 @@ function dessine(p, moi, viseur, drag) {
   parCouche(0);
   // Portes : sur le plancher et les piliers, toujours SOUS les joueurs (qui
   // passent par-dessus quand elle tourne), et sous le toit
-  for (const o of huttes) if (aPorte(o)) dessinePorte(o);
+  for (const o of huttes) if (aPorte(o)) dessinePortes(o);
 
   // ombres du decor
   for (const o of p.obs) {
@@ -3045,7 +3080,7 @@ function dessine(p, moi, viseur, drag) {
     ctx.globalAlpha = o.toitA;
     dessineHutte(o, 2);
     // Maison vue de loin : les vitres, a 70 %, passent par-dessus les balles
-    if (o.type === 'maison') { ctx.globalAlpha = o.toitA * FENETRE_ALPHA; dessineHutte(o, 3); }
+    if (imagesBat(o).fen) { ctx.globalAlpha = o.toitA * FENETRE_ALPHA; dessineHutte(o, 3); }
     ctx.globalAlpha = 1;
   }
 
@@ -3752,6 +3787,14 @@ function initObs(decor) {
     // base = ce que l'objet etait avant d'etre abattu : la trace au sol en
     // garde la forme.
     var n = Object.assign({}, o, c, { alphaVis: 1, base: o.type });
+    // un etat par battant : [cible, avancement] envoyes par le serveur
+    if (estBat(n)) {
+      var nbB = geoBat(n).portes.length;
+      n.portes = nbB ? geoBat(n).portes.map(function (b, i) {
+        var e = o.portes && o.portes[i];
+        return { e: e ? e[0] : 0, a: e ? e[1] : 0 };
+      }) : undefined;
+    }
     if (estBat(n) || n.type === 'ruine') prepareHutte(n);
     return n;
   });
@@ -3784,7 +3827,7 @@ function majObs(decorMaj, mapVer) {
     // d'origine, comme la carte du monde. Rien a repeindre ici.
     o.type = m.type; o.pv = m.pv; o.secousse = m.secousse || 0;
     // Porte : le serveur donne la position visee, elle tourne ici
-    if (m.porte !== undefined) o.porte = m.porte;
+    if (m.portes && o.portes) for (var pi = 0; pi < m.portes.length && pi < o.portes.length; pi++) o.portes[pi].e = m.portes[pi];
     prevObsTypes[m.idx] = m.type;
   }
 }
@@ -3794,9 +3837,11 @@ function majObsPerFrame(dt) {
     var o = localObs[i];
     if (o.secousse > 0) o.secousse = Math.max(0, o.secousse - dt);
     // La porte tourne ici, a la meme vitesse que sur le serveur
-    if (aPorte(o) && !porteAuRepos(o)) {
-      var c = o.porte || 0, a = o.porteA || 0, pas = dt / PORTE.DUREE;
-      o.porteA = Math.abs(c - a) <= pas ? c : a + Math.sign(c - a) * pas;
+    if (aPorte(o)) for (var pk = 0; pk < o.portes.length; pk++) {
+      var st = o.portes[pk];
+      if (battantAuRepos(st)) continue;
+      var pas = dt / PORTE.DUREE;
+      st.a = Math.abs(st.e - st.a) <= pas ? st.e : st.a + Math.sign(st.e - st.a) * pas;
     }
   }
 }
@@ -4163,13 +4208,12 @@ function deplaceLoc(a, dx, dy) {
       var o = localObs[i];
       if (estBat(o)) {
         // murs (et fenetres) seulement : on contourne le batiment ou on y entre
-        var Rb = geoBat(o).R;
+        var Rb = geoBat(o).R + PORTE.L;   // une porte ouverte vers dehors depasse du rayon
         if (Math.abs(a.x - o.x) > Rb || Math.abs(a.y - o.y) > Rb) continue;
         if (!o._murs) prepareHutte(o);
         for (var w = 0; w < o._murs.length; w++) if (pousseMur(a, R, o._murs[w])) hit = true;
         // porte au repos : solide ; en train de tourner, elle traverse le joueur
-        var mp = aPorte(o) ? murPorte(o) : null;
-        if (mp && pousseMur(a, R, mp)) hit = true;
+        if (aPorte(o)) { var mps = mursPortes(o); for (var mq = 0; mq < mps.length; mq++) if (pousseMur(a, R, mps[mq])) hit = true; }
         continue;
       }
       if (o.type !== 'arbre' && o.type !== 'orbe') continue;
