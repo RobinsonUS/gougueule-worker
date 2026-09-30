@@ -287,6 +287,13 @@ function voitDansUneHutte(a) {
   }
   return false;
 }
+// Part d'un ecart a resorber sur cette image, pour un taux donne par
+// image a 60 Hz : meme rendu qu'avant a 60 Hz, et plus 2 fois plus rapide
+// sur un ecran a 120 Hz ou 2 fois plus lent a 30 images par seconde.
+function lissage(k) {
+  var dt = Math.min(0.1, window._lastDt || 1 / 60);
+  return 1 - Math.pow(1 - k, dt * 60);
+}
 function majZoomHutte(a) {
   var dt = Math.min(0.1, window._lastDt || 0.016);
   var cible = voitDansUneHutte(a) ? ZOOM_HUTTE : 1;
@@ -350,6 +357,67 @@ var VEG_OMBRE = { arbre: 10.8, buisson: 6.5, orbe: 19.0 };   // ombre large, rel
 var VEG_OMBRE_ALPHA = 0.07;                       // meme valeur que C.ombreDouce
 var _vegCache = {};
 
+// ─── Toiles a la taille de l'ecran : cache commun ───
+// Chaque image (arbre, batiment, avion...) est redimensionnee une fois pour
+// une taille d'ecran donnee. Mais pendant un zoom (saut en parachute,
+// entree dans un batiment) la taille change a chaque image : on refaisait
+// alors une toile tous les 8 px, ombre comprise (24 passes), d'ou des
+// a-coups, et le cache grossissait sans limite. Desormais :
+// - zoom en cours : on reprend une toile deja prete un peu plus grande
+//   (elle est dessinee a la taille exacte, seule la finesse varie), et
+//   sinon on en prepare une par paliers de 19 %, pas tous les 8 px ;
+// - zoom arrete : la toile exacte est refaite, une seule par image au
+//   plus, et en attendant la plus proche sert ;
+// - chaque image garde au plus quelques tailles (les plus recentes).
+var ZOOM_ETAT = { pxv: 0, t: -1e9 };
+var _budgetToiles = 1;
+function notePXV() {
+  if (Math.abs(PXV - ZOOM_ETAT.pxv) > PXV * 1e-6) {
+    if (ZOOM_ETAT.pxv) ZOOM_ETAT.t = performance.now();   // la premiere valeur n'est pas un zoom
+    ZOOM_ETAT.pxv = PXV;
+  }
+}
+function zoomEnMouvement() { return performance.now() - ZOOM_ETAT.t < 200; }
+function palierToile(t) {
+  var p = Math.pow(2, Math.ceil(Math.log2(Math.max(8, t)) * 4 - 1e-9) / 4);
+  return Math.max(8, Math.ceil(p / 8) * 8);
+}
+// cache : objet des familles ; famille : une image ; tPx : taille voulue ;
+// construit(taille, echelle) fabrique l'entree (echelle = taille / tPx)
+function toileEchelle(cache, famille, tPx, maxTailles, construit) {
+  var f = cache[famille] || (cache[famille] = new Map());
+  var mouv = zoomEnMouvement();
+  var e = f.get(tPx);
+  if (e) {
+    f.delete(tPx); f.set(tPx, e);                          // la plus recente en dernier
+    // Bonne taille, mais preparee a un autre zoom (ombre arrondie
+    // autrement) : a l'arret, on la refait exacte des que possible
+    if (mouv || e._px === PXV || _budgetToiles <= 0) return e;
+    _budgetToiles--;
+    e = construit(tPx, 1); e._px = PXV;
+    f.set(tPx, e);
+    return e;
+  }
+  // Toile deja prete la plus proche : plus grande de preference (la
+  // reduire reste net), plus petite seulement faute de mieux
+  var best = null, bestK = 0, score = Infinity;
+  f.forEach(function (v, k) {
+    var sc = k >= tPx ? k / tPx : 1.5 * tPx / k;
+    if (sc < score) { score = sc; best = v; bestK = k; }
+  });
+  if (best && mouv && score <= 1.2) return best;
+  if (best && !mouv && _budgetToiles <= 0) return best;
+  var taille = mouv ? palierToile(tPx) : tPx;
+  e = f.get(taille);
+  if (e) return e;
+  _budgetToiles--;
+  e = construit(taille, taille / tPx);
+  e._px = taille === tPx ? PXV : -1;     // -1 : toile de palier, jamais exacte
+  f.set(taille, e);
+  while (f.size > maxTailles) f.delete(f.keys().next().value);
+  return e;
+}
+
 function vegPret(nom) {
   var sp = SPRITES[nom];
   return !!(sp && (sp.naturalWidth || sp.width));
@@ -358,12 +426,13 @@ function vegPret(nom) {
 // Image redimensionnee a la taille d'ecran, et son anneau d'ombre : calcules
 // une fois par taille (arrondie a 8 px pres), jamais a chaque image.
 function vegCanevas(nom, largeurEcran, debord) {
-  var sp = SPRITES[nom];
   var tPx = Math.max(8, Math.round(largeurEcran / 8) * 8);
-  var d = Math.max(1, Math.round(debord * PXV));
-  var cle = nom + ':' + tPx + ':' + d;
-  var e = _vegCache[cle];
-  if (e) return e;
+  return toileEchelle(_vegCache, nom + ':' + debord, tPx, 3, function (taille, ech) {
+    return vegConstruit(nom, taille, Math.max(1, Math.round(debord * PXV * ech)));
+  });
+}
+function vegConstruit(nom, tPx, d) {
+  var sp = SPRITES[nom], e;
   var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
   var k = tPx / sw;
   var cs = document.createElement('canvas');
@@ -394,7 +463,6 @@ function vegCanevas(nom, largeurEcran, debord) {
   gs.fillStyle = C.souche;
   gs.fillRect(0, 0, csil.width, csil.height);
   e = { cs: cs, co: co, csil: csil, d: d };
-  _vegCache[cle] = e;
   return e;
 }
 
@@ -659,12 +727,17 @@ function poseBattant(o, b, st) {
 // Ombre de la porte : sa silhouette elargie de OMBRE, en noir, comme celle
 // des batiments. Calculee une fois par taille d'ecran, tournee avec la porte,
 // et decalee vers le bas de l'ecran (pas avec la porte).
-var _ombrePorte = null;
+var _ombrePorte = {};
 function ombrePorte(sp, largeurPx, hauteurPx) {
-  var d = Math.max(1, Math.round(PORTE.OMBRE * PXV));
-  var w = Math.max(8, Math.round(largeurPx / 8) * 8), h = Math.max(8, Math.round(hauteurPx / 8) * 8);
-  var cle = w + ':' + h + ':' + d;
-  if (_ombrePorte && _ombrePorte.cle === cle) return _ombrePorte;
+  var w0 = Math.max(8, Math.round(largeurPx / 8) * 8);
+  return toileEchelle(_ombrePorte, 'porte', w0, 3, function (w, ech) {
+    var h = Math.max(8, Math.round(hauteurPx * ech / 8) * 8);
+    var e = ombrePorteConstruit(sp, w, h, Math.max(1, Math.round(PORTE.OMBRE * PXV * ech)));
+    e.px = PXV * ech;                    // pixels de la toile par unite monde
+    return e;
+  });
+}
+function ombrePorteConstruit(sp, w, h, d) {
   var cs = document.createElement('canvas'); cs.width = w; cs.height = h;
   cs.getContext('2d').drawImage(sp, 0, 0, w, h);
   var co = document.createElement('canvas'); co.width = w + 2 * d; co.height = h + 2 * d;
@@ -677,8 +750,7 @@ function ombrePorte(sp, largeurPx, hauteurPx) {
   g.globalCompositeOperation = 'source-in';
   g.fillStyle = '#000';
   g.fillRect(0, 0, co.width, co.height);
-  _ombrePorte = { cle: cle, cv: co, d: d };
-  return _ombrePorte;
+  return { cv: co, d: d, w: w, h: h };
 }
 // Tous les battants d'un batiment (chacun avec son ombre, toujours la)
 function dessinePortes(o) {
@@ -686,14 +758,15 @@ function dessinePortes(o) {
   if (!sp || !(sp.naturalWidth || sp.width)) return;
   var g = geoBat(o);
   var L = PORTE.L, W = L * (sp.naturalWidth || sp.width) / (sp.naturalHeight || sp.height);
-  var om = ombrePorte(sp, W * PXV, L * PXV), dm = om.d / PXV;
+  // Debord de l'ombre ramene en unites monde, a l'echelle de SA toile
+  var om = ombrePorte(sp, W * PXV, L * PXV), dmx = om.d / om.px, dmy = dmx;
   for (var i = 0; i < g.portes.length; i++) {
     var ps = poseBattant(o, g.portes[i], o.portes[i]);
     ctx.save();
     ctx.translate(ps.x, ps.y + PORTE.OMBRE_DY);
     ctx.rotate(ps.ang);
     ctx.globalAlpha *= PORTE.OMBRE_ALPHA;
-    ctx.drawImage(om.cv, -W / 2 - dm, -L / 2 - dm, W + 2 * dm, L + 2 * dm);
+    ctx.drawImage(om.cv, -W / 2 - dmx, -L / 2 - dmy, W + 2 * dmx, L + 2 * dmy);
     ctx.restore();
     ctx.save();
     ctx.translate(ps.x, ps.y);
@@ -776,13 +849,15 @@ function maisonPrete() {
 // fois par taille (arrondie a 8 px pres), jamais a chaque image.
 var _hutteCache = {};
 function canevasBat(m, largeurEcran) {
-  var sp = SPRITES[m.corps];
   var tPx = Math.max(8, Math.round(largeurEcran / 8) * 8);
-  var d = Math.max(1, Math.round(m.g.OMBRE * PXV));
-  var dy = Math.round(m.g.OMBRE_DY * PXV);
-  var cle = m.corps + ':' + tPx + ':' + d + ':' + dy;
-  var e = _hutteCache[cle];
-  if (e) return e;
+  // Grandes toiles (corps, toit, vitres, ombre) : deux tailles gardees au plus
+  return toileEchelle(_hutteCache, m.corps, tPx, 2, function (taille, ech) {
+    return batConstruit(m, taille, Math.max(1, Math.round(m.g.OMBRE * PXV * ech)),
+                        Math.round(m.g.OMBRE_DY * PXV * ech));
+  });
+}
+function batConstruit(m, tPx, d, dy) {
+  var sp = SPRITES[m.corps], e;
   var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
   var k = tPx / sw;
   var reduit = function (nom) {
@@ -811,7 +886,6 @@ function canevasBat(m, largeurEcran) {
   g.globalCompositeOperation = 'destination-out';
   g.drawImage(cs, d, d);
   e = { cs: cs, ct: ct, cf: cf, co: co, d: d, k: k };
-  _hutteCache[cle] = e;
   return e;
 }
 // Tremblement sous les balles : comme le bigbush, attenue vu la taille
@@ -2658,18 +2732,18 @@ function paraHaut(j) {
 // Les gros sprites (avion, parachute) sont redimensionnes une fois pour
 // toutes dans une toile a la taille de l'ecran, au lieu d'etre remis a
 // l'echelle a chaque image : c'est ce qui coutait cher pendant le largage.
-var _spEch = {};
+var _spEch = {}, _spSrc = {};
 function spriteEchelle(sp, cle, largeurPx) {
-  var w = Math.max(16, Math.round(largeurPx / 16) * 16);
-  var e = _spEch[cle];
-  if (e && e.w === w && e.src === sp) return e;
-  var rw = sp.naturalWidth || sp.width, rh = sp.naturalHeight || sp.height;
-  var hh = Math.max(1, Math.round(w * (rh / rw)));
-  var cv = document.createElement('canvas');
-  cv.width = w; cv.height = hh;
-  cv.getContext('2d').drawImage(sp, 0, 0, w, hh);
-  e = _spEch[cle] = { cv: cv, w: w, src: sp };
-  return e;
+  if (_spSrc[cle] !== sp) { _spSrc[cle] = sp; delete _spEch[cle]; }   // image remplacee
+  var w0 = Math.max(16, Math.round(largeurPx / 16) * 16);
+  return toileEchelle(_spEch, cle, w0, 3, function (w) {
+    var rw = sp.naturalWidth || sp.width, rh = sp.naturalHeight || sp.height;
+    var hh = Math.max(1, Math.round(w * (rh / rw)));
+    var cv = document.createElement('canvas');
+    cv.width = w; cv.height = hh;
+    cv.getContext('2d').drawImage(sp, 0, 0, w, hh);
+    return { cv: cv, w: w, src: sp };
+  });
 }
 
 function dessineParachute(j) {
@@ -2752,6 +2826,7 @@ function dessine(p, moi, viseur, drag) {
   agentVue = a;               // la minimap et le HUD suivent cet agent
   majZoomHutte(a);
   VUE_Z = zoomVue(a); PXV = PX * VUE_Z;   // vue reduite tant qu'on est en l'air
+  notePXV(); _budgetToiles = 1;           // une toile exacte refaite par image, au plus
   // Dans l'avion, le joueur EST a la position de l'avion. On accroche la
   // camera a l'avion calcule plutot qu'a la position du passager, qui ne
   // vaut que par paliers de 30 Hz : sinon toute la scene avance par a-coups.
@@ -2876,7 +2951,10 @@ function dessine(p, moi, viseur, drag) {
   // Voir a travers un buisson n'est possible qu'a pied : survoler un
   // buisson en avion ou en parachute ne revele rien de ce qu'il cache.
   const aPied = !a.enAvion && !((a.para || 0) > 0);
-  const moiCache = aPied && dansBuisson(a.x, a.y, p.obs);
+  // Les buissons, releves une fois par image : chaque joueur les consulte
+  const buissons = [];
+  for (const o of p.obs) if (o.type === 'buisson') buissons.push(o);
+  const moiCache = aPied && dansBuisson(a.x, a.y, buissons);
 
   // ---- etat visuel de chaque joueur, calcule une seule fois ----
   const agentsArr = Object.values(p.agents);
@@ -2889,8 +2967,7 @@ function dessine(p, moi, viseur, drag) {
     let dansUnBuisson = false;
     let buissonPartage = false;      // je touche le buisson ou il se cache
 
-    for (const o of p.obs) {
-      if (o.type !== 'buisson') continue;
+    for (const o of buissons) {
       const dJ = Math.hypot(o.x - j.x, o.y - j.y);
       const dM = Math.hypot(o.x - a.x, o.y - a.y);
       if (dJ < o.r * 0.75) dansUnBuisson = true;
@@ -2916,7 +2993,7 @@ function dessine(p, moi, viseur, drag) {
 
     // Fondu léger : rapide pour se cacher (0.5), lent pour réapparaître (0.16)
     const taux = (cible < j.alphaVis) ? 0.5 : 0.16;
-    j.alphaVis += (cible - j.alphaVis) * taux;
+    j.alphaVis += (cible - j.alphaVis) * lissage(taux);
     // Snap à la cible exacte quand on est assez proche (sinon le lerp n'atteint jamais 0)
     if (Math.abs(j.alphaVis - cible) < 0.015) j.alphaVis = cible;
     // Persister pour la prochaine frame (vue.agents recrée des objets neufs)
@@ -3074,7 +3151,7 @@ function dessine(p, moi, viseur, drag) {
     }
     const ouvert = aPied && voitDansHutte(o, a.x, a.y);
     if (o.toitA === undefined) o.toitA = ouvert ? 0 : 1;
-    o.toitA += ((ouvert ? 0 : 1) - o.toitA) * 0.3;
+    o.toitA += ((ouvert ? 0 : 1) - o.toitA) * lissage(0.3);
     if (Math.abs(o.toitA - (ouvert ? 0 : 1)) < 0.01) o.toitA = ouvert ? 0 : 1;
     if (o.toitA <= 0) continue;
     ctx.globalAlpha = o.toitA;
@@ -3090,8 +3167,8 @@ function dessine(p, moi, viseur, drag) {
     if (o.type === 'arbre') dessineArbreTexture(o);
   }
 
-  for (const o of p.obs) {
-    if (o.type !== 'buisson' || !visible(o)) continue;
+  for (const o of buissons) {
+    if (!visible(o)) continue;
     const touchePar = (j) => Math.hypot(o.x - j.x, o.y - j.y) < o.r + R_JOUEUR;
     // le feuillage s'estompe si je le traverse, ou s'il abrite un repere
     let clair = aPied && touchePar(a);
@@ -3100,7 +3177,7 @@ function dessine(p, moi, viseur, drag) {
           Math.hypot(o.x - j.x, o.y - j.y) < o.r * 0.75) clair = true;
 
     if (o.alphaVis === undefined) o.alphaVis = 1;
-    o.alphaVis += ((clair ? 0.5 : 1) - o.alphaVis) * 0.16;
+    o.alphaVis += ((clair ? 0.5 : 1) - o.alphaVis) * lissage(0.16);
     ctx.globalAlpha = o.alphaVis;
     dessineBuissonTexture(o);
     ctx.globalAlpha = 1;
@@ -3677,14 +3754,19 @@ function genDeathParticules(x, y) {
 }
 function majParticulesLocales(dt) {
   if (localParticules.length > 400) localParticules.length = 400; // cap
-  for (var i = localParticules.length-1; i >= 0; i--) {
+  var frein = Math.pow(0.88, dt * 60);       // le meme pour toutes
+  // Les mortes sont retirees en une passe, sans decaler le tableau a
+  // chaque suppression
+  var n = 0;
+  for (var i = 0; i < localParticules.length; i++) {
     var q = localParticules[i];
     q.x += q.vx*dt; q.y += q.vy*dt;
-    q.vx *= Math.pow(0.88, dt*60); q.vy *= Math.pow(0.88, dt*60);
+    q.vx *= frein; q.vy *= frein;
     if (q.rot !== undefined) q.rot += q.vrot*dt;
     q.vie -= dt;
-    if (q.vie <= 0) localParticules.splice(i, 1);
+    if (q.vie > 0) localParticules[n++] = q;
   }
+  localParticules.length = n;
 }
 
 // =================== Obs locaux ===================
@@ -3800,6 +3882,7 @@ function initObs(decor) {
   });
   prevObsTypes = {};
   for (var i = 0; i < localObs.length; i++) prevObsTypes[i] = localObs[i].type;
+  _grillesVer++;                        // nouveau decor : grilles a refaire
 }
 
 function majObs(decorMaj, mapVer) {
@@ -3825,9 +3908,13 @@ function majObs(decorMaj, mapVer) {
     }
     // La minimap ne suit pas les arbres abattus : elle montre la carte
     // d'origine, comme la carte du monde. Rien a repeindre ici.
+    if (o.type !== m.type) _grillesVer++;          // arbre abattu, hutte en ruine
     o.type = m.type; o.pv = m.pv; o.secousse = m.secousse || 0;
     // Porte : le serveur donne la position visee, elle tourne ici
-    if (m.portes && o.portes) for (var pi = 0; pi < m.portes.length && pi < o.portes.length; pi++) o.portes[pi].e = m.portes[pi];
+    if (m.portes && o.portes) for (var pi = 0; pi < m.portes.length && pi < o.portes.length; pi++) {
+      if (o.portes[pi].e !== m.portes[pi]) _grillesVer++;   // le battant se met a tourner
+      o.portes[pi].e = m.portes[pi];
+    }
     prevObsTypes[m.idx] = m.type;
   }
 }
@@ -3842,6 +3929,7 @@ function majObsPerFrame(dt) {
       if (battantAuRepos(st)) continue;
       var pas = dt / PORTE.DUREE;
       st.a = Math.abs(st.e - st.a) <= pas ? st.e : st.a + Math.sign(st.e - st.a) * pas;
+      if (battantAuRepos(st)) _grillesVer++;       // arrive : il redevient solide
     }
   }
 }
@@ -4197,26 +4285,57 @@ function borneLoc(a) {
   a.y = Math.min(MONDE - R, Math.max(R, a.y));
 }
 
+// ─── Grilles de collision : copie de celles du serveur ───
+// Memes cases, meme contenu, meme ordre de parcours : arbres (et orbe)
+// d'abord, puis murs, fenetres et battants au repos. La prediction suit
+// ainsi le serveur pas pour pas, meme coincee entre un arbre et un mur, et
+// ne teste plus que les obstacles de la case au lieu de tout le decor.
+// Refaites des qu'un arbre tombe, qu'une hutte s'effondre ou qu'un battant
+// se met a tourner ou s'arrete (_grillesVer change).
+var GRILLE_CASE = 220;                 // GRID_CELL_SZ du serveur
+var _grillesVer = 0, _grilles = { ver: -1, arbres: null, murs: null };
+var VIDE_G = [];
+function grillesLoc() {
+  if (_grilles.ver === _grillesVer) return _grilles;
+  var ga = new Map(), gm = new Map(), m = SIM.R_JOUEUR + 4;
+  var ajoute = function (g, k, v) { var c = g.get(k); if (!c) { c = []; g.set(k, c); } c.push(v); };
+  var murs = [];
+  for (var i = 0; i < localObs.length; i++) {
+    var o = localObs[i];
+    if (o.type === 'arbre' || o.type === 'orbe') {
+      var cx = Math.floor(o.x / GRILLE_CASE), cy = Math.floor(o.y / GRILLE_CASE);
+      for (var ddx = -1; ddx <= 1; ddx++) for (var ddy = -1; ddy <= 1; ddy++)
+        ajoute(ga, (cx + ddx) * 10000 + (cy + ddy), o);
+    } else if (estBat(o)) {
+      if (!o._murs) prepareHutte(o);
+      for (var w = 0; w < o._murs.length; w++) murs.push(o._murs[w]);
+      if (aPorte(o)) { var mps = mursPortes(o); for (var q = 0; q < mps.length; q++) murs.push(mps[q]); }
+    }
+  }
+  for (var j = 0; j < murs.length; j++) {
+    var r = murs[j];
+    var x0 = Math.floor((r.x0 - m) / GRILLE_CASE), x1 = Math.floor((r.x1 + m) / GRILLE_CASE);
+    var y0 = Math.floor((r.y0 - m) / GRILLE_CASE), y1 = Math.floor((r.y1 + m) / GRILLE_CASE);
+    for (var gx = x0; gx <= x1; gx++) for (var gy = y0; gy <= y1; gy++) ajoute(gm, gx * 10000 + gy, r);
+  }
+  _grilles = { ver: _grillesVer, arbres: ga, murs: gm };
+  return _grilles;
+}
+function caseGrille(g, x, y) {
+  return g.get(Math.floor(x / GRILLE_CASE) * 10000 + Math.floor(y / GRILLE_CASE)) || VIDE_G;
+}
+
 function deplaceLoc(a, dx, dy) {
   var R = SIM.R_JOUEUR;
   a.x += dx; a.y += dy; borneLoc(a);
   // En l'air on survole tout : aucune collision avec le decor
   if (dansAvion() || enParachute()) return;
+  var gr = grillesLoc();
   for (var it = 0; it < 3; it++) {
     var hit = false;
-    for (var i = 0; i < localObs.length; i++) {
-      var o = localObs[i];
-      if (estBat(o)) {
-        // murs (et fenetres) seulement : on contourne le batiment ou on y entre
-        var Rb = geoBat(o).R + PORTE.L;   // une porte ouverte vers dehors depasse du rayon
-        if (Math.abs(a.x - o.x) > Rb || Math.abs(a.y - o.y) > Rb) continue;
-        if (!o._murs) prepareHutte(o);
-        for (var w = 0; w < o._murs.length; w++) if (pousseMur(a, R, o._murs[w])) hit = true;
-        // porte au repos : solide ; en train de tourner, elle traverse le joueur
-        if (aPorte(o)) { var mps = mursPortes(o); for (var mq = 0; mq < mps.length; mq++) if (pousseMur(a, R, mps[mq])) hit = true; }
-        continue;
-      }
-      if (o.type !== 'arbre' && o.type !== 'orbe') continue;
+    var proches = caseGrille(gr.arbres, a.x, a.y);
+    for (var i = 0; i < proches.length; i++) {
+      var o = proches[i];
       var nx = a.x - o.x, ny = a.y - o.y;
       var d = Math.hypot(nx, ny), min = o.r + R;
       if (d < min) {
@@ -4225,6 +4344,10 @@ function deplaceLoc(a, dx, dy) {
         a.x += nx / d * (min - d); a.y += ny / d * (min - d);
       }
     }
+    // murs et fenetres (on contourne le batiment ou on y entre), battants au
+    // repos ; un battant qui tourne traverse le joueur
+    var murs = caseGrille(gr.murs, a.x, a.y);
+    for (var w = 0; w < murs.length; w++) if (pousseMur(a, R, murs[w])) hit = true;
     if (!hit) break;
   }
   borneLoc(a);
@@ -4392,6 +4515,37 @@ function majTickVue() {
   return tickVue;
 }
 
+// Hauteur de MON parachute. Le serveur ne la donne que 30 fois par
+// seconde, or le zoom de la vue et la taille du dome en dependent : ils
+// avancaient par paliers, a 30 Hz. Entre deux instantanes, on la fait donc
+// descendre a la vitesse mesuree, et l'ecart constate a chaque instantane
+// se resorbe en douceur au lieu de sauter.
+var _para = { srv: 0, tick: -1, t: 0, vit: 1, err: 0, tPrec: 0 };
+function paraAffichee(now) {
+  return _para.srv - _para.vit * Math.min(0.1, (now - _para.t) / 1000) + _para.err;
+}
+function paraLisse(s) {
+  var now = performance.now();
+  var v = s.para || 0;
+  if (v <= 0 || !snapDernier) { _para.srv = 0; _para.tick = -1; _para.err = 0; return v > 0 ? v : 0; }
+  var dtF = Math.min(0.1, Math.max(0, (now - _para.tPrec) / 1000));
+  _para.tPrec = now;
+  _para.err *= Math.exp(-dtF * 8);
+  if (snapDernier.tick !== _para.tick) {
+    if (_para.tick < 0 || snapDernier.tick < _para.tick) {
+      _para.err = 0;                                   // premier instantane en l'air
+    } else {
+      var n = snapDernier.tick - _para.tick;
+      var r = (_para.srv - v) * TICKS_S / n;           // hauteur perdue par seconde
+      if (r >= 0 && r < 10) _para.vit = r;
+      var avant = paraAffichee(now);
+      _para.err = Math.abs(avant - v) < 0.5 ? avant - v : 0;
+    }
+    _para.srv = v; _para.tick = snapDernier.tick; _para.t = now;
+  }
+  return Math.max(0, paraAffichee(now));
+}
+
 function etatAffiche() {
   if (!snapDernier) return null;
   var tv = majTickVue();                 // tick serveur a afficher, en continu
@@ -4423,6 +4577,8 @@ function etatAffiche() {
       c.y = a2.y + (b.y - a2.y) * w;
       c.angle = angleLerp(a2.angle, b.angle, w);
       c.pv = a2.pv + (b.pv - a2.pv) * w;
+      // descente en parachute : continue, comme la position
+      if ((a2.para || 0) > 0 && (b.para || 0) > 0) c.para = a2.para + (b.para - a2.para) * w;
       vue.agents[id] = c;
     }
     // balles : interpolees par identifiant, jamais extrapolees
@@ -4513,6 +4669,7 @@ function etatAffiche() {
     m.recul = moi.recul;
     m.poingTimer = moi.poingTimer || 0;
     m.punchSide  = moi.punchSide  || 0;
+    m.para = paraLisse(sMoi);
     vue.agents[pid] = m;
   }
   return vue;
