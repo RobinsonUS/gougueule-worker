@@ -182,13 +182,15 @@
   <div id="blocChemin">
     <h2>Chemins de terre</h2>
     <div class="note">Tracez un chemin d'un seul trait, comme au crayon :
-      appuyez, suivez le trajet, relachez. Il prend tout seul sa largeur,
-      avec des bords un peu irreguliers. Commencez ou finissez sur un point
-      d'un autre chemin pour les relier, ou passez simplement par-dessus :
-      les croisements s'arrondissent (l'arrondi apparait apres un court
-      calcul).<br>
-      Pour retoucher : Maj + glisser une poignee. Clic droit sur une
-      poignee : la retirer. Clic droit sur un chemin : le supprimer.
+      appuyez, suivez le trajet, relachez. Sa largeur et ses bords varient
+      tout seuls, un peu au hasard.<br>
+      Pour relier deux chemins : passez sur un point d'un autre chemin (ou
+      commencez / finissez dessus), ou coupez-le simplement. Les deux
+      chemins partagent alors un seul point, et le croisement s'arrondit
+      (apres un court calcul).<br>
+      Pour retoucher : Maj + glisser une poignee (un croisement bouge avec
+      tous ses chemins). Clic droit sur une poignee : la retirer. Clic
+      droit sur un chemin : le supprimer.
       Decor seulement : on y marche comme sur l'herbe.</div>
     <button class="act rouge" id="cheminsVide">Effacer tous les chemins</button>
     <div class="ligne">Chemins <b id="vChemins">0</b></div>
@@ -1287,8 +1289,11 @@ function debut(e) {
   if (outil === 'chemin' && e.button === 2 && !espace) {
     const h = poigneeChemin(m.x, m.y);
     if (h) {
-      memorise(); carte.chemins.traces[h.t].pts.splice(h.i, 1);
-      if (carte.chemins.traces[h.t].pts.length < 2) carte.chemins.traces.splice(h.t, 1);
+      memorise();
+      const q = carte.chemins.traces[h.t].pts[h.i];
+      const qx = q[0], qy = q[1];
+      for (const t of carte.chemins.traces) t.pts = t.pts.filter(p => p[0] !== qx || p[1] !== qy);
+      carte.chemins.traces = carte.chemins.traces.filter(t => t.pts.length >= 2);
       calculeRaccords(true); majChemins(); return;
     }
     const t = cheminSous(m.x, m.y);
@@ -1395,11 +1400,11 @@ function courbeIle(ctrl) {
 
 // ═══ Chemins de terre : geometrie (meme code dans le jeu et l'editeur) ═══
 // Un chemin est trace comme une ligne (points de controle). Sa largeur
-// varie un peu d'un point a l'autre et son axe se decale legerement, tire
-// d'une graine propre au chemin : les bords ne sont jamais tout droits,
-// et le rendu est le meme partout. Morceaux : un trapeze par troncon et un
+// change d'un chemin a l'autre et varie le long du chemin, et son axe se
+// decale legerement : les bords ne sont jamais tout droits, et le rendu
+// est le meme partout (tirages deterministes). Morceaux : un trapeze par troncon et un
 // petit triangle au virage, cote exterieur ; les coins sont arrondis.
-var CHEMIN_LARGE = 265, CHEMIN_VARIE = 0.12, CHEMIN_DECALE = 12;
+var CHEMIN_LARGE = 265, CHEMIN_VARIE_BASE = 0.10, CHEMIN_VARIE = 0.16, CHEMIN_DECALE = 12;
 var CHEMIN_RACCORD = 90, CHEMIN_CASE = 8, CHEMIN_ARRONDI = 70, CHEMIN_PAS = 6;
 function rngChemin(graine) {
   var a = graine | 0;
@@ -1409,6 +1414,14 @@ function rngChemin(graine) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+// Nombre de -1 a 1 tire d'un point (au dixieme d'unite pres) et d'un canal
+function aleaPoint(p, canal) {
+  var h = Math.imul(Math.round(p[0] * 10) | 0, 0x9E3779B1) ^ Math.imul(Math.round(p[1] * 10) | 0, 0x85EBCA77) ^ Math.imul(canal, 0xC2B2AE3D);
+  h = Math.imul(h ^ (h >>> 16), 0x7FEB352D);
+  h = Math.imul(h ^ (h >>> 15), 0x846CA68B);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967295 * 2 - 1;
 }
 function aireChemin(p) {
   var s = 0;
@@ -1421,27 +1434,21 @@ function aireChemin(p) {
 function rubanChemin(tr) {
   var pts = tr.pts, n = pts.length, rng = rngChemin(tr.seed | 0), out = [];
   if (n < 2) return out;
-  var nx = [], ny = [];                     // normale de chaque troncon
-  for (var s = 0; s < n - 1; s++) {
-    var dx = pts[s + 1][0] - pts[s][0], dy = pts[s + 1][1] - pts[s][1], l = Math.hypot(dx, dy) || 1;
-    nx.push(-dy / l); ny.push(dx / l);
-  }
-  // tirages bruts, puis moyennes glissantes : la largeur et le decalage
-  // changent en douceur sur plusieurs troncons, sans a-coups
-  var rw = [], rd = [];
-  for (var i0 = 0; i0 < n; i0++) { rw.push(rng() * 2 - 1); rd.push(rng() * 2 - 1); }
-  var doux = function (t, i) {
-    var s = 0, k = 0;
-    for (var o = -2; o <= 2; o++) { var j = i + o; if (j >= 0 && j < n) { s += t[j]; k++; } }
-    return s / k * 1.6;           // la moyenne ecrase l'ecart : on le redonne en partie
-  };
+  // Largeur de base propre au chemin : d'un chemin a l'autre, elle change
+  var base = CHEMIN_LARGE * (1 + (rng() * 2 - 1) * CHEMIN_VARIE_BASE);
+  // En chaque point, largeur et petit decalage sont tires de la POSITION du
+  // point et non du chemin : un point partage par deux chemins (croisement,
+  // jonction) est donc decale pareil dans les deux, ils s'y rejoignent pile.
+  var rw = [];
+  for (var i0 = 0; i0 < n; i0++) rw.push(aleaPoint(pts[i0], 1));
   var c = [], w = [];
   for (var i = 0; i < n; i++) {
-    w.push(CHEMIN_LARGE * (1 + Math.max(-1, Math.min(1, doux(rw, i))) * CHEMIN_VARIE));
-    var dec = Math.max(-1, Math.min(1, doux(rd, i))) * CHEMIN_DECALE;
-    var ax = nx[Math.max(0, i - 1)] + nx[Math.min(n - 2, i)], ay = ny[Math.max(0, i - 1)] + ny[Math.min(n - 2, i)];
-    var la = Math.hypot(ax, ay) || 1;
-    c.push([pts[i][0] + ax / la * dec, pts[i][1] + ay / la * dec]);
+    // moyenne sur le point et ses voisins : la largeur varie par endroits,
+    // en douceur, sans dents de scie
+    var s = 0, kk = 0;
+    for (var o = -1; o <= 1; o++) { var j2 = i + o; if (j2 >= 0 && j2 < n) { s += rw[j2]; kk++; } }
+    w.push(base * (1 + Math.max(-1, Math.min(1, s / kk * 1.3)) * CHEMIN_VARIE));
+    c.push([pts[i][0] + aleaPoint(pts[i], 2) * CHEMIN_DECALE, pts[i][1] + aleaPoint(pts[i], 3) * CHEMIN_DECALE]);
   }
   // Coins legerement arrondis : a chaque point, l'axe (et la largeur) suit
   // une petite courbe sur CHEMIN_ARRONDI unites au plus de part et d'autre.
@@ -1709,9 +1716,10 @@ function workerRaccords() {
   if (_worker !== null) return _worker;
   try {
     const src = ['var CHEMIN_LARGE = ' + CHEMIN_LARGE, 'var CHEMIN_VARIE = ' + CHEMIN_VARIE,
+      'var CHEMIN_VARIE_BASE = ' + CHEMIN_VARIE_BASE,
       'var CHEMIN_DECALE = ' + CHEMIN_DECALE, 'var CHEMIN_RACCORD = ' + CHEMIN_RACCORD, 'var CHEMIN_CASE = ' + CHEMIN_CASE,
       'var CHEMIN_ARRONDI = ' + CHEMIN_ARRONDI, 'var CHEMIN_PAS = ' + CHEMIN_PAS,
-      rngChemin, aireChemin, rubanChemin, edtChemin, raccordsChemins].map(String).join('\n') +
+      rngChemin, aleaPoint, aireChemin, rubanChemin, edtChemin, raccordsChemins].map(String).join('\n') +
       '\nonmessage = function (e) { postMessage({ id: e.data.id, raccords: raccordsChemins(e.data.traces) }); };';
     _worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
     _worker.onmessage = e => {
@@ -1746,7 +1754,7 @@ function traceChemins() {
   for (const r of carte.chemins.raccords) ajoute(r);
 }
 let traceChemin = null;       // trait a main levee en cours
-let prisChemin = null;        // { t, i, bouge } : poignee de chemin en cours de deplacement
+let prisChemin = null;        // { q, bouge } : point de chemin en cours de deplacement
 function majChemins() {
   const el = document.getElementById('vChemins');
   if (el) el.textContent = carte.chemins.traces.length;
@@ -1769,14 +1777,68 @@ function cheminSous(x, y) {
   for (let t = L.length - 1; t >= 0; t--) for (const m of morceaux(L[t])) if (dansPoly(m, x, y)) return t;
   return -1;
 }
-// Point d'un chemin existant le plus proche, pour relier exactement
-function pointProche(x, y, rayon) {
-  let best = null, dm = rayon;
-  for (const t of carte.chemins.traces) for (const q of t.pts) {
-    const d = Math.hypot(q[0] - x, q[1] - y);
-    if (d <= dm) { dm = d; best = q; }
+// Relie un nouveau trace aux chemins existants. Deux chemins qui se
+// touchent partagent exactement un point : le trait passe par chaque point
+// existant qu'il frole (a r pres), et la ou il coupe un troncon, un point
+// commun est ajoute aux deux chemins. Les points du trait trop proches d'un
+// point partage sont retires : pas de petit troncon ni de coude.
+function relieChemin(pts, r) {
+  const L = carte.chemins.traces, ajouts = [], vus = new Set();
+  const ajoute = (pos, p) => {
+    const k = p[0] + ',' + p[1];
+    if (vus.has(k)) return;
+    vus.add(k); ajouts.push({ pos, p });
+  };
+  const proj = q => {
+    let best = null;
+    for (let k = 0; k < pts.length - 1; k++) {
+      const a = pts[k], b = pts[k + 1], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / l2));
+      const d = Math.hypot(a[0] + dx * t - q[0], a[1] + dy * t - q[1]);
+      if (!best || d < best.d) best = { pos: k + t, d };
+    }
+    return best;
+  };
+  // 1. les points existants que le trait frole : il passe par eux
+  for (const t of L) for (const q of t.pts) { const pr = proj(q); if (pr.d <= r) ajoute(pr.pos, [q[0], q[1]]); }
+  // 2. les troncons existants qu'il coupe : un point commun aux deux
+  const coupe = (p1, p2, a, b) => {
+    const d1x = p2[0] - p1[0], d1y = p2[1] - p1[1], d2x = b[0] - a[0], d2y = b[1] - a[1];
+    const den = d1x * d2y - d1y * d2x;
+    if (Math.abs(den) < 1e-9) return null;
+    const tn = ((a[0] - p1[0]) * d2y - (a[1] - p1[1]) * d2x) / den;
+    const te = ((a[0] - p1[0]) * d1y - (a[1] - p1[1]) * d1x) / den;
+    if (tn < 0 || tn > 1 || te < 0 || te > 1) return null;
+    return { tn, te, p: [Math.round(p1[0] + d1x * tn), Math.round(p1[1] + d1y * tn)] };
+  };
+  for (const t of L) {
+    for (let i = t.pts.length - 2; i >= 0; i--) {        // de la fin : les ajouts ne decalent rien
+      const a = t.pts[i], b = t.pts[i + 1], inter = [];
+      for (let k = 0; k < pts.length - 1; k++) {
+        const I = coupe(pts[k], pts[k + 1], a, b);
+        if (I) inter.push({ pos: k + I.tn, te: I.te, p: I.p });
+      }
+      inter.sort((u, v) => v.te - u.te);
+      for (const I of inter) {
+        const pres = q => Math.hypot(q[0] - I.p[0], q[1] - I.p[1]) <= r;
+        if (pres(a) || pres(b) || ajouts.some(u => pres(u.p))) continue;   // un point existant fait l'affaire
+        t.pts.splice(i + 1, 0, I.p);
+        ajoute(I.pos, I.p);
+      }
+    }
   }
-  return best;
+  if (!ajouts.length) return pts;
+  const tous = pts.map((p, k) => ({ pos: k, p, propre: true }))
+    .concat(ajouts.map(u => ({ pos: u.pos, p: u.p, propre: false })))
+    .sort((u, v) => u.pos - v.pos);
+  const out = [];
+  for (const u of tous) {
+    if (u.propre && ajouts.some(v => Math.hypot(v.p[0] - u.p[0], v.p[1] - u.p[1]) < CHEMIN_ESPACE * 0.45)) continue;
+    const der = out[out.length - 1];
+    if (der && der[0] === u.p[0] && der[1] === u.p[1]) continue;
+    out.push(u.p);
+  }
+  return out;
 }
 // Trait a main levee -> points de controle : on efface le tremblement de
 // la main, puis on garde un point tous les CHEMIN_ESPACE environ.
@@ -1817,12 +1879,9 @@ function termineChemin() {
   }
   lis[0] = pts[0]; lis[n - 1] = pts[n - 1];
   pts = reech(lis, CHEMIN_ESPACE).map(q => [Math.round(q.x), Math.round(q.y)]);
-  // un bout pose pres d'un point d'un autre chemin s'y accroche exactement
-  const r = Math.max(24 / vue.z, 70);
-  const d0 = pointProche(pts[0][0], pts[0][1], r), d1 = pointProche(pts[pts.length - 1][0], pts[pts.length - 1][1], r);
-  if (d0) pts[0] = [d0[0], d0[1]];
-  if (d1) pts[pts.length - 1] = [d1[0], d1[1]];
   memorise();
+  pts = relieChemin(pts, Math.max(24 / vue.z, 70));
+  if (pts.length < 2) return;
   carte.chemins.traces.push({ seed: (Math.random() * 2147483647) | 1, pts });
   calculeRaccords(false);
   majChemins();
@@ -1894,13 +1953,16 @@ function agit(x, y, presse, shift) {
       // Maj sur une poignee : on la deplace. Sinon : nouveau trait (il peut
       // partir d'un point existant, il s'y accrochera)
       const h = shift ? poigneeChemin(x, y) : null;
-      if (h) { prisChemin = { t: h.t, i: h.i, bouge: false }; return; }
+      if (h) { const q = carte.chemins.traces[h.t].pts[h.i]; prisChemin = { q: [q[0], q[1]], bouge: false }; return; }
       traceChemin = [{ x: x, y: y }];
       return;
     }
-    if (prisChemin && carte.chemins.traces[prisChemin.t]) {
+    if (prisChemin) {
       if (!prisChemin.bouge) { memorise(); prisChemin.bouge = true; carte.chemins.raccords = []; }
-      carte.chemins.traces[prisChemin.t].pts[prisChemin.i] = [Math.round(x), Math.round(y)];
+      // un point partage (croisement) bouge dans tous ses chemins a la fois
+      const nq = [Math.round(x), Math.round(y)], q = prisChemin.q;
+      for (const t of carte.chemins.traces) t.pts.forEach((p, i) => { if (p[0] === q[0] && p[1] === q[1]) t.pts[i] = nq; });
+      prisChemin.q = nq;
       return;
     }
     if (traceChemin) {
