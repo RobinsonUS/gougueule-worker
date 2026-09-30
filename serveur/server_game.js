@@ -97,12 +97,20 @@ const MAISON = (() => {
     emprise: [-WU, -V, WU, PERRON],
   };
 })();
-// ─────────────── Porte (maison) ───────────────────────────────────
-// Fermee, elle bouche l'ouverture entre les piliers, centree sur la ligne
-// du mur. Elle s'ouvre toujours du cote oppose a celui qui l'ouvre :
-// vers l'interieur depuis dehors (+1), vers l'exterieur depuis dedans (-1).
-// Ouverte, elle se range contre le pilier (cote +u). Mesures relevees sur
-// le vrai jeu : longueur = l'ouverture, epaisseur tiree de l'image.
+// ─────────────── Batiments 1, 2 et 3 ────────────────────────────────
+// Generes au pixel a partir des images (meme donnees cote client et
+// editeur). Echelle choisie pour que chaque porte ait exactement la taille
+// de celle de la maison. Repere local : centre du corps.
+//  corps : contour exterieur des murs ; sol : plancher ; murs et fenetres
+//  comme la maison ; portes : un element par battant (une double porte en a
+//  deux, independants) : r0 fermee, r1 ouverte vers l'interieur, rm1 vers
+//  l'exterieur, eb vers l'exterieur, f0 vers le bout libre (poignees).
+const NOUVEAUX_BATS = {"batiment1":{"R":453.5,"corps":[-327.64,-195.13,327.64,195.13],"sol":[-287.16,-154.65,287.16,155.28],"emprise":[-383.61,-222.64,354.52,222.01],"murs":[[-347.88,-103.41,-287.79,-67.36],[-347.24,69.26,-287.79,105.31],[-327.64,-195.13,-68.94,-154.65],[68.94,-195.13,327.64,-154.65],[-327.64,155.28,-68.94,195.13],[68.94,155.28,327.64,195.13],[-327.64,-154.65,-287.16,-66.82],[-327.64,68.72,-287.16,155.28],[287.16,-154.65,327.64,-67.99],[287.16,69.89,327.64,155.28]],"fenetres":[[-68.94,-195.13,68.94,-154.65],[-68.94,155.28,68.94,195.13],[287.16,-67.99,327.64,69.89]],"portes":[{"r0":[-340.4,-74.95,-303.55,76.85],"r1":[-323.61,68.86,-171.81,105.71],"rm1":[-469.9,68.86,-318.1,105.71],"eb":[-1,0],"f0":[0,-1]}]},"batiment2":{"R":451.9,"corps":[-325.6,-193.91,325.6,193.91],"sol":[-285.37,-153.69,285.37,154.31],"emprise":[-326.54,-221.26,382.49,220.63],"murs":[[286.0,-180.09,345.71,-145.51],[286.0,143.0,345.71,178.2],[-325.6,-193.91,-75.43,-153.69],[61.6,-193.91,325.6,-153.69],[-325.6,154.31,-68.51,193.91],[68.51,154.31,325.6,193.91],[-325.6,-153.69,-285.37,154.31],[285.37,-153.69,325.6,-144.77],[285.37,142.57,325.6,154.31]],"fenetres":[[-75.43,-193.91,61.6,-153.69],[-68.51,154.31,68.51,193.91]],"portes":[{"r0":[301.44,-1.1,338.29,150.7],"r1":[169.8,142.17,321.6,179.03],"rm1":[316.13,142.17,467.93,179.03],"eb":[1,0],"f0":[0,-1]},{"r0":[301.44,-152.9,338.29,-1.1],"r1":[169.8,-181.23,321.6,-144.37],"rm1":[316.13,-181.23,467.93,-144.37],"eb":[1,0],"f0":[0,1]}]},"batiment3":{"R":648.1,"corps":[-309.27,-467.05,309.27,467.05],"sol":[-268.33,-426.74,268.33,426.74],"emprise":[-365.01,-523.43,337.3,494.45],"murs":[[-178.88,-487.21,-143.61,-427.37],[144.87,-487.21,180.14,-427.37],[-329.42,167.23,-269.59,202.5],[-329.42,339.19,-269.59,374.46],[-309.27,-467.05,-143.04,-426.74],[144.3,-467.05,309.27,-426.74],[-309.27,426.74,-190.85,467.05],[-53.54,426.74,97.63,467.05],[234.94,426.74,309.27,467.05],[-309.27,-426.74,-268.33,-244.71],[-309.27,-107.39,-268.33,203.08],[-309.27,338.62,-268.33,426.74],[268.33,-426.74,309.27,-244.71],[268.33,-107.39,309.27,212.58],[268.33,349.9,309.27,426.74],[146.13,74.64,268.33,114.95],[33.38,288.8,56.06,426.74]],"fenetres":[[-309.27,-244.71,-268.33,-107.39],[268.33,-244.71,309.27,-107.39],[268.33,212.58,309.27,349.9],[-190.85,426.74,-53.54,467.05],[97.63,426.74,234.94,467.05]],"portes":[{"r0":[0.63,-479.77,152.43,-442.92],"r1":[144.08,-463.04,180.93,-311.24],"rm1":[144.08,-609.36,180.93,-457.56],"eb":[0,-1],"f0":[-1,0]},{"r0":[-151.17,-479.77,0.63,-442.92],"r1":[-179.67,-463.04,-142.82,-311.24],"rm1":[-179.67,-609.36,-142.82,-457.56],"eb":[0,-1],"f0":[1,0]},{"r0":[-321.99,194.95,-285.13,346.75],"r1":[-305.26,338.4,-153.46,375.25],"rm1":[-451.58,338.4,-299.78,375.25],"eb":[-1,0],"f0":[0,-1]}]}};
+
+// ─────────────── Porte ─────────────────────────────────────────────
+// Fermee, elle bouche l'ouverture entre les piliers. Elle s'ouvre toujours
+// du cote oppose a celui qui l'ouvre : vers l'interieur depuis dehors (+1),
+// vers l'exterieur depuis dedans (-1), et se range alors contre son pilier.
 // Cotes relevees au pixel sur le vrai jeu, rapportees aux piliers de
 // maison.png (meme valeurs cote client) :
 //  - fermee : ses deux bouts recouvrent exactement la bordure interieure
@@ -114,16 +122,36 @@ const PORTE = (() => {
   return { L, T, V_FERMEE: 243.0, U_OUVERTE: 85.35, V_DEDANS: 227.1, V_DEHORS: 221.9,
            DUREE: 0.15, PORTEE: R_JOUEUR + 40 };
 })();
-const aPorte = (o) => o.type === 'maison';
-// Rectangle local de la porte au repos : 0 fermee, 1 ouverte dedans, -1 dehors
-function porteRect(etat) {
+// La porte de la maison, au meme format que celles des nouveaux batiments
+MAISON.portes = [(() => {
   const L = PORTE.L, T = PORTE.T, U = PORTE.U_OUVERTE;
-  if (etat === 1)  return [U - T / 2, PORTE.V_DEDANS - L, U + T / 2, PORTE.V_DEDANS];
-  if (etat === -1) return [U - T / 2, PORTE.V_DEHORS, U + T / 2, PORTE.V_DEHORS + L];
-  return [-L / 2, PORTE.V_FERMEE - T, L / 2, PORTE.V_FERMEE];
+  return { r0: [-L / 2, PORTE.V_FERMEE - T, L / 2, PORTE.V_FERMEE],
+           r1: [U - T / 2, PORTE.V_DEDANS - L, U + T / 2, PORTE.V_DEDANS],
+           rm1: [U - T / 2, PORTE.V_DEHORS, U + T / 2, PORTE.V_DEHORS + L],
+           eb: [0, 1], f0: [-1, 0] };
+})()];
+MAISON.corps = [-MAISON.U, -MAISON.V, MAISON.U, MAISON.V];
+MAISON.sol = [-MAISON.IU, -MAISON.IV, MAISON.IU, MAISON.IV];
+HUTTE.sol = [-HUTTE.I, -HUTTE.I, HUTTE.I, HUTTE.I];
+HUTTE.portes = [];
+HUTTE.corps = [-HUTTE.B, -HUTTE.B, HUTTE.B, HUTTE.B];
+HUTTE.emprise = [-HUTTE.B, -HUTTE.B, HUTTE.B, HUTTE.PERRON + 2];
+// Tous les batiments, par type
+const BATS = Object.assign({ hutte: HUTTE, maison: MAISON }, NOUVEAUX_BATS);
+for (const g of Object.values(BATS)) {
+  // Boite a quitter a l'atterrissage : les murs (piliers compris), pas les vitres
+  let x0 = g.corps[0], y0 = g.corps[1], x1 = g.corps[2], y1 = g.corps[3];
+  for (const r of g.murs) { x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[2]); y1 = Math.max(y1, r[3]); }
+  g.sortie = [x0, y0, x1, y1];
 }
-// Porte au repos (pas en train de tourner) : alors seulement elle est solide
-const porteAuRepos = (o) => (o.porteA || 0) === (o.porte || 0);
+const estHutte = (o) => o.type === 'hutte';
+const estBatiment = (o) => !!BATS[o.type];
+function geoBat(o) { return BATS[o.type] || HUTTE; }
+const aPorte = (o) => estBatiment(o) && geoBat(o).portes.length > 0;
+// Rectangle local d'un battant au repos : 0 fermee, 1 ouverte dedans, -1 dehors
+function battantRect(b, etat) { return etat === 1 ? b.r1 : etat === -1 ? b.rm1 : b.r0; }
+// Battant au repos (pas en train de tourner) : alors seulement il est solide
+const battantAuRepos = (s) => s.a === s.e;
 // Coordonnees locales (repere du batiment) d'un point du monde
 function versLocal(o, x, y) {
   const q = ((o.rot | 0) % 4 + 4) % 4;
@@ -137,29 +165,36 @@ function distRect(u, v, r) {
   const du = Math.max(r[0] - u, 0, u - r[2]), dv = Math.max(r[1] - v, 0, v - r[3]);
   return Math.hypot(du, dv);
 }
-// Porte a portee de main : distance a l'ouverture ou a la porte ouverte
+// Battant a portee de main : distance a sa place fermee ou a sa place
+// ouverte. Une double porte : c'est le battant le plus proche qui repond.
 function porteProche(p, x, y) {
   let best = null, dMin = PORTE.PORTEE;
   for (const o of p.obs) {
     if (!aPorte(o)) continue;
-    if (Math.abs(o.x - x) > 500 || Math.abs(o.y - y) > 500) continue;
+    const g = geoBat(o);
+    if (Math.abs(o.x - x) > g.R + 100 || Math.abs(o.y - y) > g.R + 100) continue;
     const [u, v] = versLocal(o, x, y);
-    let d = distRect(u, v, porteRect(0));
-    if (o.porte) d = Math.min(d, distRect(u, v, porteRect(o.porte)));
-    if (d <= dMin) { dMin = d; best = o; }
+    g.portes.forEach((b, i) => {
+      const s = o.portes[i];
+      let d = distRect(u, v, b.r0);
+      if (s.e) d = Math.min(d, distRect(u, v, battantRect(b, s.e)));
+      if (d <= dMin) { dMin = d; best = { o, i }; }
+    });
   }
   return best;
 }
 function basculePorte(p, a) {
-  const o = porteProche(p, a.x, a.y);
-  if (!o) return;
-  if (o.porte) o.porte = 0;
+  const pp = porteProche(p, a.x, a.y);
+  if (!pp) return;
+  const b = geoBat(pp.o).portes[pp.i], s = pp.o.portes[pp.i];
+  if (s.e) s.e = 0;
   else {
-    const [, v] = versLocal(o, a.x, a.y);
-    // dehors (au-dela de la porte fermee) : elle s'ouvre vers l'interieur
-    o.porte = v > PORTE.V_FERMEE - PORTE.T / 2 ? 1 : -1;
+    // dehors (au-dela du battant ferme) : il s'ouvre vers l'interieur
+    const [u, v] = versLocal(pp.o, a.x, a.y);
+    const cu = (b.r0[0] + b.r0[2]) / 2, cv = (b.r0[1] + b.r0[3]) / 2;
+    s.e = (u - cu) * b.eb[0] + (v - cv) * b.eb[1] > 0 ? 1 : -1;
   }
-  majMurs(p);                             // en mouvement, la porte n'arrete rien
+  majMurs(p);                             // en mouvement, le battant n'arrete rien
 }
 // Murs et grille a refaire quand une porte se ferme, s'ouvre ou disparait
 function majMurs(p) {
@@ -167,18 +202,20 @@ function majMurs(p) {
   p.mursGrid = p.murs.length ? grilleMurs(p.murs) : null;
 }
 function majPortes(p, dt) {
+  let change = false;
   for (const o of p.obs) {
-    if (!aPorte(o) || porteAuRepos(o)) continue;
-    const c = o.porte || 0, a = o.porteA || 0, pas = dt / PORTE.DUREE;
-    o.porteA = Math.abs(c - a) <= pas ? c : a + Math.sign(c - a) * pas;
-    // Arrivee : la porte redevient solide. Un joueur qu'elle recouvre est
-    // repousse par la collision normale, des le tick suivant.
-    if (porteAuRepos(o)) majMurs(p);
+    if (!aPorte(o)) continue;
+    for (const s of o.portes) {
+      if (battantAuRepos(s)) continue;
+      const pas = dt / PORTE.DUREE;
+      s.a = Math.abs(s.e - s.a) <= pas ? s.e : s.a + Math.sign(s.e - s.a) * pas;
+      // Arrivee : le battant redevient solide. Un joueur qu'il recouvre est
+      // repousse par la collision normale, des le tick suivant.
+      if (battantAuRepos(s)) change = true;
+    }
   }
+  if (change) majMurs(p);
 }
-const estHutte = (o) => o.type === 'hutte';
-const estBatiment = (o) => o.type === 'hutte' || o.type === 'maison';
-function geoBat(o) { return o.type === 'maison' ? MAISON : HUTTE; }
 // Une hutte encaisse les balles (pas les poings). A 0 PV elle devient une
 // ruine : plus de toit, plus de murs, donc plus rien de solide.
 const PV_HUTTE = 300;
@@ -198,10 +235,12 @@ function mursDe(obs) {
     const g = geoBat(o);
     for (const r of g.murs) { const w = rectMonde(o, r); w.bat = o; out.push(w); }
     for (const r of (g.fenetres || [])) { const w = rectMonde(o, r); w.bat = o; w.fen = true; out.push(w); }
-    // Porte au repos : arrete joueurs et balles, comme un mur
-    if (aPorte(o) && porteAuRepos(o)) {
-      const w = rectMonde(o, porteRect(o.porte || 0)); w.bat = o; w.porte = true; out.push(w);
-    }
+    // Battant au repos : arrete joueurs et balles, comme un mur
+    if (aPorte(o)) g.portes.forEach((b, i) => {
+      const st = o.portes[i];
+      if (!battantAuRepos(st)) return;
+      const w = rectMonde(o, battantRect(b, st.e)); w.bat = o; w.porte = true; out.push(w);
+    });
   }
   return out;
 }
@@ -267,24 +306,21 @@ function entreeMur(x0, y0, x1, y1, w, r) {
 function batimentSous(p, x, y) {
   for (const o of p.obs) {
     if (!estBatiment(o)) continue;
-    const m = o.type === 'maison';
-    const EU = m ? MAISON.U : HUTTE.B, EV = m ? MAISON.V : HUTTE.B;
+    const g = geoBat(o), c = g.corps;
     const q = ((o.rot | 0) % 4 + 4) % 4;
-    let u = x - o.x, v = y - o.y;
-    if (q === 1) { const t = u; u = v; v = -t; }
-    else if (q === 2) { u = -u; v = -v; }
-    else if (q === 3) { const t = u; u = -v; v = t; }
+    const [u, v] = versLocal(o, x, y);
     // Seul le corps compte : la vitre qui depasse n'arrete plus personne
-    if (Math.abs(u) < EU + R_JOUEUR && Math.abs(v) < EV + R_JOUEUR) return { o, u, v, q, m, EU, EV };
+    if (u > c[0] - R_JOUEUR && u < c[2] + R_JOUEUR && v > c[1] - R_JOUEUR && v < c[3] + R_JOUEUR)
+      return { o, u, v, q, g };
   }
   return null;
 }
 // Les quatre sorties d'un batiment depuis le point (u, v), en coordonnees monde
 function sortiesDe(p, s) {
   const M = R_JOUEUR + 2, o = s.o, u = s.u, v = s.v;
-  // Boite a quitter : le corps, piliers compris
-  const XU = s.EU, BAS = s.m ? MAISON.PV : HUTTE.PV;
-  return [[-XU - M, v], [XU + M, v], [u, -s.EV - M], [u, BAS + M]].map(([lu, lv]) => {
+  // Boite a quitter : les murs, piliers compris
+  const b = s.g.sortie;
+  return [[b[0] - M, v], [b[2] + M, v], [u, b[1] - M], [u, b[3] + M]].map(([lu, lv]) => {
     const w = s.q === 0 ? [lu, lv] : s.q === 1 ? [-lv, lu] : s.q === 2 ? [-lu, -lv] : [lv, -lu];
     return { x: Math.min(p.monde - R_JOUEUR, Math.max(R_JOUEUR, o.x + w[0])),
              y: Math.min(p.monde - R_JOUEUR, Math.max(R_JOUEUR, o.y + w[1])) };
@@ -316,12 +352,8 @@ function sortDuBatiment(p, a) {
 function dansHutte(obs, x, y, marge) {
   for (const o of obs) {
     if (!estBatiment(o)) continue;
-    const q = ((o.rot | 0) % 4 + 4) % 4;
-    let u = x - o.x, v = y - o.y;
-    if (q === 1) { const t = u; u = v; v = -t; }
-    else if (q === 2) { u = -u; v = -v; }
-    else if (q === 3) { const t = u; u = -v; v = t; }
-    const e = o.type === 'maison' ? MAISON.emprise : [-HUTTE.B, -HUTTE.B, HUTTE.B, HUTTE.PERRON + 2];
+    const [u, v] = versLocal(o, x, y);
+    const e = geoBat(o).emprise;
     if (u > e[0] - marge && u < e[2] + marge && v > e[1] - marge && v < e[3] + marge) return true;
   }
   return false;
@@ -436,8 +468,8 @@ function valideMap(brut, nom) {
     const x = nombre(o.x, NaN), y = nombre(o.y, NaN);
     if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('obs[' + i + '] : x/y invalide');
     // Hutte : modele 1 ou 2, orientation en quarts de tour. Taille fixe.
-    if (o.type === 'maison') {
-      obs.push({ x, y, r: MAISON.R, type: 'maison',
+    if (BATS[o.type] && o.type !== 'hutte') {
+      obs.push({ x, y, r: BATS[o.type].R, type: o.type,
                  rot: ((nombre(o.rot, 0) | 0) % 4 + 4) % 4, seed: nombre(o.seed, 0) | 0 });
       continue;
     }
@@ -573,9 +605,10 @@ function placer(rng, map, obs, sansSpawns) {
 // Copie de travail des obstacles d'une carte. Le lobby recoit en plus son
 // orbe central, qui n'est donc dans aucun fichier de carte.
 function obsDeMap(map) {
-  const obs = map.obs.map(o => o.type === 'maison'
-    ? { x: o.x, y: o.y, r: o.r, type: 'maison', rot: o.rot, seed: o.seed, secousse: 0, _lt: 'maison',
-        porte: 0, porteA: 0, _lp: 0 }
+  const obs = map.obs.map(o => estBatiment(o) && !estHutte(o)
+    // maison et batiments 1 a 3 : indestructibles, un etat par battant
+    ? { x: o.x, y: o.y, r: o.r, type: o.type, rot: o.rot, seed: o.seed, secousse: 0, _lt: o.type,
+        portes: geoBat(o).portes.map(() => ({ e: 0, a: 0 })), _lp: '' }
     : estHutte(o)
     ? { x: o.x, y: o.y, r: o.r, type: 'hutte', v: o.v, rot: o.rot, seed: o.seed,
         pv: PV_HUTTE, secousse: 0, _lt: 'hutte' }
@@ -1223,8 +1256,8 @@ function pas(p) {
       // Un bot ouvre la porte fermee qu'il touche presque (il passe par
       // l'ouverture pour entrer ou sortir). Il ne referme jamais.
       if (p.tick % 6 === 0 && !a.enAvion && !(a.para > 0)) {
-        const o = porteProche(p, a.x, a.y);
-        if (o && !o.porte && porteAuRepos(o)) a.file[0].inter = true;
+        const pp = porteProche(p, a.x, a.y);
+        if (pp) { const st = pp.o.portes[pp.i]; if (!st.e && battantAuRepos(st)) a.file[0].inter = true; }
       }
     }
   }
@@ -1361,6 +1394,20 @@ const NAV_POINTS = [
   [0, HUTTE.PERRON + R_JOUEUR + 8],                  // devant la porte
   [0, 20 * HUTTE.K],                                 // dedans
 ];
+HUTTE.nav = NAV_POINTS; MAISON.nav = NAV_MAISON;
+// Batiments 1 a 3 : les coins (hors des murs et des piliers), devant et
+// derriere chaque battant, et le milieu du plancher
+for (const nom of Object.keys(NOUVEAUX_BATS)) {
+  const g = BATS[nom], b = g.sortie, m = R_JOUEUR + 10;
+  const pts = [[b[0] - m, b[1] - m], [b[2] + m, b[1] - m], [b[0] - m, b[3] + m], [b[2] + m, b[3] + m],
+               [(g.sol[0] + g.sol[2]) / 2, (g.sol[1] + g.sol[3]) / 2]];
+  for (const bt of g.portes) {
+    const cu = (bt.r0[0] + bt.r0[2]) / 2, cv = (bt.r0[1] + bt.r0[3]) / 2;
+    pts.push([cu + bt.eb[0] * (R_JOUEUR + 90), cv + bt.eb[1] * (R_JOUEUR + 90)]);
+    pts.push([cu - bt.eb[0] * (R_JOUEUR + 45), cv - bt.eb[1] * (R_JOUEUR + 45)]);
+  }
+  g.nav = pts;
+}
 // Pour marcher : murs et fenetres. Pour tirer : les murs seulement.
 function mursHutte(o) {
   if (!o._murs) {
@@ -1378,7 +1425,8 @@ function huttesPres(p, x, y, gx, gy) {
   const out = [];
   for (const o of p.obs) {
     if (!estBatiment(o)) continue;
-    if (Math.hypot(o.x - x, o.y - y) < 650 + (o.type === 'maison' ? 150 : 0) || Math.hypot(o.x - gx, o.y - gy) < 400) out.push(o);
+    const g = geoBat(o);
+    if (Math.hypot(o.x - x, o.y - y) < 650 + Math.max(0, g.R - HUTTE.R) || Math.hypot(o.x - gx, o.y - gy) < 400 + Math.max(0, g.R - HUTTE.R)) out.push(o);
     if (out.length >= 3) break;
   }
   return out;
@@ -1400,7 +1448,7 @@ function prochainPas(p, x, y, gx, gy) {
   const pts = [{ x, y }, { x: gx, y: gy }];
   for (const o of hs) {
     const q = ((o.rot | 0) % 4 + 4) % 4;
-    for (const [u, v] of (o.type === 'maison' ? NAV_MAISON : NAV_POINTS)) {
+    for (const [u, v] of geoBat(o).nav) {
       const [dx, dy] = q === 0 ? [u, v] : q === 1 ? [-v, u] : q === 2 ? [-u, -v] : [v, -u];
       pts.push({ x: o.x + dx, y: o.y + dy });
     }
@@ -1728,7 +1776,7 @@ function payloadCarte(p) {
     },
     ile: p.map.ile,
     decor: p.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, seed: o.seed, v: o.v, rot: o.rot,
-                             porte: o.porte, porteA: o.porteA })),
+                             portes: o.portes ? o.portes.map(st => [st.e, st.a]) : undefined })),
     // Apercu de la carte de partie pendant l'attente : de quoi ouvrir la
     // vraie carte depuis le lobby et y lire le trajet de l'avion.
     apercu: apercuPartie(p),
@@ -1944,10 +1992,11 @@ function envoieSnapshot(room) {
   const p = room.partie;
   const decorMaj = [];
   p.obs.forEach((o, idx) => {
-    const porteChange = aPorte(o) && o._lp !== o.porte;
+    const sig = aPorte(o) ? o.portes.map(st => st.e).join(',') : '';
+    const porteChange = aPorte(o) && o._lp !== sig;
     if (o._lt !== o.type || o.secousse > 0 || porteChange) {
       const m = { idx, type: o.type, pv: o.pv, secousse: o.secousse };
-      if (aPorte(o)) { m.porte = o.porte; m.porteA = o.porteA; o._lp = o.porte; }
+      if (aPorte(o)) { m.portes = o.portes.map(st => st.e); o._lp = sig; }
       decorMaj.push(m);
       o._lt = o.type;
     }
