@@ -385,6 +385,56 @@ var VEG_OMBRE = { arbre: 6.0, buisson: 6.5 };
 var VEG_OMBRE_ALPHA = 0.11;                       // meme valeur que C.ombreDouce
 var _vegCache = {};
 
+// ─── Toiles a la taille de l'ecran : cache commun (comme en jeu) ───
+// Pendant un zoom a la molette, la taille change a chaque image : on
+// refaisait une toile tous les 8 px, ombre comprise, et le cache
+// grossissait sans limite. Zoom en cours : on reprend une toile prete un
+// peu plus grande, ou on en prepare une par paliers de 19 %. Zoom arrete :
+// la toile exacte est refaite, une par image au plus. Quelques tailles
+// gardees par image, les plus recentes.
+var ZOOM_ETAT = { pxv: 0, t: -1e9 };
+var _budgetToiles = 1;
+function notePXV() {
+  if (Math.abs(PXV - ZOOM_ETAT.pxv) > PXV * 1e-6) {
+    if (ZOOM_ETAT.pxv) ZOOM_ETAT.t = performance.now();
+    ZOOM_ETAT.pxv = PXV;
+  }
+}
+function zoomEnMouvement() { return performance.now() - ZOOM_ETAT.t < 200; }
+function palierToile(t) {
+  var p = Math.pow(2, Math.ceil(Math.log2(Math.max(8, t)) * 4 - 1e-9) / 4);
+  return Math.max(8, Math.ceil(p / 8) * 8);
+}
+function toileEchelle(cache, famille, tPx, maxTailles, construit) {
+  var f = cache[famille] || (cache[famille] = new Map());
+  var mouv = zoomEnMouvement();
+  var e = f.get(tPx);
+  if (e) {
+    f.delete(tPx); f.set(tPx, e);
+    if (mouv || e._px === PXV || _budgetToiles <= 0) return e;
+    _budgetToiles--;
+    e = construit(tPx, 1); e._px = PXV;
+    f.set(tPx, e);
+    return e;
+  }
+  var best = null, score = Infinity;
+  f.forEach(function (v, k) {
+    var sc = k >= tPx ? k / tPx : 1.5 * tPx / k;
+    if (sc < score) { score = sc; best = v; }
+  });
+  if (best && mouv && score <= 1.2) return best;
+  if (best && !mouv && _budgetToiles <= 0) return best;
+  var taille = mouv ? palierToile(tPx) : tPx;
+  e = f.get(taille);
+  if (e) return e;
+  _budgetToiles--;
+  e = construit(taille, taille / tPx);
+  e._px = taille === tPx ? PXV : -1;
+  f.set(taille, e);
+  while (f.size > maxTailles) f.delete(f.keys().next().value);
+  return e;
+}
+
 function vegPret(nom) {
   var sp = SPRITES[nom];
   return !!(sp && (sp.naturalWidth || sp.width));
@@ -393,12 +443,13 @@ function vegPret(nom) {
 // Image redimensionnee a la taille d'ecran, et son anneau d'ombre : calcules
 // une fois par taille (arrondie a 8 px pres), jamais a chaque image.
 function vegCanevas(nom, largeurEcran, debord) {
-  var sp = SPRITES[nom];
   var tPx = Math.max(8, Math.round(largeurEcran / 8) * 8);
-  var d = Math.max(1, Math.round(debord * PXV));
-  var cle = nom + ':' + tPx + ':' + d;
-  var e = _vegCache[cle];
-  if (e) return e;
+  return toileEchelle(_vegCache, nom + ':' + debord, tPx, 3, function (taille, ech) {
+    return vegConstruit(nom, taille, Math.max(1, Math.round(debord * PXV * ech)));
+  });
+}
+function vegConstruit(nom, tPx, d) {
+  var sp = SPRITES[nom], e;
   var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
   var k = tPx / sw;
   var cs = document.createElement('canvas');
@@ -420,7 +471,6 @@ function vegCanevas(nom, largeurEcran, debord) {
   g.globalCompositeOperation = 'destination-out';
   g.drawImage(cs, d, d);
   e = { cs: cs, co: co, d: d };
-  _vegCache[cle] = e;
   return e;
 }
 
@@ -627,11 +677,12 @@ function imagesBat(o) {
 const imagesPretes = (m) => vegPret(m.corps) && vegPret(m.toit) && (!m.fen || vegPret(m.fen));
 const _hutteCache = {};
 function canevasBat(m, largeurEcran) {
-  const sp = SPRITES[m.corps];
   const tPx = Math.max(8, Math.round(largeurEcran / 8) * 8);
-  const d = Math.max(1, Math.round(m.g.OMBRE * PXV)), dy = Math.round(m.g.OMBRE_DY * PXV);
-  const cle = m.corps + ':' + tPx + ':' + d + ':' + dy;
-  if (_hutteCache[cle]) return _hutteCache[cle];
+  return toileEchelle(_hutteCache, m.corps, tPx, 2, (taille, ech) =>
+    batConstruit(m, taille, Math.max(1, Math.round(m.g.OMBRE * PXV * ech)), Math.round(m.g.OMBRE_DY * PXV * ech)));
+}
+function batConstruit(m, tPx, d, dy) {
+  const sp = SPRITES[m.corps];
   const k = tPx / sp.naturalWidth;
   const reduit = (nom) => {
     if (!nom) return null;
@@ -651,7 +702,7 @@ function canevasBat(m, largeurEcran) {
   g.drawImage(cs, d, d + dy);
   g.globalCompositeOperation = 'source-in'; g.fillStyle = '#000'; g.fillRect(0, 0, co.width, co.height);
   g.globalCompositeOperation = 'destination-out'; g.drawImage(cs, d, d);
-  return (_hutteCache[cle] = { cs, ct, cf, co, d, k });
+  return { cs, ct, cf, co, d, k };
 }
 // quoi : 0 = corps, 1 = ombre, 2 = toit (vitres comprises). Dans l'editeur
 // on voit les batiments fermes, comme de dehors en jeu.
@@ -788,6 +839,7 @@ function rayonFinal() {
 function dessine() {
   const d = window.devicePixelRatio || 1;
   PXV = vue.z * d;
+  notePXV(); _budgetToiles = 1;
   ctx.setTransform(d, 0, 0, d, 0, 0);
   ctx.fillStyle = (carte.ile && carte.ile.length >= 3) ? C.eauLoin : C.dehors;
   ctx.fillRect(0, 0, innerWidth, innerHeight);
