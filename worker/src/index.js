@@ -30,6 +30,15 @@ import maisonImg    from '../game/maison.png';
 import maisonToitImg from '../game/maison_toit.png';
 import maisonFenImg from '../game/maison_fen.png';
 import porteImg     from '../game/porte.png';
+import bat1Img from '../game/batiment1.png';
+import bat1ToitImg from '../game/batiment1_toit.png';
+import bat1FenImg from '../game/batiment1_fen.png';
+import bat2Img from '../game/batiment2.png';
+import bat2ToitImg from '../game/batiment2_toit.png';
+import bat2FenImg from '../game/batiment2_fen.png';
+import bat3Img from '../game/batiment3.png';
+import bat3ToitImg from '../game/batiment3_toit.png';
+import bat3FenImg from '../game/batiment3_fen.png';
 import boutonInter  from '../game/bouton_inter.png';
 import arm          from '../game/arm.png';
 import hand         from '../game/hand.png';
@@ -200,6 +209,15 @@ export default {
       '/game/maison_toit.png':    maisonToitImg,
       '/game/maison_fen.png':     maisonFenImg,
       '/game/porte.png':          porteImg,
+      '/game/batiment1.png': bat1Img,
+      '/game/batiment1_toit.png': bat1ToitImg,
+      '/game/batiment1_fen.png': bat1FenImg,
+      '/game/batiment2.png': bat2Img,
+      '/game/batiment2_toit.png': bat2ToitImg,
+      '/game/batiment2_fen.png': bat2FenImg,
+      '/game/batiment3.png': bat3Img,
+      '/game/batiment3_toit.png': bat3ToitImg,
+      '/game/batiment3_fen.png': bat3FenImg,
       '/game/bouton_inter.png':   boutonInter,
       '/game/arm.png':          arm,
       '/game/hand.png':         hand,
