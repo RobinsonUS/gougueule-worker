@@ -3868,59 +3868,105 @@ function cheminIlePts(c, pts, suite) {
 }
 function cheminIle(c, suite) { cheminIlePts(c, ILE, suite); }
 
-// ─── Chemins de terre ───
-// Decor pur : ni collision, ni ralentissement. La carte donne pour chacun
-// un contour ferme de points de controle ; ses coins sont arrondis ici
-// (meme calcul que l'editeur), de rayon CHEMIN_ARRONDI au plus.
-var CHEMINS = [];
-var CHEMIN_ARRONDI = 40, CHEMIN_PAS = 6;
-function arrondiChemin(pts) {
-  var n = pts.length, out = [];
+// ═══ Chemins de terre : geometrie (meme code dans le jeu et l'editeur) ═══
+// Un chemin est trace comme une ligne (points de controle). Sa largeur
+// varie un peu d'un point a l'autre et son axe se decale legerement, tire
+// d'une graine propre au chemin : les bords ne sont jamais tout droits,
+// et le rendu est le meme partout. Morceaux : un trapeze par troncon et
+// un disque a chaque coin (virage arrondi cote exterieur).
+var CHEMIN_LARGE = 265, CHEMIN_VARIE = 0.12, CHEMIN_DECALE = 12;
+var CHEMIN_RACCORD = 90, CHEMIN_CASE = 8;
+function rngChemin(graine) {
+  var a = graine | 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function aireChemin(p) {
+  var s = 0;
+  for (var i = 0; i < p.length; i++) {
+    var a = p[i], b = p[(i + 1) % p.length];
+    s += a[0] * b[1] - b[0] * a[1];
+  }
+  return s / 2;
+}
+function rubanChemin(tr) {
+  var pts = tr.pts, n = pts.length, rng = rngChemin(tr.seed | 0), out = [];
+  if (n < 2) return out;
+  var nx = [], ny = [];                     // normale de chaque troncon
+  for (var s = 0; s < n - 1; s++) {
+    var dx = pts[s + 1][0] - pts[s][0], dy = pts[s + 1][1] - pts[s][1], l = Math.hypot(dx, dy) || 1;
+    nx.push(-dy / l); ny.push(dx / l);
+  }
+  // tirages bruts, puis moyennes glissantes : la largeur et le decalage
+  // changent en douceur sur plusieurs troncons, sans a-coups
+  var rw = [], rd = [];
+  for (var i0 = 0; i0 < n; i0++) { rw.push(rng() * 2 - 1); rd.push(rng() * 2 - 1); }
+  var doux = function (t, i) {
+    var s = 0, k = 0;
+    for (var o = -2; o <= 2; o++) { var j = i + o; if (j >= 0 && j < n) { s += t[j]; k++; } }
+    return s / k * 1.6;           // la moyenne ecrase l'ecart : on le redonne en partie
+  };
+  var c = [], w = [];
   for (var i = 0; i < n; i++) {
-    var P = pts[i], A = pts[(i + n - 1) % n], B = pts[(i + 1) % n];
-    var da = Math.hypot(A.x - P.x, A.y - P.y), db = Math.hypot(B.x - P.x, B.y - P.y);
-    var r = Math.min(CHEMIN_ARRONDI, da / 2, db / 2);
-    if (r < 0.5) { out.push({ x: P.x, y: P.y }); continue; }
-    var x0 = P.x + (A.x - P.x) / da * r, y0 = P.y + (A.y - P.y) / da * r;
-    var x1 = P.x + (B.x - P.x) / db * r, y1 = P.y + (B.y - P.y) / db * r;
-    for (var k = 0; k <= CHEMIN_PAS; k++) {          // coin : courbe de Bezier quadratique
-      var t = k / CHEMIN_PAS, u = 1 - t;
-      out.push({ x: u * u * x0 + 2 * u * t * P.x + t * t * x1,
-                 y: u * u * y0 + 2 * u * t * P.y + t * t * y1 });
-    }
+    w.push(CHEMIN_LARGE * (1 + Math.max(-1, Math.min(1, doux(rw, i))) * CHEMIN_VARIE));
+    var dec = Math.max(-1, Math.min(1, doux(rd, i))) * CHEMIN_DECALE;
+    var ax = nx[Math.max(0, i - 1)] + nx[Math.min(n - 2, i)], ay = ny[Math.max(0, i - 1)] + ny[Math.min(n - 2, i)];
+    var la = Math.hypot(ax, ay) || 1;
+    c.push([pts[i][0] + ax / la * dec, pts[i][1] + ay / la * dec]);
   }
-  // Tous dans le meme sens : deux chemins qui se croisent restent pleins
-  // (un sens contraire creuserait un trou a leur croisement)
-  var aire = 0;
-  for (var j = 0; j < out.length; j++) {
-    var p = out[j], q = out[(j + 1) % out.length];
-    aire += p.x * q.y - q.x * p.y;
+  for (var k = 0; k < n - 1; k++) {
+    var a = c[k], b = c[k + 1];
+    var dx2 = b[0] - a[0], dy2 = b[1] - a[1], l2 = Math.hypot(dx2, dy2) || 1;
+    var ux = -dy2 / l2, uy = dx2 / l2, h0 = w[k] / 2, h1 = w[k + 1] / 2;
+    var q = [[a[0] + ux * h0, a[1] + uy * h0], [b[0] + ux * h1, b[1] + uy * h1],
+             [b[0] - ux * h1, b[1] - uy * h1], [a[0] - ux * h0, a[1] - uy * h0]];
+    if (aireChemin(q) < 0) q.reverse();
+    out.push(q);
   }
-  if (aire < 0) out.reverse();
+  for (var j = 1; j < n - 1; j++) {
+    var d = [], r = w[j] / 2;
+    // 32 cotes, tangents au vrai cercle : aucun coin de trapeze ne depasse
+    var rc = r / Math.cos(Math.PI / 32);
+    for (var m = 0; m < 32; m++) { var an = (m + 0.5) / 32 * Math.PI * 2; d.push([c[j][0] + Math.cos(an) * rc, c[j][1] + Math.sin(an) * rc]); }
+    if (aireChemin(d) < 0) d.reverse();
+    out.push(d);
+  }
   return out;
 }
-function cheminsDePoints(liste) {
-  var res = [];
-  if (!Array.isArray(liste)) return res;
-  for (var i = 0; i < liste.length; i++) {
-    var ch = liste[i];
-    if (!Array.isArray(ch)) continue;
-    var pts = [];
-    for (var k = 0; k < ch.length; k++) {
-      var q = ch[k], x = Array.isArray(q) ? +q[0] : +(q && q.x), y = Array.isArray(q) ? +q[1] : +(q && q.y);
-      if (isFinite(x) && isFinite(y)) pts.push({ x: x, y: y });
-    }
-    if (pts.length < 3) continue;
-    var c = arrondiChemin(pts), b = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
-    for (var m = 0; m < c.length; m++) {
-      if (c[m].x < b.x0) b.x0 = c[m].x; if (c[m].x > b.x1) b.x1 = c[m].x;
-      if (c[m].y < b.y0) b.y0 = c[m].y; if (c[m].y > b.y1) b.y1 = c[m].y;
-    }
-    res.push({ pts: c, boite: b });
+// Ce que le jeu peint : les morceaux de chaque trace, puis les raccords
+// (arrondis aux croisements) calcules par l'editeur et ranges dans la
+// carte. Regle non nulle : morceaux et contours exterieurs tournent dans
+// un sens, les trous des raccords dans l'autre.
+var CHEMINS = [];
+function formeChemin(pts) {
+  var p = [], b = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+  for (var i = 0; i < pts.length; i++) {
+    var x = +pts[i][0], y = +pts[i][1];
+    if (!isFinite(x) || !isFinite(y)) continue;
+    p.push({ x: x, y: y });
+    if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x;
+    if (y < b.y0) b.y0 = y; if (y > b.y1) b.y1 = y;
   }
+  return p.length >= 3 ? { pts: p, boite: b } : null;
+}
+function cheminsDePoints(ch) {
+  var res = [];
+  if (!ch || typeof ch !== 'object' || Array.isArray(ch)) return res;
+  var tr = Array.isArray(ch.traces) ? ch.traces : [], rc = Array.isArray(ch.raccords) ? ch.raccords : [];
+  for (var i = 0; i < tr.length; i++) {
+    var t = tr[i];
+    if (!t || !Array.isArray(t.pts) || t.pts.length < 2) continue;
+    var m = rubanChemin({ seed: t.seed | 0, pts: t.pts });
+    for (var k = 0; k < m.length; k++) { var f = formeChemin(m[k]); if (f) res.push(f); }
+  }
+  for (var j = 0; j < rc.length; j++) { var f2 = Array.isArray(rc[j]) ? formeChemin(rc[j]) : null; if (f2) res.push(f2); }
   return res;
 }
-function initChemins(liste) { CHEMINS = cheminsDePoints(liste); }
+function initChemins(ch) { CHEMINS = cheminsDePoints(ch); }
 // Tous les chemins (ou ceux qui touchent le rectangle donne) en un seul trace
 function traceChemins(c, liste, x0, y0, x1, y1) {
   c.beginPath();
