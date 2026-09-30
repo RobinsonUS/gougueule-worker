@@ -149,12 +149,15 @@
       <div class="opt" data-type="buisson"><div class="ic">b</div>Buisson</div>
       <div class="opt" data-type="hutte1"><div class="ic">H1</div>Hutte 1</div>
       <div class="opt" data-type="hutte2"><div class="ic">H2</div>Hutte 2</div>
-      <div class="opt large" data-type="maison"><div class="ic">M</div>Maison</div>
+      <div class="opt" data-type="maison"><div class="ic">M</div>Maison</div>
+      <div class="opt" data-type="batiment1"><div class="ic">B1</div>Batiment 1</div>
+      <div class="opt" data-type="batiment2"><div class="ic">B2</div>Batiment 2</div>
+      <div class="opt" data-type="batiment3"><div class="ic">B3</div>Batiment 3</div>
     </div>
     <div class="note">Taille fixe : arbre 87,5, buisson 68</div>
     <div id="blocRot">
       <button class="act" id="bRot">Tourner (R)</button>
-      <div class="note">Porte vers <b id="vRot">le bas</b>. Un batiment se pose au
+      <div class="note">Rotation <b id="vRot">0°</b> (tel que dessine dans le menu). Un batiment se pose au
         clic, meme avec le pinceau.</div>
     </div>
   </div>
@@ -223,7 +226,7 @@
   <div class="st">Arbres <b id="sArb">0</b></div>
   <div class="st">Buissons <b id="sBui">0</b></div>
   <div class="st">Huttes <b id="sHut">0</b></div>
-  <div class="st">Maisons <b id="sMai">0</b></div>
+  <div class="st">Batiments <b id="sMai">0</b></div>
   <div class="sep"></div>
   <div class="st">Densite <b id="sDen">0</b></div>
   <div class="st">Zoom <b id="sZoom">0%</b></div>
@@ -351,7 +354,9 @@ function ajouteCheminBlob(x, y, r, lobes, phase, amp) {
 // Les memes images que le jeu, servies par le meme worker
 const SPRITES = {};
 ['arbre_vert', 'arbre_orange', 'arbre_rouge', 'arbre_sombre', 'buisson',
- 'hutte1', 'hutte1_toit', 'hutte2', 'hutte2_toit', 'maison', 'maison_toit', 'maison_fen'].forEach(function (n) {
+ 'hutte1', 'hutte1_toit', 'hutte2', 'hutte2_toit', 'maison', 'maison_toit', 'maison_fen',
+ 'batiment1', 'batiment1_toit', 'batiment1_fen', 'batiment2', 'batiment2_toit', 'batiment2_fen',
+ 'batiment3', 'batiment3_toit', 'batiment3_fen'].forEach(function (n) {
   const i = new Image(); i.src = '/game/' + n + '.png'; SPRITES[n] = i;
 });
 let PXV = 1;                 // pixels reels par unite monde, mis a jour a chaque image
@@ -592,9 +597,16 @@ const MAISON = {
   corps: [-203.4, -230.2, 203.4, 230.2],
   emprise: [-228.4, -230.2, 228.4, 230.2 + (168.1 - 116.15) * 1.08],  // fenetres et perron (celui des huttes) compris
 };
-const estBat = (o) => o.type === 'hutte' || o.type === 'maison';
-const geoBat = (o) => o.type === 'maison' ? MAISON : HUTTE;
-const SENS_ROT = ['le bas', 'la gauche', 'le haut', 'la droite'];
+// Batiments 1, 2 et 3 : memes donnees que le jeu (generees au pixel a partir
+// des images ; portes a la taille exacte de celle de la maison)
+const NOUVEAUX_BATS = {"batiment1":{"R":453.5,"ECH":0.6325,"CX":609.5,"CY":355.0,"corps":[-327.64,-195.13,327.64,195.13],"emprise":[-383.61,-222.64,354.52,222.01]},"batiment2":{"R":451.9,"ECH":0.62857,"CX":522.5,"CY":355.0,"corps":[-325.6,-193.91,325.6,193.91],"emprise":[-326.54,-221.26,382.49,220.63]},"batiment3":{"R":648.1,"ECH":0.62988,"CX":582.5,"CY":834.0,"corps":[-309.27,-467.05,309.27,467.05],"emprise":[-365.01,-523.43,337.3,494.45]}};
+for (const g of Object.values(NOUVEAUX_BATS)) { g.OMBRE = 7.6; g.OMBRE_DY = 2.0; }
+const BATS = Object.assign({ hutte: HUTTE, maison: MAISON }, NOUVEAUX_BATS);
+const NOMS_BAT = { maison: 'Maison', batiment1: 'Batiment 1', batiment2: 'Batiment 2', batiment3: 'Batiment 3' };
+const COUL_BAT = { maison: '#d4834f', batiment1: '#a9404f', batiment2: '#8f9aa3', batiment3: '#a9404f' };
+const estBat = (o) => !!BATS[o.type];
+const geoBat = (o) => BATS[o.type] || HUTTE;
+const SENS_ROT = ['0°', '90°', '180°', '270°'];
 function rectMondeH(o, r) {
   const q = ((o.rot | 0) % 4 + 4) % 4, u0 = r[0], v0 = r[1], u1 = r[2], v1 = r[3];
   let a, b;
@@ -607,7 +619,8 @@ function rectMondeH(o, r) {
 }
 // Images d'un batiment ; la maison a ses vitres de toit a part (70 %)
 function imagesBat(o) {
-  if (o.type === 'maison') return { corps: 'maison', toit: 'maison_toit', fen: 'maison_fen', g: MAISON };
+  if (o.type !== 'hutte' && BATS[o.type])
+    return { corps: o.type, toit: o.type + '_toit', fen: o.type + '_fen', g: BATS[o.type] };
   const v = o.v === 2 ? 2 : 1;
   return { corps: 'hutte' + v, toit: 'hutte' + v + '_toit', fen: null, g: HUTTE };
 }
@@ -649,7 +662,7 @@ function dessineHutte(o, quoi) {
   ctx.rotate(((o.rot | 0) % 4) * Math.PI / 2);
   if (!imagesPretes(m) || (c0[2] - c0[0]) * PXV < 10) {   // image absente ou vue tres lointaine
     if (quoi !== 1) {
-      ctx.fillStyle = o.type === 'maison' ? '#d4834f' : (o.v === 2 ? '#7d8a96' : '#c07a4c');
+      ctx.fillStyle = COUL_BAT[o.type] || (o.v === 2 ? '#7d8a96' : '#c07a4c');
       ctx.fillRect(c0[0], c0[1], c0[2] - c0[0], c0[3] - c0[1]);
     }
     ctx.restore(); return;
@@ -990,7 +1003,7 @@ function majInfos() {
   prochainInfos = t + 200;                   // reconstruire le HTML 60 fois par seconde ne sert a rien
   let na = 0, nh = 0;
   let nm = 0;
-  for (const o of carte.obs) { if (o.type === 'arbre') na++; else if (o.type === 'hutte') nh++; else if (o.type === 'maison') nm++; }
+  for (const o of carte.obs) { if (o.type === 'arbre') na++; else if (o.type === 'hutte') nh++; else if (estBat(o)) nm++; }
   const dens = carte.monde ? carte.obs.length / (carte.monde * carte.monde) * 1580 * 1100 : 0;
   const p = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
   p('sNb', carte.obs.length);
@@ -1030,10 +1043,10 @@ function autour(x, y) {
   }
   return out;
 }
-const estTypeHutte = (t) => t === 'hutte1' || t === 'hutte2' || t === 'maison';   // tout batiment
+const estTypeHutte = (t) => t === 'hutte1' || t === 'hutte2' || (t !== 'hutte' && !!BATS[t]);   // tout batiment
 function nouvelObjet(x, y) {
-  if (typeObj === 'maison')
-    return { x: Math.round(x), y: Math.round(y), r: MAISON.R, type: 'maison', rot: rotHutte, seed: graine() };
+  if (typeObj !== 'hutte' && BATS[typeObj])        // maison et batiments 1 a 3
+    return { x: Math.round(x), y: Math.round(y), r: BATS[typeObj].R, type: typeObj, rot: rotHutte, seed: graine() };
   if (estTypeHutte(typeObj))
     return { x: Math.round(x), y: Math.round(y), r: HUTTE.R, type: 'hutte',
              v: typeObj === 'hutte2' ? 2 : 1, rot: rotHutte, seed: graine() };
@@ -1065,7 +1078,7 @@ function libre(o) {
 let sel = null, prise = null;        // element choisi ; decalage souris pendant le glisser
 const NOMS_TYPE = { arbre: 'Arbre', buisson: 'Buisson' };
 function nomType(o) {
-  if (o.type === 'maison') return 'Maison';
+  if (NOMS_BAT[o.type]) return NOMS_BAT[o.type];
   return o.type === 'hutte' ? 'Hutte ' + (o.v === 2 ? 2 : 1) : (NOMS_TYPE[o.type] || o.type);
 }
 // L'element sous la souris : la vegetation passe avant les huttes, comme
@@ -1555,8 +1568,8 @@ function depuisJson(txt) {
     spawns: Array.isArray(m.spawns)
       ? m.spawns.filter(s => s && isFinite(+s.x) && isFinite(+s.y))
                 .map(s => ({ x: Math.round(+s.x), y: Math.round(+s.y) })) : [],
-    obs: m.obs.filter(o => o && isFinite(+o.x) && isFinite(+o.y)).map((o, i) => o.type === 'maison' ? {
-      x: Math.round(+o.x), y: Math.round(+o.y), r: MAISON.R, type: 'maison',
+    obs: m.obs.filter(o => o && isFinite(+o.x) && isFinite(+o.y)).map((o, i) => (o.type !== 'hutte' && BATS[o.type]) ? {
+      x: Math.round(+o.x), y: Math.round(+o.y), r: BATS[o.type].R, type: o.type,
       rot: (((+o.rot | 0) % 4) + 4) % 4,
       seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0)
     } : o.type === 'hutte' ? {
