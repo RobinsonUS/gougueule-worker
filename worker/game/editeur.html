@@ -188,9 +188,11 @@
       commencez / finissez dessus), ou coupez-le simplement. Les deux
       chemins partagent alors un seul point, et le croisement s'arrondit
       (apres un court calcul).<br>
-      Pour retoucher : Maj + glisser une poignee (un croisement bouge avec
-      tous ses chemins). Clic droit sur une poignee : la retirer. Clic
-      droit sur un chemin : le supprimer.
+      Pour retoucher : glissez une poignee, comme pour la cote (un
+      croisement bouge avec tous ses chemins). Lachee sur un autre point,
+      elle fusionne avec lui. Clic droit sur une poignee : la retirer. Clic
+      droit sur un chemin : le supprimer. Pour commencer un trait sur un
+      point existant, partez juste a cote de sa poignee.
       Decor seulement : on y marche comme sur l'herbe.</div>
     <button class="act rouge" id="cheminsVide">Effacer tous les chemins</button>
     <div class="ligne">Chemins <b id="vChemins">0</b></div>
@@ -1316,7 +1318,7 @@ function bouge(e) {
 function fin() {
   if (traceCote) termineTrait();     // relacher referme le contour
   if (traceChemin) termineChemin();
-  if (prisChemin && prisChemin.bouge) calculeRaccords(true);
+  if (prisChemin && prisChemin.bouge) { fusionnePoint(prisChemin.q); calculeRaccords(true); majChemins(); }
   if (prise && prise.bouge) reindexe();
   prise = null;
   appuye = false; deplace = false; dernier = null; poignee = null; prisChemin = null;
@@ -1400,11 +1402,11 @@ function courbeIle(ctrl) {
 
 // ═══ Chemins de terre : geometrie (meme code dans le jeu et l'editeur) ═══
 // Un chemin est trace comme une ligne (points de controle). Sa largeur
-// change d'un chemin a l'autre et varie le long du chemin, et son axe se
-// decale legerement : les bords ne sont jamais tout droits, et le rendu
-// est le meme partout (tirages deterministes). Morceaux : un trapeze par troncon et un
+// varie par endroits et son axe se decale legerement : les bords ne sont
+// jamais tout droits, et le rendu est le meme partout (tirages
+// deterministes, lies a la position des points). Morceaux : un trapeze par troncon et un
 // petit triangle au virage, cote exterieur ; les coins sont arrondis.
-var CHEMIN_LARGE = 265, CHEMIN_VARIE_BASE = 0.10, CHEMIN_VARIE = 0.16, CHEMIN_DECALE = 12;
+var CHEMIN_LARGE = 265, CHEMIN_VARIE_ZONE = 0.12, CHEMIN_VARIE = 0.10, CHEMIN_DECALE = 12, CHEMIN_ZONE = 1800;
 var CHEMIN_RACCORD = 90, CHEMIN_CASE = 8, CHEMIN_ARRONDI = 70, CHEMIN_PAS = 6;
 function rngChemin(graine) {
   var a = graine | 0;
@@ -1423,6 +1425,18 @@ function aleaPoint(p, canal) {
   h ^= h >>> 16;
   return (h >>> 0) / 4294967295 * 2 - 1;
 }
+// Bruit doux (valeurs aux noeuds d'une grille de CHEMIN_ZONE unites,
+// raccordees en douceur) : des zones ou les chemins sont plus larges
+function bruitChemin(x, y) {
+  var gx = Math.floor(x / CHEMIN_ZONE), gy = Math.floor(y / CHEMIN_ZONE);
+  var fx = x / CHEMIN_ZONE - gx, fy = y / CHEMIN_ZONE - gy;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  var v = function (i, j) { return aleaPoint([(gx + i) * CHEMIN_ZONE, (gy + j) * CHEMIN_ZONE], 7); };
+  return (v(0, 0) * (1 - fx) + v(1, 0) * fx) * (1 - fy) + (v(0, 1) * (1 - fx) + v(1, 1) * fx) * fy;
+}
+function largeurChemin(p) {
+  return CHEMIN_LARGE * (1 + bruitChemin(p[0], p[1]) * CHEMIN_VARIE_ZONE + aleaPoint(p, 1) * CHEMIN_VARIE);
+}
 function aireChemin(p) {
   var s = 0;
   for (var i = 0; i < p.length; i++) {
@@ -1432,22 +1446,16 @@ function aireChemin(p) {
   return s / 2;
 }
 function rubanChemin(tr) {
-  var pts = tr.pts, n = pts.length, rng = rngChemin(tr.seed | 0), out = [];
+  var pts = tr.pts, n = pts.length, out = [];
   if (n < 2) return out;
-  // Largeur de base propre au chemin : d'un chemin a l'autre, elle change
-  var base = CHEMIN_LARGE * (1 + (rng() * 2 - 1) * CHEMIN_VARIE_BASE);
-  // En chaque point, largeur et petit decalage sont tires de la POSITION du
-  // point et non du chemin : un point partage par deux chemins (croisement,
-  // jonction) est donc decale pareil dans les deux, ils s'y rejoignent pile.
-  var rw = [];
-  for (var i0 = 0; i0 < n; i0++) rw.push(aleaPoint(pts[i0], 1));
+  // Largeur et petit decalage ne dependent que de la POSITION du point : un
+  // point partage par plusieurs chemins (croisement, jonction, bout pose
+  // sur un autre chemin) a donc la meme largeur et le meme decalage dans
+  // chacun, et ils s'y raccordent pile. La largeur change par zones (bruit
+  // doux a grande echelle) et un peu d'un point a l'autre.
   var c = [], w = [];
   for (var i = 0; i < n; i++) {
-    // moyenne sur le point et ses voisins : la largeur varie par endroits,
-    // en douceur, sans dents de scie
-    var s = 0, kk = 0;
-    for (var o = -1; o <= 1; o++) { var j2 = i + o; if (j2 >= 0 && j2 < n) { s += rw[j2]; kk++; } }
-    w.push(base * (1 + Math.max(-1, Math.min(1, s / kk * 1.3)) * CHEMIN_VARIE));
+    w.push(largeurChemin(pts[i]));
     c.push([pts[i][0] + aleaPoint(pts[i], 2) * CHEMIN_DECALE, pts[i][1] + aleaPoint(pts[i], 3) * CHEMIN_DECALE]);
   }
   // Coins legerement arrondis : a chaque point, l'axe (et la largeur) suit
@@ -1483,6 +1491,16 @@ function rubanChemin(tr) {
     bords.push([[a[0] + ux * h0, a[1] + uy * h0], [b[0] + ux * h1, b[1] + uy * h1],
                 [a[0] - ux * h0, a[1] - uy * h0], [b[0] - ux * h1, b[1] - uy * h1]]);
   }
+  // Bouts arrondis (demi-disque) : un chemin qui s'arrete sur un autre s'y
+  // fond sans coin qui depasse, et un cul-de-sac n'est pas coupe net
+  var bout = function (M, N) {
+    var dx3 = M[0] - N[0], dy3 = M[1] - N[1], l3 = Math.hypot(dx3, dy3) || 1, a0 = Math.atan2(dy3, dx3), r3 = M[2] / 2, d3 = [];
+    for (var m3 = 0; m3 <= 12; m3++) { var an = a0 - Math.PI / 2 + m3 / 12 * Math.PI; d3.push([M[0] + Math.cos(an) * r3, M[1] + Math.sin(an) * r3]); }
+    if (aireChemin(d3) < 0) d3.reverse();
+    out.push(d3);
+  };
+  bout(P[0], P[1]);
+  bout(P[P.length - 1], P[P.length - 2]);
   for (var t3 = 1; t3 < bords.length; t3++) {
     var cc = [P[t3][0], P[t3][1]], av = bords[t3 - 1], ap = bords[t3];
     var g1 = [cc, av[1], ap[0]], g2 = [cc, av[3], ap[2]];
@@ -1716,10 +1734,10 @@ function workerRaccords() {
   if (_worker !== null) return _worker;
   try {
     const src = ['var CHEMIN_LARGE = ' + CHEMIN_LARGE, 'var CHEMIN_VARIE = ' + CHEMIN_VARIE,
-      'var CHEMIN_VARIE_BASE = ' + CHEMIN_VARIE_BASE,
+      'var CHEMIN_VARIE_ZONE = ' + CHEMIN_VARIE_ZONE, 'var CHEMIN_ZONE = ' + CHEMIN_ZONE,
       'var CHEMIN_DECALE = ' + CHEMIN_DECALE, 'var CHEMIN_RACCORD = ' + CHEMIN_RACCORD, 'var CHEMIN_CASE = ' + CHEMIN_CASE,
       'var CHEMIN_ARRONDI = ' + CHEMIN_ARRONDI, 'var CHEMIN_PAS = ' + CHEMIN_PAS,
-      rngChemin, aleaPoint, aireChemin, rubanChemin, edtChemin, raccordsChemins].map(String).join('\n') +
+      rngChemin, aleaPoint, bruitChemin, largeurChemin, aireChemin, rubanChemin, edtChemin, raccordsChemins].map(String).join('\n') +
       '\nonmessage = function (e) { postMessage({ id: e.data.id, raccords: raccordsChemins(e.data.traces) }); };';
     _worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
     _worker.onmessage = e => {
@@ -1840,6 +1858,50 @@ function relieChemin(pts, r) {
   }
   return out;
 }
+// Un point lache sur un autre point : les deux n'en font plus qu'un
+// (tous les chemins qui passaient par l'un passent par l'autre).
+function fusionnePoint(q) {
+  const r = rayonPoignee() * 1.6;
+  let cible = null, dm = r;
+  for (const t of carte.chemins.traces) for (const p of t.pts) {
+    if (p[0] === q[0] && p[1] === q[1]) continue;
+    const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (d <= dm) { dm = d; cible = p; }
+  }
+  if (cible) {
+    const c = [cible[0], cible[1]];
+    for (const t of carte.chemins.traces) t.pts = t.pts.map(p => (p[0] === q[0] && p[1] === q[1]) ? c : p);
+  }
+  nettoieChemins();
+}
+// Points doubles retires, chemins trop courts supprimes, et deux chemins
+// qui se touchent bout a bout (et rien d'autre ne passe par ce point)
+// fusionnent en un seul : le raccord devient un virage normal, arrondi.
+function nettoieChemins() {
+  const L = carte.chemins.traces;
+  for (const t of L) t.pts = t.pts.filter((p, i) => i === 0 || p[0] !== t.pts[i - 1][0] || p[1] !== t.pts[i - 1][1]);
+  carte.chemins.traces = L.filter(t => t.pts.length >= 2);
+  for (let tour = 0; tour < 100; tour++) {
+    const T = carte.chemins.traces, usage = {};
+    T.forEach((t, ti) => t.pts.forEach((p, i) => {
+      const k = p[0] + ',' + p[1], e = usage[k] || (usage[k] = { bouts: [], dedans: 0 });
+      if (i === 0 || i === t.pts.length - 1) e.bouts.push([ti, i === 0 ? 0 : 1]); else e.dedans++;
+    }));
+    let fait = false;
+    for (const k in usage) {
+      const e = usage[k];
+      if (e.dedans || e.bouts.length !== 2 || e.bouts[0][0] === e.bouts[1][0]) continue;
+      const [ta, ea] = e.bouts[0], [tb, eb] = e.bouts[1];
+      const A = T[ta].pts.slice(), B = T[tb].pts.slice();
+      if (ea === 0) A.reverse();          // A finit sur le point commun
+      if (eb === 1) B.reverse();          // B en part
+      T[ta].pts = A.concat(B.slice(1));
+      T.splice(tb, 1);
+      fait = true; break;
+    }
+    if (!fait) break;
+  }
+}
 // Trait a main levee -> points de controle : on efface le tremblement de
 // la main, puis on garde un point tous les CHEMIN_ESPACE environ.
 const CHEMIN_ESPACE = 220;
@@ -1883,6 +1945,7 @@ function termineChemin() {
   pts = relieChemin(pts, Math.max(24 / vue.z, 70));
   if (pts.length < 2) return;
   carte.chemins.traces.push({ seed: (Math.random() * 2147483647) | 1, pts });
+  nettoieChemins();                     // prolonge un chemin par son bout : un seul chemin
   calculeRaccords(false);
   majChemins();
 }
@@ -1950,9 +2013,9 @@ let dernierJet = null;
 function agit(x, y, presse, shift) {
   if (outil === 'chemin') {
     if (presse) {
-      // Maj sur une poignee : on la deplace. Sinon : nouveau trait (il peut
-      // partir d'un point existant, il s'y accrochera)
-      const h = shift ? poigneeChemin(x, y) : null;
+      // Sur une poignee : on la deplace, comme pour la cote. Ailleurs :
+      // nouveau trait (parti a cote d'un point, il s'y accrochera)
+      const h = poigneeChemin(x, y);
       if (h) { const q = carte.chemins.traces[h.t].pts[h.i]; prisChemin = { q: [q[0], q[1]], bouge: false }; return; }
       traceChemin = [{ x: x, y: y }];
       return;
