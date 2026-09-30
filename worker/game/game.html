@@ -102,7 +102,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe','feuille','hutte1','hutte1_toit','hutte2','hutte2_toit','hutte1_ruine','hutte2_ruine','bois','maison','maison_toit','maison_fen','batiment1','batiment1_toit','batiment1_fen','batiment2','batiment2_toit','batiment2_fen','batiment3','batiment3_toit','batiment3_fen','porte','bouton_inter'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe','feuille','hutte1','hutte1_toit','hutte2','hutte2_toit','hutte1_ruine','hutte2_ruine','bois','maison','maison_toit','maison_fen','batiment1','batiment1_toit','batiment1_fen','batiment2','batiment2_toit','batiment2_fen','batiment3','batiment3_toit','batiment3_fen','batiment4','batiment4_toit','batiment4_fen','porte','bouton_inter'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // weapon_XM8 : supprimer le fond blanc
 (function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
   var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
@@ -177,6 +177,12 @@ const C = {
   eauLoin:     '#075a92',
   ligneEau:    '#006ab0',
   ligneEauLoin:'#075489',   // le quadrillage continue au large, tres sombre
+  // Chemins de terre et leur quadrillage, releves sur la capture de
+  // reference une fois ramenee en sRGB (la capture porte le profil couleur
+  // de l'ecran : lues telles quelles, ses valeurs sont fausses. Ramenees en
+  // sRGB, l'herbe y retombe exactement sur sol et ligne ci-dessus).
+  chemin:      '#b48b4d',
+  ligneChemin: '#a98248',
   ombre:       'rgba(0,0,0,0.14)',
   ombreDouce:  'rgba(0,0,0,0.07)',   // arbres, buissons, joueurs, bigbush
   // Couleurs relevees sur les images des arbres et buissons : la minimap et
@@ -607,11 +613,11 @@ var MAISON = (function () {
   };
 })();
 var FENETRE_ALPHA = 0.7;      // vitres vues de loin, par-dessus les balles
-// Batiments 1, 2 et 3 : generes au pixel a partir des images (memes donnees
+// Batiments 1 a 4 : generes au pixel a partir des images (memes donnees
 // que le serveur). Echelle choisie pour que chaque porte ait exactement la
 // taille de celle de la maison. portes : un element par battant (une double
 // porte en a deux, independants).
-var NOUVEAUX_BATS = {"batiment1":{"ECH":0.6325,"CX":609.5,"CY":355.0,"R":453.5,"corps":[-327.64,-195.13,327.64,195.13],"sol":[-287.16,-154.65,287.16,155.28],"emprise":[-383.61,-222.64,354.52,222.01],"murs":[[-347.88,-103.41,-287.79,-67.36],[-347.24,69.26,-287.79,105.31],[-327.64,-195.13,-68.94,-154.65],[68.94,-195.13,327.64,-154.65],[-327.64,155.28,-68.94,195.13],[68.94,155.28,327.64,195.13],[-327.64,-154.65,-287.16,-66.82],[-327.64,68.72,-287.16,155.28],[287.16,-154.65,327.64,-67.99],[287.16,69.89,327.64,155.28]],"fenetres":[[-68.94,-195.13,68.94,-154.65],[-68.94,155.28,68.94,195.13],[287.16,-67.99,327.64,69.89]],"vue":[[-287.16,-154.65,287.16,155.28],[-84.0,-279.13,84.0,-195.13],[-84.0,195.13,84.0,279.13],[327.64,-83.05,411.64,84.95],[-338.41,-66.82,-287.16,68.72],[-411.41,-125.62,-319.61,127.52]],"portes":[{"r0":[-340.4,-74.95,-303.55,76.85],"r1":[-323.61,68.86,-171.81,105.71],"rm1":[-469.9,68.86,-318.1,105.71],"eb":[-1,0],"f0":[0,-1]}]},"batiment2":{"ECH":0.62857,"CX":522.5,"CY":355.0,"R":451.9,"corps":[-325.6,-193.91,325.6,193.91],"sol":[-285.37,-153.69,285.37,154.31],"emprise":[-326.54,-221.26,382.49,220.63],"murs":[[286.0,-180.09,345.71,-145.51],[286.0,143.0,345.71,178.2],[-325.6,-193.91,-75.43,-153.69],[61.6,-193.91,325.6,-153.69],[-325.6,154.31,-68.51,193.91],[68.51,154.31,325.6,193.91],[-325.6,-153.69,-285.37,154.31],[285.37,-153.69,325.6,-144.77],[285.37,142.57,325.6,154.31]],"fenetres":[[-75.43,-193.91,61.6,-153.69],[-68.51,154.31,68.51,193.91]],"vue":[[-285.37,-153.69,285.37,154.31],[-90.91,-277.91,77.09,-193.91],[-84.0,193.91,84.0,277.91],[285.37,-144.77,336.57,142.57],[317.77,-203.57,409.57,201.37]],"portes":[{"r0":[301.44,-1.1,338.29,150.7],"r1":[169.8,142.17,321.6,179.03],"rm1":[316.13,142.17,467.93,179.03],"eb":[1,0],"f0":[0,-1]},{"r0":[301.44,-152.9,338.29,-1.1],"r1":[169.8,-181.23,321.6,-144.37],"rm1":[316.13,-181.23,467.93,-144.37],"eb":[1,0],"f0":[0,1]}]},"batiment3":{"ECH":0.62988,"CX":582.5,"CY":834.0,"R":648.1,"corps":[-309.27,-467.05,309.27,467.05],"sol":[-268.33,-426.74,268.33,426.74],"emprise":[-365.01,-523.43,337.3,494.45],"murs":[[-178.88,-487.21,-143.61,-427.37],[144.87,-487.21,180.14,-427.37],[-329.42,167.23,-269.59,202.5],[-329.42,339.19,-269.59,374.46],[-309.27,-467.05,-143.04,-426.74],[144.3,-467.05,309.27,-426.74],[-309.27,426.74,-190.85,467.05],[-53.54,426.74,97.63,467.05],[234.94,426.74,309.27,467.05],[-309.27,-426.74,-268.33,-244.71],[-309.27,-107.39,-268.33,203.08],[-309.27,338.62,-268.33,426.74],[268.33,-426.74,309.27,-244.71],[268.33,-107.39,309.27,212.58],[268.33,349.9,309.27,426.74],[146.13,74.64,268.33,114.95],[33.38,288.8,56.06,426.74]],"fenetres":[[-309.27,-244.71,-268.33,-107.39],[268.33,-244.71,309.27,-107.39],[268.33,212.58,309.27,349.9],[-190.85,426.74,-53.54,467.05],[97.63,426.74,234.94,467.05]],"vue":[[-268.33,-426.74,268.33,426.74],[-393.27,-260.05,-309.27,-92.05],[309.27,-260.05,393.27,-92.05],[309.27,197.24,393.27,365.24],[-206.2,467.05,-38.2,551.05],[82.29,467.05,250.29,551.05],[-143.04,-477.96,144.3,-426.74],[-201.84,-550.96,203.1,-459.16],[-320.18,203.08,-268.33,338.62],[-393.18,144.28,-301.38,397.42]],"portes":[{"r0":[0.63,-479.77,152.43,-442.92],"r1":[144.08,-463.04,180.93,-311.24],"rm1":[144.08,-609.36,180.93,-457.56],"eb":[0,-1],"f0":[-1,0]},{"r0":[-151.17,-479.77,0.63,-442.92],"r1":[-179.67,-463.04,-142.82,-311.24],"rm1":[-179.67,-609.36,-142.82,-457.56],"eb":[0,-1],"f0":[1,0]},{"r0":[-321.99,194.95,-285.13,346.75],"r1":[-305.26,338.4,-153.46,375.25],"rm1":[-451.58,338.4,-299.78,375.25],"eb":[-1,0],"f0":[0,-1]}]}};
+var NOUVEAUX_BATS = {"batiment1":{"ECH":0.6325,"CX":609.5,"CY":355.0,"R":453.5,"corps":[-327.64,-195.13,327.64,195.13],"sol":[-287.16,-154.65,287.16,155.28],"emprise":[-383.61,-222.64,354.52,222.01],"murs":[[-347.88,-103.41,-287.79,-67.36],[-347.24,69.26,-287.79,105.31],[-327.64,-195.13,-68.94,-154.65],[68.94,-195.13,327.64,-154.65],[-327.64,155.28,-68.94,195.13],[68.94,155.28,327.64,195.13],[-327.64,-154.65,-287.16,-66.82],[-327.64,68.72,-287.16,155.28],[287.16,-154.65,327.64,-67.99],[287.16,69.89,327.64,155.28]],"fenetres":[[-68.94,-195.13,68.94,-154.65],[-68.94,155.28,68.94,195.13],[287.16,-67.99,327.64,69.89]],"vue":[[-287.16,-154.65,287.16,155.28],[-84.0,-279.13,84.0,-195.13],[-84.0,195.13,84.0,279.13],[327.64,-83.05,411.64,84.95],[-338.41,-66.82,-287.16,68.72],[-411.41,-125.62,-319.61,127.52]],"portes":[{"r0":[-340.4,-74.95,-303.55,76.85],"r1":[-323.61,68.86,-171.81,105.71],"rm1":[-469.9,68.86,-318.1,105.71],"eb":[-1,0],"f0":[0,-1]}]},"batiment2":{"ECH":0.62857,"CX":522.5,"CY":355.0,"R":451.9,"corps":[-325.6,-193.91,325.6,193.91],"sol":[-285.37,-153.69,285.37,154.31],"emprise":[-326.54,-221.26,382.49,220.63],"murs":[[286.0,-180.09,345.71,-145.51],[286.0,143.0,345.71,178.2],[-325.6,-193.91,-75.43,-153.69],[61.6,-193.91,325.6,-153.69],[-325.6,154.31,-68.51,193.91],[68.51,154.31,325.6,193.91],[-325.6,-153.69,-285.37,154.31],[285.37,-153.69,325.6,-144.77],[285.37,142.57,325.6,154.31]],"fenetres":[[-75.43,-193.91,61.6,-153.69],[-68.51,154.31,68.51,193.91]],"vue":[[-285.37,-153.69,285.37,154.31],[-90.91,-277.91,77.09,-193.91],[-84.0,193.91,84.0,277.91],[285.37,-144.77,336.57,142.57],[317.77,-203.57,409.57,201.37]],"portes":[{"r0":[301.44,-1.1,338.29,150.7],"r1":[169.8,142.17,321.6,179.03],"rm1":[316.13,142.17,467.93,179.03],"eb":[1,0],"f0":[0,-1]},{"r0":[301.44,-152.9,338.29,-1.1],"r1":[169.8,-181.23,321.6,-144.37],"rm1":[316.13,-181.23,467.93,-144.37],"eb":[1,0],"f0":[0,1]}]},"batiment3":{"ECH":0.62988,"CX":582.5,"CY":834.0,"R":648.1,"corps":[-309.27,-467.05,309.27,467.05],"sol":[-268.33,-426.74,268.33,426.74],"emprise":[-365.01,-523.43,337.3,494.45],"murs":[[-178.88,-487.21,-143.61,-427.37],[144.87,-487.21,180.14,-427.37],[-329.42,167.23,-269.59,202.5],[-329.42,339.19,-269.59,374.46],[-309.27,-467.05,-143.04,-426.74],[144.3,-467.05,309.27,-426.74],[-309.27,426.74,-190.85,467.05],[-53.54,426.74,97.63,467.05],[234.94,426.74,309.27,467.05],[-309.27,-426.74,-268.33,-244.71],[-309.27,-107.39,-268.33,203.08],[-309.27,338.62,-268.33,426.74],[268.33,-426.74,309.27,-244.71],[268.33,-107.39,309.27,212.58],[268.33,349.9,309.27,426.74],[146.13,74.64,268.33,114.95],[33.38,288.8,56.06,426.74]],"fenetres":[[-309.27,-244.71,-268.33,-107.39],[268.33,-244.71,309.27,-107.39],[268.33,212.58,309.27,349.9],[-190.85,426.74,-53.54,467.05],[97.63,426.74,234.94,467.05]],"vue":[[-268.33,-426.74,268.33,426.74],[-393.27,-260.05,-309.27,-92.05],[309.27,-260.05,393.27,-92.05],[309.27,197.24,393.27,365.24],[-206.2,467.05,-38.2,551.05],[82.29,467.05,250.29,551.05],[-143.04,-477.96,144.3,-426.74],[-201.84,-550.96,203.1,-459.16],[-320.18,203.08,-268.33,338.62],[-393.18,144.28,-301.38,397.42]],"portes":[{"r0":[0.63,-479.77,152.43,-442.92],"r1":[144.08,-463.04,180.93,-311.24],"rm1":[144.08,-609.36,180.93,-457.56],"eb":[0,-1],"f0":[-1,0]},{"r0":[-151.17,-479.77,0.63,-442.92],"r1":[-179.67,-463.04,-142.82,-311.24],"rm1":[-179.67,-609.36,-142.82,-457.56],"eb":[0,-1],"f0":[1,0]},{"r0":[-321.99,194.95,-285.13,346.75],"r1":[-305.26,338.4,-153.46,375.25],"rm1":[-451.58,338.4,-299.78,375.25],"eb":[-1,0],"f0":[0,-1]}]},"batiment4":{"ECH":1.265,"CX":426.0,"CY":746.5,"R":1095.1,"corps":[-502.84,-882.97,502.84,882.97],"sol":[-461.09,-841.86,461.73,841.23],"emprise":[-535.1,-940.53,538.89,941.79],"murs":[[-179.63,-902.58,-144.21,-843.12],[145.48,-902.58,180.9,-843.12],[-178.36,843.12,-142.95,902.58],[146.74,843.12,182.16,902.58],[-502.84,-882.97,-143.04,-841.86],[144.3,-882.97,502.84,-841.86],[-502.84,841.23,-141.77,882.97],[145.57,841.23,502.84,882.97],[-502.84,-841.86,-461.09,-764.06],[-502.84,-626.18,-461.09,-419.98],[-502.84,-282.1,-461.09,-68.63],[-502.84,69.26,-461.09,282.41],[-502.84,420.3,-461.09,625.86],[-502.84,763.74,-461.09,841.23],[461.73,-841.86,502.84,-770.39],[461.73,-632.5,502.84,-426.94],[461.73,-289.05,502.84,-75.27],[461.73,62.62,502.84,275.77],[461.73,413.66,502.84,619.22],[461.73,757.1,502.84,841.23],[-219.48,-841.86,-179.0,-802.01],[177.73,-841.86,216.95,-802.01],[-461.09,-546.48,-179.0,-507.27],[-218.21,-602.14,-179.0,-451.61],[177.73,-547.75,461.73,-507.27],[177.73,-602.14,218.21,-451.61],[-461.09,-196.08,-177.73,-155.6],[-218.21,-251.74,-177.73,-99.94],[179.0,-196.08,461.73,-156.86],[179.0,-251.74,218.21,-99.94],[-461.09,155.6,-177.73,196.08],[-216.95,99.94,-177.73,251.74],[179.0,154.33,461.73,194.81],[179.0,99.94,219.48,251.74],[-461.09,507.27,-176.47,547.75],[-216.95,451.61,-176.47,602.14],[179.0,506.0,461.73,546.48],[179.0,451.61,219.48,602.14],[-216.95,803.28,-176.47,841.23],[180.26,803.28,219.48,841.23]],"fenetres":[[-502.84,-764.06,-461.09,-626.18],[-502.84,-419.98,-461.09,-282.1],[-502.84,-68.63,-461.09,69.26],[-502.84,282.41,-461.09,420.3],[-502.84,625.86,-461.09,763.74],[461.73,-770.39,502.84,-632.5],[461.73,-426.94,502.84,-289.05],[461.73,-75.27,502.84,62.62],[461.73,275.77,502.84,413.66],[461.73,619.22,502.84,757.1]],"vue":[[-461.09,-841.86,461.73,841.23],[-586.84,-779.12,-502.84,-611.12],[-586.84,-435.04,-502.84,-267.04],[-586.84,-83.68,-502.84,84.32],[-586.84,267.35,-502.84,435.35],[-586.84,610.8,-502.84,778.8],[502.84,-785.44,586.84,-617.44],[502.84,-442.0,586.84,-274.0],[502.84,-90.33,586.84,77.67],[502.84,260.71,586.84,428.71],[502.84,604.16,586.84,772.16],[-143.04,-893.74,144.3,-841.86],[-201.84,-966.74,203.1,-874.94],[-141.77,841.23,145.57,893.74],[-200.57,874.94,204.37,966.74]],"portes":[{"r0":[0.63,-895.1,152.43,-858.25],"r1":[144.76,-878.54,181.61,-726.74],"rm1":[144.76,-1024.92,181.61,-873.12],"eb":[0,-1],"f0":[-1,0]},{"r0":[-151.17,-895.1,0.63,-858.25],"r1":[-180.35,-878.54,-143.49,-726.74],"rm1":[-180.35,-1024.92,-143.49,-873.12],"eb":[0,-1],"f0":[1,0]},{"r0":[-149.9,858.25,1.9,895.1],"r1":[-179.08,726.74,-142.23,878.54],"rm1":[-179.08,873.12,-142.23,1024.92],"eb":[0,1],"f0":[1,0]},{"r0":[1.9,858.25,153.7,895.1],"r1":[146.02,726.74,182.88,878.54],"rm1":[146.02,873.12,182.88,1024.92],"eb":[0,1],"f0":[-1,0]}]}};
 for (var _nb in NOUVEAUX_BATS) { NOUVEAUX_BATS[_nb].OMBRE = 7.6; NOUVEAUX_BATS[_nb].OMBRE_DY = 2.0; }
 var BATS = { hutte: HUTTE, maison: MAISON };
 for (var _nb2 in NOUVEAUX_BATS) BATS[_nb2] = NOUVEAUX_BATS[_nb2];
@@ -1750,6 +1756,7 @@ function _mmBande(c, g, h2, d, b, large, taillePx) {
     c.fillRect(sx, sy, sw, sh);
     if (ILE) { c.fillStyle = C.sol; cheminIle(c); c.fill(); }
   }
+  if (CHEMINS.length && traceChemins(c, CHEMINS, g, h2, d, b)) { c.fillStyle = C.chemin; c.fill(); }
 
   var pasG = CELL * MM_GROUPE;
   // Avec une ile, le quadrillage s'etend aussi au large ; sinon il s'arrete
@@ -1862,6 +1869,7 @@ function initApercu(a) {
   APERCU = {
     monde: a.monde,
     ile: ileDePoints(a.ile),
+    chemins: cheminsDePoints(a.chemins),
     obs: a.decor.map(function (o) {
       return Object.assign({}, o, cosmetiques(o.seed), { alphaVis: 1 });
     }),
@@ -1872,9 +1880,9 @@ function initApercu(a) {
 // de la carte de partie tant qu'on attend dans le lobby.
 function carteSource() {
   if (snapDernier && snapDernier.phaseLobby && APERCU)
-    return { monde: APERCU.monde, ile: APERCU.ile, obs: APERCU.obs,
+    return { monde: APERCU.monde, ile: APERCU.ile, chemins: APERCU.chemins, obs: APERCU.obs,
              avion: APERCU.avion, apercu: true };
-  return { monde: MONDE, ile: ILE, obs: localObs,
+  return { monde: MONDE, ile: ILE, chemins: CHEMINS, obs: localObs,
            avion: (snapDernier && snapDernier.avion) || null, apercu: false };
 }
 
@@ -1918,6 +1926,7 @@ function peintCarte(cotePx, src) {
   c.fillStyle = C.sol;
   if (src.ile) { cheminIlePts(c, src.ile); c.fill(); }
   else c.fillRect(0, 0, src.monde, src.monde);
+  if (src.chemins && src.chemins.length && traceChemins(c, src.chemins)) { c.fillStyle = C.chemin; c.fill(); }
   // quadrillage discret, sur la terre comme sur l'eau
   // Le quadrillage couvre toute la fenetre, terre et eau comprises.
   var pas = CELL * CARTE_GROUPE;
@@ -2906,6 +2915,17 @@ function dessine(p, moi, viseur, drag) {
     grille();
     ctx.restore();
   }
+  // Chemins de terre : par-dessus le sol et son quadrillage, sous tout le
+  // reste. Leur propre quadrillage, plus sombre, ne passe que sur eux.
+  if (CHEMINS.length && traceChemins(ctx, CHEMINS, gch - CELL, hau - CELL, drt + CELL, bas + CELL)) {
+    ctx.fillStyle = C.chemin;
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.strokeStyle = C.ligneChemin;
+    grille();
+    ctx.restore();
+  }
 
   const visible = (o) =>
     o.x > gch - o.r * 1.4 && o.x < drt + o.r * 1.4 &&
@@ -3847,6 +3867,71 @@ function cheminIlePts(c, pts, suite) {
   c.closePath();
 }
 function cheminIle(c, suite) { cheminIlePts(c, ILE, suite); }
+
+// ─── Chemins de terre ───
+// Decor pur : ni collision, ni ralentissement. La carte donne pour chacun
+// un contour ferme de points de controle ; ses coins sont arrondis ici
+// (meme calcul que l'editeur), de rayon CHEMIN_ARRONDI au plus.
+var CHEMINS = [];
+var CHEMIN_ARRONDI = 40, CHEMIN_PAS = 6;
+function arrondiChemin(pts) {
+  var n = pts.length, out = [];
+  for (var i = 0; i < n; i++) {
+    var P = pts[i], A = pts[(i + n - 1) % n], B = pts[(i + 1) % n];
+    var da = Math.hypot(A.x - P.x, A.y - P.y), db = Math.hypot(B.x - P.x, B.y - P.y);
+    var r = Math.min(CHEMIN_ARRONDI, da / 2, db / 2);
+    if (r < 0.5) { out.push({ x: P.x, y: P.y }); continue; }
+    var x0 = P.x + (A.x - P.x) / da * r, y0 = P.y + (A.y - P.y) / da * r;
+    var x1 = P.x + (B.x - P.x) / db * r, y1 = P.y + (B.y - P.y) / db * r;
+    for (var k = 0; k <= CHEMIN_PAS; k++) {          // coin : courbe de Bezier quadratique
+      var t = k / CHEMIN_PAS, u = 1 - t;
+      out.push({ x: u * u * x0 + 2 * u * t * P.x + t * t * x1,
+                 y: u * u * y0 + 2 * u * t * P.y + t * t * y1 });
+    }
+  }
+  // Tous dans le meme sens : deux chemins qui se croisent restent pleins
+  // (un sens contraire creuserait un trou a leur croisement)
+  var aire = 0;
+  for (var j = 0; j < out.length; j++) {
+    var p = out[j], q = out[(j + 1) % out.length];
+    aire += p.x * q.y - q.x * p.y;
+  }
+  if (aire < 0) out.reverse();
+  return out;
+}
+function cheminsDePoints(liste) {
+  var res = [];
+  if (!Array.isArray(liste)) return res;
+  for (var i = 0; i < liste.length; i++) {
+    var ch = liste[i];
+    if (!Array.isArray(ch)) continue;
+    var pts = [];
+    for (var k = 0; k < ch.length; k++) {
+      var q = ch[k], x = Array.isArray(q) ? +q[0] : +(q && q.x), y = Array.isArray(q) ? +q[1] : +(q && q.y);
+      if (isFinite(x) && isFinite(y)) pts.push({ x: x, y: y });
+    }
+    if (pts.length < 3) continue;
+    var c = arrondiChemin(pts), b = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    for (var m = 0; m < c.length; m++) {
+      if (c[m].x < b.x0) b.x0 = c[m].x; if (c[m].x > b.x1) b.x1 = c[m].x;
+      if (c[m].y < b.y0) b.y0 = c[m].y; if (c[m].y > b.y1) b.y1 = c[m].y;
+    }
+    res.push({ pts: c, boite: b });
+  }
+  return res;
+}
+function initChemins(liste) { CHEMINS = cheminsDePoints(liste); }
+// Tous les chemins (ou ceux qui touchent le rectangle donne) en un seul trace
+function traceChemins(c, liste, x0, y0, x1, y1) {
+  c.beginPath();
+  var n = 0;
+  for (var i = 0; i < liste.length; i++) {
+    var ch = liste[i], b = ch.boite;
+    if (x0 !== undefined && (b.x1 < x0 || b.x0 > x1 || b.y1 < y0 || b.y0 > y1)) continue;
+    cheminIlePts(c, ch.pts, true); n++;
+  }
+  return n;
+}
 // Copie conforme de dansIle() cote serveur : toute difference ferait
 // sautiller le joueur sur la cote, entre prediction et correction.
 function dansIleLoc(x, y) {
@@ -4743,6 +4828,7 @@ function connect() {
       if (SIM.MONDE) MONDE = SIM.MONDE;
       mapVerLocal = msg.mapVer || 1;
       initIle(msg.ile);
+      initChemins(msg.chemins);
       initObs(msg.decor);
       initApercu(msg.apercu);          // carte de partie visible des le lobby
       localParticules.length = 0;
@@ -4767,6 +4853,7 @@ function connect() {
       if (SIM.MONDE) MONDE = SIM.MONDE;
       mapVerLocal = msg.mapVer || (mapVerLocal + 1);
       initIle(msg.ile);
+      initChemins(msg.chemins);
       initObs(msg.decor);                    // decor + index repartis a neuf
       initApercu(msg.apercu);                // en partie : plus d'apercu
       _carteCv = null; _carteCle = '';       // la carte du monde repart de zero
