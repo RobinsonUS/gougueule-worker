@@ -177,6 +177,9 @@ const C = {
   eauLoin:     '#075a92',
   ligneEau:    '#006ab0',
   ligneEauLoin:'#075489',   // le quadrillage continue au large, tres sombre
+  // Sol enneige et son quadrillage, releves sur une capture du vrai jeu
+  neige:       '#e8f1f7',
+  ligneNeige:  '#d9e2e8',
   // Chemins de terre et leur quadrillage, releves sur la capture de
   // reference une fois ramenee en sRGB (la capture porte le profil couleur
   // de l'ecran : lues telles quelles, ses valeurs sont fausses. Ramenees en
@@ -1830,6 +1833,12 @@ function _mmBande(c, g, h2, d, b, large, taillePx) {
     c.fillStyle = ILE ? C.eau : C.sol;
     c.fillRect(sx, sy, sw, sh);
     if (ILE) { c.fillStyle = C.sol; cheminIle(c); c.fill(); }
+    if (NEIGES.length) {
+      c.save();
+      if (ILE) { cheminIle(c); c.clip(); }
+      c.fillStyle = C.neige; cheminLacs(c, NEIGES); c.fill();
+      c.restore();
+    }
     if (LACS.length) { c.fillStyle = C.eau; cheminLacs(c, LACS); c.fill(); }
   }
   if (CHEMINS.length && traceChemins(c, CHEMINS, g, h2, d, b)) { c.fillStyle = C.chemin; c.fill(); }
@@ -1946,6 +1955,7 @@ function initApercu(a) {
     monde: a.monde,
     ile: ileDePoints(a.ile),
     lacs: lacsDePoints(a.lacs),
+    neiges: lacsDePoints(a.neiges),
     chemins: cheminsDePoints(a.chemins, a.monde),
     obs: a.decor.map(function (o) {
       return Object.assign({}, o, cosmetiques(o.seed), { alphaVis: 1 });
@@ -1957,9 +1967,9 @@ function initApercu(a) {
 // de la carte de partie tant qu'on attend dans le lobby.
 function carteSource() {
   if (snapDernier && snapDernier.phaseLobby && APERCU)
-    return { monde: APERCU.monde, ile: APERCU.ile, lacs: APERCU.lacs, chemins: APERCU.chemins, obs: APERCU.obs,
+    return { monde: APERCU.monde, ile: APERCU.ile, lacs: APERCU.lacs, neiges: APERCU.neiges, chemins: APERCU.chemins, obs: APERCU.obs,
              avion: APERCU.avion, apercu: true };
-  return { monde: MONDE, ile: ILE, lacs: LACS, chemins: CHEMINS, obs: localObs,
+  return { monde: MONDE, ile: ILE, lacs: LACS, neiges: NEIGES, chemins: CHEMINS, obs: localObs,
            avion: (snapDernier && snapDernier.avion) || null, apercu: false };
 }
 
@@ -2007,6 +2017,12 @@ function peintCarte(cotePx, src) {
   c.fillStyle = C.sol;
   if (src.ile) { cheminIlePts(c, src.ile); c.fill(); }
   else c.fillRect(0, 0, src.monde, src.monde);
+  if (src.neiges && src.neiges.length) {
+    c.save();
+    if (src.ile) { cheminIlePts(c, src.ile); c.clip(); }
+    c.fillStyle = C.neige; cheminLacs(c, src.neiges); c.fill();
+    c.restore();
+  }
   if (src.lacs && src.lacs.length) { c.fillStyle = CARTE_EAU; cheminLacs(c, src.lacs); c.fill(); }
   if (src.chemins && src.chemins.length && traceChemins(c, src.chemins)) { c.fillStyle = C.chemin; c.fill(); }
   // quadrillage discret, sur la terre comme sur l'eau
@@ -2052,7 +2068,7 @@ function dessineCarte() {
   var src = carteSource();
   var cotePx = Math.max(8, Math.round(g.c * PX * CARTE_DEF));
   var cle = mapVerLocal + ':' + src.monde + ':' + cotePx + ':' + (src.ile ? src.ile.length : 0) +
-            ':' + (src.lacs ? src.lacs.length : 0) + ':' + src.obs.length + ':' + vegToutPret() + ':' + (src.apercu ? 'a' : 'p');
+            ':' + (src.lacs ? src.lacs.length : 0) + ':' + (src.neiges ? src.neiges.length : 0) + ':' + src.obs.length + ':' + vegToutPret() + ':' + (src.apercu ? 'a' : 'p');
   if (!_carteCv || _carteCle !== cle) { _carteCv = peintCarte(cotePx, src); _carteCle = cle; }
 
   repereEcran();
@@ -2925,6 +2941,20 @@ function dessineAvion(av) {
 // Points d'eau dans la vue de jeu : l'eau couvre la terre et son
 // quadrillage, puis le quadrillage bleu de l'eau, limite a la terre (sur la
 // mer il est deja trace : pas de trait en double).
+// Zones enneigees : la neige couvre la terre (jamais la mer) et son
+// quadrillage, puis son propre quadrillage. Avant l'eau : un lac dans la
+// neige reste un lac.
+function neigesMonde(grille, cheminTerre) {
+  if (!NEIGES.length) return;
+  ctx.save();
+  cheminTerre(ctx); ctx.clip();
+  ctx.fillStyle = C.neige;
+  cheminLacs(ctx, NEIGES); ctx.fill();
+  ctx.clip();
+  ctx.strokeStyle = C.ligneNeige;
+  grille();
+  ctx.restore();
+}
 function lacsMonde(grille, cheminTerre) {
   if (!LACS.length) return;
   ctx.fillStyle = C.eau;
@@ -3012,6 +3042,7 @@ function dessine(p, moi, viseur, drag) {
     ctx.strokeStyle = C.ligne;
     grille();
     ctx.restore();
+    neigesMonde(grille, cheminIle);
     lacsMonde(grille, cheminIle);
   } else {
     ctx.save(); horsMonde(); ctx.strokeStyle = C.ligneDehors; grille(); ctx.restore();
@@ -3022,7 +3053,9 @@ function dessine(p, moi, viseur, drag) {
     ctx.strokeStyle = C.ligne;
     grille();
     ctx.restore();
-    lacsMonde(grille, function (c) { c.beginPath(); c.rect(0, 0, MONDE, MONDE); });
+    var monde = function (c) { c.beginPath(); c.rect(0, 0, MONDE, MONDE); };
+    neigesMonde(grille, monde);
+    lacsMonde(grille, monde);
   }
   // Chemins de terre : par-dessus le sol et son quadrillage, sous tout le
   // reste. Leur propre quadrillage, plus sombre, ne passe que sur eux.
@@ -4034,6 +4067,10 @@ function lacsDePoints(lacs) {
   return res;
 }
 function initLacs(lacs) { LACS = lacsDePoints(lacs); }
+// Zones enneigees : memes contours, decor seulement (le sol change de
+// couleur, rien d'autre)
+var NEIGES = [];
+function initNeiges(n) { NEIGES = lacsDePoints(n); }
 // Tous les lacs en un seul trace (a remplir ou decouper en regle non nulle)
 function cheminLacs(c, lacs, suite) {
   if (!suite) c.beginPath();
@@ -5120,6 +5157,7 @@ function connect() {
       mapVerLocal = msg.mapVer || 1;
       initIle(msg.ile);
       initLacs(msg.lacs);
+      initNeiges(msg.neiges);
       initChemins(msg.chemins);
       initObs(msg.decor);
       initApercu(msg.apercu);          // carte de partie visible des le lobby
@@ -5146,6 +5184,7 @@ function connect() {
       mapVerLocal = msg.mapVer || (mapVerLocal + 1);
       initIle(msg.ile);
       initLacs(msg.lacs);
+      initNeiges(msg.neiges);
       initChemins(msg.chemins);
       initObs(msg.decor);                    // decor + index repartis a neuf
       initApercu(msg.apercu);                // en partie : plus d'apercu
