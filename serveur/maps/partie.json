@@ -14,26 +14,26 @@
     "degats": 2
    },
    {
-    "r": 2900,
+    "r": 4300,
     "duree": 30,
     "pause": 15,
     "degats": 5
    },
    {
-    "r": 1450,
-    "duree": 20,
+    "r": 2400,
+    "duree": 25,
     "pause": 20,
     "degats": 10
    },
    {
-    "r": 700,
-    "duree": 15,
+    "r": 1300,
+    "duree": 20,
     "pause": 15,
     "degats": 15
    },
    {
-    "r": 300,
-    "duree": 10,
+    "r": 650,
+    "duree": 15,
     "pause": 20,
     "degats": 15
    },
