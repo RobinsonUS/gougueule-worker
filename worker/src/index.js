@@ -43,6 +43,9 @@ import bat4Img from '../game/batiment4.png';
 import bat4ToitImg from '../game/batiment4_toit.png';
 import bat4FenImg from '../game/batiment4_fen.png';
 import boutonInter  from '../game/bouton_inter.png';
+import medkitImg    from '../game/medkit.png';
+import slotMedkit    from '../game/slot_medkit.png';
+import boutonSoin   from '../game/bouton_soin.png';
 import arm          from '../game/arm.png';
 import hand         from '../game/hand.png';
 import head         from '../game/head.png';
@@ -225,6 +228,9 @@ export default {
       '/game/batiment4_toit.png': bat4ToitImg,
       '/game/batiment4_fen.png': bat4FenImg,
       '/game/bouton_inter.png':   boutonInter,
+      '/game/medkit.png':         medkitImg,
+      '/game/slot_medkit.png':    slotMedkit,
+      '/game/bouton_soin.png':    boutonSoin,
       '/game/arm.png':          arm,
       '/game/hand.png':         hand,
       '/game/head.png':         head,
