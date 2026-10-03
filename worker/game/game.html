@@ -1968,7 +1968,11 @@ var _zoneVue = null;                        // zone interpolee de la derniere im
 var _carteCv = null, _carteCle = '';
 var CARTE_MINI = { x: 0, y: 0, c: 0 };      // zone cliquable de la minimap
 var CARTE_EAU = '#0071bc';                  // bleu de la fenetre, releve sur le vrai jeu
-var CARTE_GROUPE = 4;                       // cases du sol par carreau de la carte
+// Carreaux de la carte : toujours a peu pres 64 sur la largeur du monde,
+// comme le vrai jeu, quelle que soit sa taille (12 800 : 4 cases du sol par
+// carreau ; 25 600 : 8)
+var CARTE_CASES = 64;
+function carteGroupe(monde) { return Math.max(1, Math.round(monde / CELL / CARTE_CASES)); }
 var CARTE_MARGE = 0.025;                    // bande d'eau autour de la carte
 var CARTE_DEF = 1;                        // peinte a la moitie de sa taille,
                                             // puis etiree : meme grain que le vrai jeu
@@ -2007,7 +2011,7 @@ function peintCarte(cotePx, src) {
   if (src.chemins && src.chemins.length && traceChemins(c, src.chemins)) { c.fillStyle = C.chemin; c.fill(); }
   // quadrillage discret, sur la terre comme sur l'eau
   // Le quadrillage couvre toute la fenetre, terre et eau comprises.
-  var pas = CELL * CARTE_GROUPE;
+  var pas = CELL * carteGroupe(src.monde);
   var deb = Math.ceil((-m / k) / pas) * pas, fin = (cotePx - m) / k;
   c.beginPath();
   for (var g = deb; g < fin; g += pas) {
@@ -2171,6 +2175,13 @@ function dessineTrajetCarte(g, src) {
   var rp = carteRepere(g, src), k = rp.k;
   var ax = rp.x + (ax0 + ux * t0) * k, ay = rp.y + (ay0 + uy * t0) * k;
   var bx = rp.x + (ax0 + ux * t1) * k, by = rp.y + (ay0 + uy * t1) * k;
+  // Bouts du couloir connus : il commence et finit un peu en retrait des
+  // bords. On le trace de son entree a sa sortie, ou l'avion largue les
+  // derniers passagers.
+  if (av.x1 !== undefined && av.x0 !== undefined) {
+    ax = rp.x + av.x0 * k; ay = rp.y + av.y0 * k;
+    bx = rp.x + av.x1 * k; by = rp.y + av.y1 * k;
+  }
 
   var ep = Math.max(3, g.c * 0.0069);       // epaisseur du trait
   var tiret = Math.max(6, g.c * 0.0176);    // longueur d'un tiret
