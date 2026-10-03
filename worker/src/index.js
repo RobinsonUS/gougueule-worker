@@ -16,6 +16,12 @@ import arbreVert    from '../game/arbre_vert.png';
 import arbreOrange  from '../game/arbre_orange.png';
 import arbreRouge   from '../game/arbre_rouge.png';
 import arbreSombre  from '../game/arbre_sombre.png';
+import arbreNeige1   from '../game/arbre_neige1.png';
+import arbreNeige2   from '../game/arbre_neige2.png';
+import arbreNeige3   from '../game/arbre_neige3.png';
+import arbreNeige4   from '../game/arbre_neige4.png';
+import arbreNeige5   from '../game/arbre_neige5.png';
+import arbreNeige6   from '../game/arbre_neige6.png';
 import buissonImg   from '../game/buisson.png';
 import orbeImg      from '../game/orbe.png';
 import feuilleImg   from '../game/feuille.png';
@@ -201,6 +207,12 @@ export default {
       '/game/arbre_orange.png':   arbreOrange,
       '/game/arbre_rouge.png':    arbreRouge,
       '/game/arbre_sombre.png':   arbreSombre,
+      '/game/arbre_neige1.png':  arbreNeige1,
+      '/game/arbre_neige2.png':  arbreNeige2,
+      '/game/arbre_neige3.png':  arbreNeige3,
+      '/game/arbre_neige4.png':  arbreNeige4,
+      '/game/arbre_neige5.png':  arbreNeige5,
+      '/game/arbre_neige6.png':  arbreNeige6,
       '/game/buisson.png':        buissonImg,
       '/game/orbe.png':           orbeImg,
       '/game/feuille.png':        feuilleImg,
