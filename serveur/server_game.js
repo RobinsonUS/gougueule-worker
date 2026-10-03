@@ -461,7 +461,7 @@ function nombre(v, defaut) {
 // Taille du monde et cyclone ne se reglent plus dans l'editeur : ce sont
 // toujours les memes. Une carte qui ne les donne pas prend ces valeurs.
 const CARTE_DEFAUT = {
-  partie: { monde: 12800, zone: {"cx": 6400, "cy": 6400, "r0": 9500, "attente": 20, "vagues": [{"r": 2900, "duree": 30, "pause": 30, "degats": 2}, {"r": 950, "duree": 20, "pause": 15, "degats": 5}, {"r": 300, "duree": 10, "pause": 20, "degats": 10}, {"r": 0, "duree": 45, "pause": 0, "degats": 10}]} },
+  partie: { monde: 25600, zone: {"cx": 12800, "cy": 12800, "r0": 20600, "attente": 20, "vagues": [{"r": 5800, "duree": 60, "pause": 30, "degats": 2}, {"r": 2900, "duree": 30, "pause": 15, "degats": 5}, {"r": 1450, "duree": 20, "pause": 20, "degats": 10}, {"r": 700, "duree": 15, "pause": 15, "degats": 15}, {"r": 300, "duree": 10, "pause": 20, "degats": 15}, {"r": 0, "duree": 45, "pause": 0, "degats": 15}]} },
   lobby:  { monde: 3200,  zone: {"cx": 1600, "cy": 1600, "r0": 1900, "attente": 20, "vagues": [{"r": 700, "duree": 30, "pause": 20, "degats": 2}, {"r": 250, "duree": 20, "pause": 15, "degats": 5}, {"r": 0, "duree": 30, "pause": 0, "degats": 10}]} },
 };
 
@@ -546,6 +546,21 @@ function valideMap(brut, nom) {
     if (pts.length >= 3) ile = pts;
   }
 
+  // Points d'eau (lacs, rivieres...) : des contours comme la cote, mais
+  // l'interieur est de l'eau. Meme arrondi.
+  const lacs = [];
+  if (Array.isArray(brut.lacs)) {
+    for (const l of brut.lacs) {
+      if (!Array.isArray(l)) continue;
+      const pts = l.map(q => Array.isArray(q) ? { x: Number(q[0]), y: Number(q[1]) }
+                                              : { x: Number(q && q.x), y: Number(q && q.y) })
+                   .filter(q => Number.isFinite(q.x) && Number.isFinite(q.y))
+                   .map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }));
+      if (pts.length >= 3) lacs.push(pts);
+    }
+  }
+  const lacsCourbes = lacs.map(l => { const c = courbeIle(l); return { pts: c, boite: boiteDe(c) }; });
+
   const spawns = Array.isArray(brut.spawns)
     ? brut.spawns
         .filter(p => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
@@ -575,7 +590,7 @@ function valideMap(brut, nom) {
   // La carte ne stocke que des points de controle : la vraie cote, arrondie,
   // en est deduite ici, exactement comme cote client et dans l'editeur.
   const ileCourbe = ile ? courbeIle(ile) : null;
-  return { nom: brut.nom || nom, monde, zone, spawns, obs, ile, ileCourbe, chemins,
+  return { nom: brut.nom || nom, monde, zone, spawns, obs, ile, ileCourbe, chemins, lacs, lacsCourbes,
            ileBoite: ileCourbe ? boiteDe(ileCourbe) : null };
 }
 
@@ -1028,10 +1043,7 @@ function boiteDe(pts) {
   return { x0, y0, x1, y1 };
 }
 
-function dansIle(p, x, y) {
-  const c = p.map && p.map.ileCourbe;
-  if (!c) return true;
-  const b = p.map.ileBoite;
+function dansContour(c, b, x, y) {
   if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) return false;
   let dedans = false;
   for (let i = 0, j = c.length - 1; i < c.length; j = i++) {
@@ -1040,6 +1052,15 @@ function dansIle(p, x, y) {
         x < (xj - xi) * (y - yi) / (yj - yi) + xi) dedans = !dedans;
   }
   return dedans;
+}
+// Sur la terre : dans l'ile (s'il y en a une) et hors de tout point d'eau
+function dansIle(p, x, y) {
+  const m = p.map;
+  if (!m) return true;
+  if (m.ileCourbe && !dansContour(m.ileCourbe, m.ileBoite, x, y)) return false;
+  const l = m.lacsCourbes;
+  if (l) for (let i = 0; i < l.length; i++) if (dansContour(l[i].pts, l[i].boite, x, y)) return false;
+  return true;
 }
 
 function borne(a, monde) {
@@ -1862,7 +1883,7 @@ function apercuPartie(p) {
   const mp = chargeMap('partie');
   const av = p.avionPrevu;
   return {
-    monde: mp.monde, ile: mp.ile, chemins: mp.chemins || { traces: [], raccords: [] },
+    monde: mp.monde, ile: mp.ile, lacs: mp.lacs || [], chemins: mp.chemins || { traces: [], raccords: [] },
     decor: mp.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed, v: o.v, rot: o.rot })),
     avion: { x0: av.x0, y0: av.y0, x1: av.x1, y1: av.y1, angle: av.angle, v: AVION_V },
   };
@@ -1879,6 +1900,7 @@ function payloadCarte(p) {
       ZONE_ATTENTE: zc.attente, ZONE_DUREE: zc.duree, ZONE_R0: zc.r0, ZONE_R1: zc.r1,
     },
     ile: p.map.ile,
+    lacs: p.map.lacs || [],
     chemins: p.map.chemins || { traces: [], raccords: [] },
     decor: p.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, seed: o.seed, v: o.v, rot: o.rot,
                              portes: o.portes ? o.portes.map(st => [st.e, st.a]) : undefined })),
