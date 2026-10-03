@@ -2476,7 +2476,7 @@ function dessineMinimap(zone, tPartie) {
       var cs = Math.ceil(_ca);
       timeStr = '0:' + (cs < 10 ? '0' : '') + cs;
     } else {
-      timeStr = '--:--'; // en attente d'adversaire
+      timeStr = '...';   // en attente d'adversaire
     }
   } else {
     // Le serveur donne le temps restant avant le prochain evenement du
