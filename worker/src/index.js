@@ -23,6 +23,7 @@ import arbreNeige4   from '../game/arbre_neige4.png';
 import arbreNeige5   from '../game/arbre_neige5.png';
 import arbreNeige6   from '../game/arbre_neige6.png';
 import buissonImg   from '../game/buisson.png';
+import sapinImg     from '../game/sapin.png';
 import orbeImg      from '../game/orbe.png';
 import feuilleImg   from '../game/feuille.png';
 import hutte1Img    from '../game/hutte1.png';
@@ -48,6 +49,33 @@ import bat3FenImg from '../game/batiment3_fen.png';
 import bat4Img from '../game/batiment4.png';
 import bat4ToitImg from '../game/batiment4_toit.png';
 import bat4FenImg from '../game/batiment4_fen.png';
+import bat5Img from '../game/batiment5.png';
+import bat5ToitImg from '../game/batiment5_toit.png';
+import bat5FenImg from '../game/batiment5_fen.png';
+import bat6Img from '../game/batiment6.png';
+import bat6ToitImg from '../game/batiment6_toit.png';
+import bat6FenImg from '../game/batiment6_fen.png';
+import bat7Img from '../game/batiment7.png';
+import bat7ToitImg from '../game/batiment7_toit.png';
+import bat7FenImg from '../game/batiment7_fen.png';
+import bat8Img from '../game/batiment8.png';
+import bat8ToitImg from '../game/batiment8_toit.png';
+import bat8FenImg from '../game/batiment8_fen.png';
+import bat9Img from '../game/batiment9.png';
+import bat9ToitImg from '../game/batiment9_toit.png';
+import bat9FenImg from '../game/batiment9_fen.png';
+import bat10Img from '../game/batiment10.png';
+import bat10ToitImg from '../game/batiment10_toit.png';
+import bat10FenImg from '../game/batiment10_fen.png';
+import bat11Img from '../game/batiment11.png';
+import bat11ToitImg from '../game/batiment11_toit.png';
+import bat11FenImg from '../game/batiment11_fen.png';
+import bat12Img from '../game/batiment12.png';
+import bat12ToitImg from '../game/batiment12_toit.png';
+import bat12FenImg from '../game/batiment12_fen.png';
+import bat13Img from '../game/batiment13.png';
+import bat13ToitImg from '../game/batiment13_toit.png';
+import bat13FenImg from '../game/batiment13_fen.png';
 import boutonInter  from '../game/bouton_inter.png';
 import medkitImg    from '../game/medkit.png';
 import slotMedkit    from '../game/slot_medkit.png';
@@ -214,6 +242,7 @@ export default {
       '/game/arbre_neige5.png':  arbreNeige5,
       '/game/arbre_neige6.png':  arbreNeige6,
       '/game/buisson.png':        buissonImg,
+      '/game/sapin.png':          sapinImg,
       '/game/orbe.png':           orbeImg,
       '/game/feuille.png':        feuilleImg,
       '/game/hutte1.png':         hutte1Img,
@@ -239,6 +268,33 @@ export default {
       '/game/batiment4.png': bat4Img,
       '/game/batiment4_toit.png': bat4ToitImg,
       '/game/batiment4_fen.png': bat4FenImg,
+      '/game/batiment5.png': bat5Img,
+      '/game/batiment5_toit.png': bat5ToitImg,
+      '/game/batiment5_fen.png': bat5FenImg,
+      '/game/batiment6.png': bat6Img,
+      '/game/batiment6_toit.png': bat6ToitImg,
+      '/game/batiment6_fen.png': bat6FenImg,
+      '/game/batiment7.png': bat7Img,
+      '/game/batiment7_toit.png': bat7ToitImg,
+      '/game/batiment7_fen.png': bat7FenImg,
+      '/game/batiment8.png': bat8Img,
+      '/game/batiment8_toit.png': bat8ToitImg,
+      '/game/batiment8_fen.png': bat8FenImg,
+      '/game/batiment9.png': bat9Img,
+      '/game/batiment9_toit.png': bat9ToitImg,
+      '/game/batiment9_fen.png': bat9FenImg,
+      '/game/batiment10.png': bat10Img,
+      '/game/batiment10_toit.png': bat10ToitImg,
+      '/game/batiment10_fen.png': bat10FenImg,
+      '/game/batiment11.png': bat11Img,
+      '/game/batiment11_toit.png': bat11ToitImg,
+      '/game/batiment11_fen.png': bat11FenImg,
+      '/game/batiment12.png': bat12Img,
+      '/game/batiment12_toit.png': bat12ToitImg,
+      '/game/batiment12_fen.png': bat12FenImg,
+      '/game/batiment13.png': bat13Img,
+      '/game/batiment13_toit.png': bat13ToitImg,
+      '/game/batiment13_fen.png': bat13FenImg,
       '/game/bouton_inter.png':   boutonInter,
       '/game/medkit.png':         medkitImg,
       '/game/slot_medkit.png':    slotMedkit,
