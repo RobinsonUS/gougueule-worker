@@ -376,6 +376,11 @@ const PARA_PLONGE = 2;      // bouton de plongee maintenu : descente x2
 // demi-longueur de l'avion, pour que personne ne le voie disparaitre.
 const AVION_SORTIE = 2200;
 const EAU_LENTEUR = 0.5;    // a pied dans l'eau : deux fois plus lent
+// Glace : on y va 1,5 fois plus vite et on glisse. La vitesse ne suit la
+// commande que peu a peu (GLACE_PRISE par seconde) : lancé, on continue
+// sur sa lancee ; on freine, on tourne, on repart, tout prend du temps.
+// Meme calcul, operation pour operation, dans la prediction du client.
+const GLACE_VITESSE = 1.5, GLACE_PRISE = 1.5, GLACE_ARRET = 15;
 const ILE_PASSES = 3;       // passes d'arrondi de la cote (Chaikin)
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
 // Med Kit : 5 s sans bouger ni changer d'emplacement, puis tous les PV
@@ -576,6 +581,9 @@ function valideMap(brut, nom) {
   // le client ne fait que changer la couleur du sol)
   const neiges = contours(brut.neiges);
   const lacsCourbes = lacs.map(l => { const c = courbeIle(l); return { pts: c, boite: boiteDe(c) }; });
+  // Zones de glace : memes contours ; dessus on glisse (voir appliqueCommande)
+  const glaces = contours(brut.glaces);
+  const glacesCourbes = glaces.map(l => { const c = courbeIle(l); return { pts: c, boite: boiteDe(c) }; });
 
   const spawns = Array.isArray(brut.spawns)
     ? brut.spawns
@@ -606,7 +614,7 @@ function valideMap(brut, nom) {
   // La carte ne stocke que des points de controle : la vraie cote, arrondie,
   // en est deduite ici, exactement comme cote client et dans l'editeur.
   const ileCourbe = ile ? courbeIle(ile) : null;
-  return { nom: brut.nom || nom, monde, zone, spawns, obs, ile, ileCourbe, chemins, lacs, lacsCourbes, neiges,
+  return { nom: brut.nom || nom, monde, zone, spawns, obs, ile, ileCourbe, chemins, lacs, lacsCourbes, neiges, glaces, glacesCourbes,
            ileBoite: ileCourbe ? boiteDe(ileCourbe) : null };
 }
 
@@ -1080,6 +1088,13 @@ function dansIle(p, x, y) {
   if (l) for (let i = 0; i < l.length; i++) if (dansContour(l[i].pts, l[i].boite, x, y)) return false;
   return true;
 }
+// Sur une zone de glace (la terre se verifie a part : un lac dans la glace
+// reste un lac)
+function dansGlace(p, x, y) {
+  const g = p.map && p.map.glacesCourbes;
+  if (g) for (let i = 0; i < g.length; i++) if (dansContour(g[i].pts, g[i].boite, x, y)) return true;
+  return false;
+}
 
 function borne(a, monde) {
   a.x = Math.min(monde - R_JOUEUR, Math.max(R_JOUEUR, a.x));
@@ -1151,7 +1166,7 @@ function nettoieCmd(c) {
 // ─────────────── Commande d'un joueur ─────────────────────────────
 function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   // Dans l'avion : le joueur n'a pas encore de prise sur le monde
-  if (a.enAvion) { a.lastSeq = cmd.seq; if (typeof cmd.angle === 'number') a.angle = cmd.angle; return; }
+  if (a.enAvion) { a.vx = a.vy = 0; a.lastSeq = cmd.seq; if (typeof cmd.angle === 'number') a.angle = cmd.angle; return; }
   const objet = a.inv && a.inv[a.slot];
   // Bouton d'action (a pied) : Med Kit en main, il lance le soin s'il
   // manque des PV (sinon rien) ; sinon il ouvre ou ferme la porte a portee.
@@ -1179,6 +1194,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   // En parachute on survole le decor : deplacement libre, juste borne
   if (a.para > 0) {
     a.x += mx * VITESSE * dt; a.y += my * VITESSE * dt;
+    a.vx = a.vy = 0;          // on touche le sol sans elan
     borne(a, p.monde);
     if (typeof cmd.angle === 'number') a.angle = cmd.angle;
     a.plonge = !!cmd.plonge;      // bouton maintenu : on tombe deux fois plus vite
@@ -1189,13 +1205,40 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   // Dans l'eau, on avance deux fois moins vite. A pied seulement : en
   // parachute et en avion la question ne se pose pas, ces branches sont
   // sorties plus haut.
-  const vit = VITESSE * (dansIle(p, a.x, a.y) ? 1 : EAU_LENTEUR);
-  // Bots : 1 itération de collision (précision réduite mais 3× plus rapide)
   // Bots comme joueurs : 3 passes de collision. Une seule laissait un bot
   // pris entre deux murs (un coin, une porte) ressortir d'un cote puis de
   // l'autre d'un tick a l'autre : il tremblait sur place.
-  if (!p.arbresGrid) majArbres(p);
-  deplaceSolo(a, mx * vit * dt, my * vit * dt, p.arbres, 3, p.monde, p.arbresGrid, p);
+  // Une commande de remplissage (rien recu du joueur ce tick) ne deplace
+  // personne : sur la glace elle ferait glisser le serveur en avance sur le
+  // client, qui n'a jamais joue ce pas.
+  if (!cmd.vide) {
+    if (!p.arbresGrid) majArbres(p);
+    const terre = dansIle(p, a.x, a.y);
+    const x0 = a.x, y0 = a.y;
+    let vmax;
+    if (terre && dansGlace(p, a.x, a.y)) {
+      // Sur la glace : la vitesse rejoint la commande peu a peu
+      vmax = VITESSE * GLACE_VITESSE;
+      const k = Math.min(1, GLACE_PRISE * dt);
+      let vx = a.vx || 0, vy = a.vy || 0;
+      vx += (mx * vmax - vx) * k; vy += (my * vmax - vy) * k;
+      if (mx === 0 && my === 0 && Math.hypot(vx, vy) < GLACE_ARRET) { vx = 0; vy = 0; }
+      deplaceSolo(a, vx * dt, vy * dt, p.arbres, 3, p.monde, p.arbresGrid, p);
+    } else {
+      // Dans l'eau, on avance deux fois moins vite
+      vmax = VITESSE * (terre ? 1 : EAU_LENTEUR);
+      deplaceSolo(a, mx * vmax * dt, my * vmax * dt, p.arbres, 3, p.monde, p.arbresGrid, p);
+    }
+    // L'elan garde est le deplacement reel : un mur ou un arbre l'arrete
+    // dans sa direction. Borne, pour qu'une poussee hors d'un obstacle ne
+    // devienne pas un elan.
+    if (dt > 0) {
+      let vx = (a.x - x0) / dt, vy = (a.y - y0) / dt;
+      const v = Math.hypot(vx, vy);
+      if (v > vmax) { vx *= vmax / v; vy *= vmax / v; }
+      a.vx = vx; a.vy = vy;
+    }
+  }
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
   if (cmd.poing && !objet && a._pCd < 0.02) {      // poing : mains vides seulement
@@ -1382,7 +1425,7 @@ function pas(p) {
     if (!a.vivant) { a.file.length = 0; continue; }
     const mouvSeulement = (p.phaseLobby === true);
     if (a.file.length === 0) {
-      appliqueCommande(p, a, { seq: a.lastSeq, mx: 0, my: 0, angle: a.angle, dt: DT }, mouvSeulement);
+      appliqueCommande(p, a, { seq: a.lastSeq, mx: 0, my: 0, angle: a.angle, dt: DT, vide: true }, mouvSeulement);
     } else {
       let budget = 0;
       while (a.file.length && budget < 0.10) {
@@ -1901,7 +1944,7 @@ function apercuPartie(p) {
   const mp = chargeMap('partie');
   const av = p.avionPrevu;
   return {
-    monde: mp.monde, ile: mp.ile, lacs: mp.lacs || [], neiges: mp.neiges || [], chemins: mp.chemins || { traces: [], raccords: [] },
+    monde: mp.monde, ile: mp.ile, lacs: mp.lacs || [], neiges: mp.neiges || [], glaces: mp.glaces || [], chemins: mp.chemins || { traces: [], raccords: [] },
     decor: mp.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed, v: o.v, rot: o.rot, neige: o.neige })),
     avion: { x0: av.x0, y0: av.y0, x1: av.x1, y1: av.y1, angle: av.angle, v: AVION_V },
   };
@@ -1920,6 +1963,7 @@ function payloadCarte(p) {
     ile: p.map.ile,
     lacs: p.map.lacs || [],
     neiges: p.map.neiges || [],
+    glaces: p.map.glaces || [],
     chemins: p.map.chemins || { traces: [], raccords: [] },
     decor: p.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, seed: o.seed, v: o.v, rot: o.rot, neige: o.neige,
                              portes: o.portes ? o.portes.map(st => [st.e, st.a]) : undefined })),
@@ -2204,7 +2248,7 @@ function envoieSnapshot(room) {
       enAvion: !!a.enAvion, para: r4(a.para || 0), plonge: !!a.plonge,
       munitions: a.munitions, rechargement: r4(a.rechargement), dureeRechargeMax: a.dureeRechargeMax,
       secousse: r3(a.secousse), touche: r3(a.touche), tirTimer: r3(a.tirTimer), recul: r3(a.recul),
-      revele: r3(a.revele), slot: a.slot, inv: a.inv, soin: r3(a.soin || 0),
+      revele: r3(a.revele), slot: a.slot, inv: a.inv, soin: r3(a.soin || 0), vx: a.vx ? r2(a.vx) : 0, vy: a.vy ? r2(a.vy) : 0,
       poingTimer: r3(a.poingTimer), punchSide: a.punchSide };
   }
   base.agents = agents;
