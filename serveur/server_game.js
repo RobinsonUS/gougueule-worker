@@ -376,11 +376,11 @@ const PARA_PLONGE = 2;      // bouton de plongee maintenu : descente x2
 // demi-longueur de l'avion, pour que personne ne le voie disparaitre.
 const AVION_SORTIE = 2200;
 const EAU_LENTEUR = 0.5;    // a pied dans l'eau : deux fois plus lent
-// Glace : on y va 1,5 fois plus vite et on glisse. La vitesse ne suit la
+// Glace : on y va 2 fois plus vite et on glisse. La vitesse ne suit la
 // commande que peu a peu (GLACE_PRISE par seconde) : lancé, on continue
 // sur sa lancee ; on freine, on tourne, on repart, tout prend du temps.
 // Meme calcul, operation pour operation, dans la prediction du client.
-const GLACE_VITESSE = 1.5, GLACE_PRISE = 0.9, GLACE_ARRET = 15;
+const GLACE_VITESSE = 2, GLACE_PRISE = 0.9, GLACE_ARRET = 15;
 const ILE_PASSES = 3;       // passes d'arrondi de la cote (Chaikin)
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
 // Med Kit : 5 s sans bouger ni changer d'emplacement, puis tous les PV
