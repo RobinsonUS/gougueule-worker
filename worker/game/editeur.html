@@ -149,6 +149,7 @@
     <h2>Objet</h2>
     <div class="grille">
       <div class="opt on" data-type="arbre"><div class="ic">A</div>Arbre</div>
+      <div class="opt" data-type="arbreNeige"><div class="ic">A*</div>Arbre enneige</div>
       <div class="opt" data-type="buisson"><div class="ic">b</div>Buisson</div>
       <div class="opt" data-type="hutte1"><div class="ic">H1</div>Hutte 1</div>
       <div class="opt" data-type="hutte2"><div class="ic">H2</div>Hutte 2</div>
@@ -385,6 +386,7 @@ function cosmetiques(seed) {
       { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
       { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
     ],
+    teinteNeige: (rng() * 6) | 0,   // tire en dernier, comme en jeu
   };
 }
 
@@ -406,7 +408,8 @@ function ajouteCheminBlob(x, y, r, lobes, phase, amp) {
 
 // Les memes images que le jeu, servies par le meme worker
 const SPRITES = {};
-['arbre_vert', 'arbre_orange', 'arbre_rouge', 'arbre_sombre', 'buisson',
+['arbre_vert', 'arbre_orange', 'arbre_rouge', 'arbre_sombre',
+ 'arbre_neige1', 'arbre_neige2', 'arbre_neige3', 'arbre_neige4', 'arbre_neige5', 'arbre_neige6', 'buisson',
  'hutte1', 'hutte1_toit', 'hutte2', 'hutte2_toit', 'maison', 'maison_toit', 'maison_fen',
  'batiment1', 'batiment1_toit', 'batiment1_fen', 'batiment2', 'batiment2_toit', 'batiment2_fen',
  'batiment3', 'batiment3_toit', 'batiment3_fen', 'batiment4', 'batiment4_toit', 'batiment4_fen'].forEach(function (n) {
@@ -427,9 +430,21 @@ var VEG = {
   arbre_orange: { cx: 149.02, cy: 149.01, r: 143.74 },
   arbre_rouge:  { cx: 149.02, cy: 149.01, r: 143.74 },
   arbre_sombre: { cx: 149.02, cy: 149.01, r: 143.74 },
+  // arbres enneiges : memes mesures, sur leurs propres images
+  arbre_neige1: { cx: 157.05, cy: 156.56, r: 150.84 },
+  arbre_neige2: { cx: 156.43, cy: 156.81, r: 150.86 },
+  arbre_neige3: { cx: 156.8, cy: 156.7, r: 150.82 },
+  arbre_neige4: { cx: 156.37, cy: 156.37, r: 150.86 },
+  arbre_neige5: { cx: 156.61, cy: 157.06, r: 150.83 },
+  arbre_neige6: { cx: 156.61, cy: 157.11, r: 150.84 },
   buisson:      { cx: 184.68, cy: 196.69, r: 143.78 },  // l'image n'est pas centree
 };
 var VEG_ARBRES = ['arbre_vert', 'arbre_orange', 'arbre_rouge', 'arbre_sombre'];  // index = teinte
+// Arbres enneiges (o.neige) : meme arbre en tout point, seule l'image change
+var VEG_NEIGE = ['arbre_neige1', 'arbre_neige2', 'arbre_neige3', 'arbre_neige4', 'arbre_neige5', 'arbre_neige6'];
+function nomArbre(o) {
+  return o.neige ? (VEG_NEIGE[o.teinteNeige] || VEG_NEIGE[0]) : (VEG_ARBRES[o.teinte] || VEG_ARBRES[0]);
+}
 var VEG_ECH = { arbre: 1.0044, buisson: 0.9980 };  // calibre sur le rendu reel (voir plus haut)
 // Debord de l'ombre autour du contour, en unites monde. Calibre pour que
 // l'anneau depasse du feuillage autant que l'ancien (bande de 13,5 dont la
@@ -560,12 +575,12 @@ function decalageSecousse(o) {
 }
 
 function dessineOmbreArbre(o) {
-  var nom = VEG_ARBRES[o.teinte] || VEG_ARBRES[0];
+  var nom = nomArbre(o);
   if (vegPret(nom)) { var q = decalageSecousse(o); dessineVeg(nom, o, q.x, q.y, true); return; }
   dessineOmbreArbreDessin(o);
 }
 function dessineArbreTexture(o) {
-  var nom = VEG_ARBRES[o.teinte] || VEG_ARBRES[0];
+  var nom = nomArbre(o);
   if (vegPret(nom)) { var q = decalageSecousse(o); dessineVeg(nom, o, q.x, q.y, false); return; }
   dessineArbreTextureDessin(o);
 }
@@ -808,13 +823,13 @@ function spriteMini(nom, tPx) {
   return e;
 }
 function vegToutPret() {
-  for (const n of VEG_ARBRES) if (!vegPret(n)) return false;
+  for (const n of VEG_ARBRES.concat(VEG_NEIGE)) if (!vegPret(n)) return false;
   return vegPret('buisson');
 }
 // Meme cadrage que dessineVeg (centre, echelle, rotation)
 function dessineVegMini(o) {
   const c = cosmo(o);
-  const nom = o.type === 'buisson' ? 'buisson' : (VEG_ARBRES[c.teinte] || VEG_ARBRES[0]);
+  const nom = o.type === 'buisson' ? 'buisson' : nomArbre(c);
   const sp = SPRITES[nom], m = VEG[nom];
   const ech = (o.r * VEG_ECH[o.type === 'buisson' ? 'buisson' : 'arbre']) / m.r;
   const e = spriteMini(nom, sp.naturalWidth * ech * PXV);
@@ -1187,7 +1202,7 @@ function cosmo(o) {
     c = Object.assign({}, o, cosmetiques(o.seed), { alphaVis: 1, secousse: 0, pv: 100 });
     cacheCos.set(o, c);
   }
-  c.x = o.x; c.y = o.y; c.r = o.r; c.type = o.type;
+  c.x = o.x; c.y = o.y; c.r = o.r; c.type = o.type; c.neige = o.neige;
   return c;
 }
 
@@ -1245,6 +1260,8 @@ function nouvelObjet(x, y) {
   if (estTypeHutte(typeObj))
     return { x: Math.round(x), y: Math.round(y), r: HUTTE.R, type: 'hutte',
              v: typeObj === 'hutte2' ? 2 : 1, rot: rotHutte, seed: graine() };
+  if (typeObj === 'arbreNeige')                     // un arbre, avec l'image enneigee
+    return { x: Math.round(x), y: Math.round(y), r: R_ARBRE, type: 'arbre', neige: true, seed: graine() };
   return { x: Math.round(x), y: Math.round(y), r: RAYON[typeObj], type: typeObj, seed: graine() };
 }
 // Distance d'un point a un rectangle (0 dedans)
@@ -1274,6 +1291,7 @@ let sel = null, prise = null;        // element choisi ; decalage souris pendant
 const NOMS_TYPE = { arbre: 'Arbre', buisson: 'Buisson' };
 function nomType(o) {
   if (NOMS_BAT[o.type]) return NOMS_BAT[o.type];
+  if (o.type === 'arbre' && o.neige) return 'Arbre enneige';
   return o.type === 'hutte' ? 'Hutte ' + (o.v === 2 ? 2 : 1) : (NOMS_TYPE[o.type] || o.type);
 }
 // L'element sous la souris : la vegetation passe avant les huttes, comme
@@ -2517,7 +2535,8 @@ function depuisJson(txt) {
       x: Math.round(+o.x), y: Math.round(+o.y),
       r: o.type === 'buisson' ? R_BUISSON : R_ARBRE,      // taille fixe, jamais arrondie
       type: o.type === 'buisson' ? 'buisson' : 'arbre',
-      seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0)
+      seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0),
+      ...(o.type !== 'buisson' && o.neige ? { neige: true } : {})
     }))
   };
   traceChemin = null; prisChemin = null; poigneeLac = null; _demande++; _raccordsAJour = true;
