@@ -164,6 +164,8 @@ const DUREE_MAX = 120;
 // ============ inventaire ============
 const NB_SLOTS = 6;
 const EAU_LENTEUR = 0.5;   // a pied dans l'eau : deux fois plus lent
+// Glace : 1,5 fois plus vite, et on glisse. Memes valeurs que le serveur.
+const GLACE_VITESSE = 1.5, GLACE_PRISE = 1.5, GLACE_ARRET = 15;
 
 // ============ couleurs ============
 const C = {
@@ -180,6 +182,9 @@ const C = {
   // Sol enneige et son quadrillage, releves sur une capture du vrai jeu
   neige:       '#e8f1f7',
   ligneNeige:  '#d9e2e8',
+  // Glace et son quadrillage, releves sur la capture ramenee en sRGB
+  glace:       '#a8d5f9',
+  ligneGlace:  '#9ec9ea',
   // Chemins de terre et leur quadrillage, releves sur la capture de
   // reference une fois ramenee en sRGB (la capture porte le profil couleur
   // de l'ecran : lues telles quelles, ses valeurs sont fausses. Ramenees en
@@ -1881,6 +1886,12 @@ function _mmBande(c, g, h2, d, b, large, taillePx) {
       c.fillStyle = C.neige; cheminLacs(c, NEIGES); c.fill();
       c.restore();
     }
+    if (GLACES.length) {
+      c.save();
+      if (ILE) { cheminIle(c); c.clip(); }
+      c.fillStyle = C.glace; cheminLacs(c, GLACES); c.fill();
+      c.restore();
+    }
     if (LACS.length) { c.fillStyle = C.eau; cheminLacs(c, LACS); c.fill(); }
   }
   if (CHEMINS.length && traceChemins(c, CHEMINS, g, h2, d, b)) { c.fillStyle = C.chemin; c.fill(); }
@@ -1998,6 +2009,7 @@ function initApercu(a) {
     ile: ileDePoints(a.ile),
     lacs: lacsDePoints(a.lacs),
     neiges: lacsDePoints(a.neiges),
+    glaces: lacsDePoints(a.glaces),
     chemins: cheminsDePoints(a.chemins, a.monde),
     obs: a.decor.map(function (o) {
       return Object.assign({}, o, cosmetiques(o.seed), { alphaVis: 1 });
@@ -2009,9 +2021,9 @@ function initApercu(a) {
 // de la carte de partie tant qu'on attend dans le lobby.
 function carteSource() {
   if (snapDernier && snapDernier.phaseLobby && APERCU)
-    return { monde: APERCU.monde, ile: APERCU.ile, lacs: APERCU.lacs, neiges: APERCU.neiges, chemins: APERCU.chemins, obs: APERCU.obs,
+    return { monde: APERCU.monde, ile: APERCU.ile, lacs: APERCU.lacs, neiges: APERCU.neiges, glaces: APERCU.glaces, chemins: APERCU.chemins, obs: APERCU.obs,
              avion: APERCU.avion, apercu: true };
-  return { monde: MONDE, ile: ILE, lacs: LACS, neiges: NEIGES, chemins: CHEMINS, obs: localObs,
+  return { monde: MONDE, ile: ILE, lacs: LACS, neiges: NEIGES, glaces: GLACES, chemins: CHEMINS, obs: localObs,
            avion: (snapDernier && snapDernier.avion) || null, apercu: false };
 }
 
@@ -2065,6 +2077,12 @@ function peintCarte(cotePx, src) {
     c.fillStyle = C.neige; cheminLacs(c, src.neiges); c.fill();
     c.restore();
   }
+  if (src.glaces && src.glaces.length) {
+    c.save();
+    if (src.ile) { cheminIlePts(c, src.ile); c.clip(); }
+    c.fillStyle = C.glace; cheminLacs(c, src.glaces); c.fill();
+    c.restore();
+  }
   if (src.lacs && src.lacs.length) { c.fillStyle = CARTE_EAU; cheminLacs(c, src.lacs); c.fill(); }
   if (src.chemins && src.chemins.length && traceChemins(c, src.chemins)) { c.fillStyle = C.chemin; c.fill(); }
   // quadrillage discret, sur la terre comme sur l'eau
@@ -2110,7 +2128,7 @@ function dessineCarte() {
   var src = carteSource();
   var cotePx = Math.max(8, Math.round(g.c * PX * CARTE_DEF));
   var cle = mapVerLocal + ':' + src.monde + ':' + cotePx + ':' + (src.ile ? src.ile.length : 0) +
-            ':' + (src.lacs ? src.lacs.length : 0) + ':' + (src.neiges ? src.neiges.length : 0) + ':' + src.obs.length + ':' + vegToutPret() + ':' + (src.apercu ? 'a' : 'p');
+            ':' + (src.lacs ? src.lacs.length : 0) + ':' + (src.neiges ? src.neiges.length : 0) + ':' + (src.glaces ? src.glaces.length : 0) + ':' + src.obs.length + ':' + vegToutPret() + ':' + (src.apercu ? 'a' : 'p');
   if (!_carteCv || _carteCle !== cle) { _carteCv = peintCarte(cotePx, src); _carteCle = cle; }
 
   repereEcran();
@@ -2997,6 +3015,18 @@ function neigesMonde(grille, cheminTerre) {
   grille();
   ctx.restore();
 }
+// Glace : pareil, par-dessus la neige et sous l'eau
+function glacesMonde(grille, cheminTerre) {
+  if (!GLACES.length) return;
+  ctx.save();
+  cheminTerre(ctx); ctx.clip();
+  ctx.fillStyle = C.glace;
+  cheminLacs(ctx, GLACES); ctx.fill();
+  ctx.clip();
+  ctx.strokeStyle = C.ligneGlace;
+  grille();
+  ctx.restore();
+}
 function lacsMonde(grille, cheminTerre) {
   if (!LACS.length) return;
   ctx.fillStyle = C.eau;
@@ -3085,6 +3115,7 @@ function dessine(p, moi, viseur, drag) {
     grille();
     ctx.restore();
     neigesMonde(grille, cheminIle);
+    glacesMonde(grille, cheminIle);
     lacsMonde(grille, cheminIle);
   } else {
     ctx.save(); horsMonde(); ctx.strokeStyle = C.ligneDehors; grille(); ctx.restore();
@@ -3097,6 +3128,7 @@ function dessine(p, moi, viseur, drag) {
     ctx.restore();
     var monde = function (c) { c.beginPath(); c.rect(0, 0, MONDE, MONDE); };
     neigesMonde(grille, monde);
+    glacesMonde(grille, monde);
     lacsMonde(grille, monde);
   }
   // Chemins de terre : par-dessus le sol et son quadrillage, sous tout le
@@ -4121,6 +4153,9 @@ function initLacs(lacs) { LACS = lacsDePoints(lacs); }
 // couleur, rien d'autre)
 var NEIGES = [];
 function initNeiges(n) { NEIGES = lacsDePoints(n); }
+// Zones de glace : memes contours ; dessus on glisse (voir appliqueLoc)
+var GLACES = [];
+function initGlaces(g) { GLACES = lacsDePoints(g); }
 // Tous les lacs en un seul trace (a remplir ou decouper en regle non nulle)
 function cheminLacs(c, lacs, suite) {
   if (!suite) c.beginPath();
@@ -4311,6 +4346,11 @@ function dansIleLoc(x, y) {
   for (var i = 0; i < LACS.length; i++)
     if (dansContourLoc(LACS[i].pts, LACS[i].boite, x, y)) return false;
   return true;
+}
+function dansGlaceLoc(x, y) {
+  for (var i = 0; i < GLACES.length; i++)
+    if (dansContourLoc(GLACES[i].pts, GLACES[i].boite, x, y)) return true;
+  return false;
 }
 
 function initObs(decor) {
@@ -4805,9 +4845,33 @@ function appliqueLoc(a, cmd) {
   var mx = cmd.mx || 0, my = cmd.my || 0;
   var n = Math.hypot(mx, my);
   if (n > 1) { mx /= n; my /= n; }
-  // Dans l'eau on avance deux fois moins vite, comme cote serveur
-  var _vit = SIM.VITESSE * (dansIleLoc(a.x, a.y) ? 1 : EAU_LENTEUR);
-  deplaceLoc(a, mx * _vit * dt, my * _vit * dt);
+  // Meme calcul que le serveur, operation pour operation : dans l'eau on
+  // avance deux fois moins vite ; sur la glace 1,5 fois plus vite, et la
+  // vitesse ne rejoint la commande que peu a peu (on glisse).
+  if (dansAvion() || enParachute()) {
+    var _vit = SIM.VITESSE * (dansIleLoc(a.x, a.y) ? 1 : EAU_LENTEUR);
+    deplaceLoc(a, mx * _vit * dt, my * _vit * dt);
+    a.vx = 0; a.vy = 0;
+  } else {
+    var _terre = dansIleLoc(a.x, a.y), _x0 = a.x, _y0 = a.y, _vmax;
+    if (_terre && dansGlaceLoc(a.x, a.y)) {
+      _vmax = SIM.VITESSE * GLACE_VITESSE;
+      var _k = Math.min(1, GLACE_PRISE * dt);
+      var _vx = a.vx || 0, _vy = a.vy || 0;
+      _vx += (mx * _vmax - _vx) * _k; _vy += (my * _vmax - _vy) * _k;
+      if (mx === 0 && my === 0 && Math.hypot(_vx, _vy) < GLACE_ARRET) { _vx = 0; _vy = 0; }
+      deplaceLoc(a, _vx * dt, _vy * dt);
+    } else {
+      _vmax = SIM.VITESSE * (_terre ? 1 : EAU_LENTEUR);
+      deplaceLoc(a, mx * _vmax * dt, my * _vmax * dt);
+    }
+    if (dt > 0) {
+      var _nvx = (a.x - _x0) / dt, _nvy = (a.y - _y0) / dt;
+      var _v = Math.hypot(_nvx, _nvy);
+      if (_v > _vmax) { _nvx *= _vmax / _v; _nvy *= _vmax / _v; }
+      a.vx = _nvx; a.vy = _nvy;
+    }
+  }
 
   // Separation joueur-joueur : comme separeJoueurs() cote serveur. En l'air
   // le serveur ne separe personne : si le client le faisait quand meme, il
@@ -4887,6 +4951,7 @@ function reconcilie(snap) {
 
   // on repart de la verite serveur
   moi.x = s.x; moi.y = s.y;
+  moi.vx = s.vx || 0; moi.vy = s.vy || 0;     // l'elan sur la glace
   if (s.slot !== undefined) moi.slot = s.slot;
   if (s.inv) moi.inv = s.inv;
   if (invAttente) {
@@ -5209,6 +5274,7 @@ function connect() {
       initIle(msg.ile);
       initLacs(msg.lacs);
       initNeiges(msg.neiges);
+      initGlaces(msg.glaces);
       initChemins(msg.chemins);
       initObs(msg.decor);
       initApercu(msg.apercu);          // carte de partie visible des le lobby
@@ -5236,6 +5302,7 @@ function connect() {
       initIle(msg.ile);
       initLacs(msg.lacs);
       initNeiges(msg.neiges);
+      initGlaces(msg.glaces);
       initChemins(msg.chemins);
       initObs(msg.decor);                    // decor + index repartis a neuf
       initApercu(msg.apercu);                // en partie : plus d'apercu
