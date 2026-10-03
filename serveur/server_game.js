@@ -839,14 +839,16 @@ function majBalles(p, arr) {
 // ─────────────── Avion de largage ──────────────────────────────────
 // Un point au hasard sur un cote, un autre sur le cote oppose : la
 // droite qui les relie est le couloir de vol.
+// Le couloir commence et finit un peu en retrait des bords (4 % de la
+// carte), comme dans le vrai jeu.
 function creeAvion(rng, monde) {
-  const marge = monde * 0.12;
+  const marge = monde * 0.12, retrait = monde * 0.04;
   const surCote = (cote, u) => {
     const v = marge + u * (monde - 2 * marge);
-    if (cote === 0) return { x: v, y: 0 };
-    if (cote === 1) return { x: monde, y: v };
-    if (cote === 2) return { x: v, y: monde };
-    return { x: 0, y: v };
+    if (cote === 0) return { x: v, y: retrait };
+    if (cote === 1) return { x: monde - retrait, y: v };
+    if (cote === 2) return { x: v, y: monde - retrait };
+    return { x: retrait, y: v };
   };
   const cote = (rng() * 4) | 0;
   let a = surCote(cote, rng());
@@ -2167,6 +2169,7 @@ function envoieSnapshot(room) {
     zoneCible: p.zoneBouge && p.zoneCible ? { x: r2(p.zoneCible.x), y: r2(p.zoneCible.y), r: r2(p.zoneCible.r) } : null,
     zoneT: r3(p.zoneT),
     avion: p.avion ? { x: r2(p.avion.x), y: r2(p.avion.y), angle: r4(p.avion.angle), v: AVION_V,
+                       x0: r2(p.avion.x0), y0: r2(p.avion.y0), x1: r2(p.avion.x1), y1: r2(p.avion.y1),
                        vol: !!p.avion.enVol, largage: p.phaseVol,
                        fin: p.tVol >= p.avion.duree } : null,
     paraDuree: PARA_DUREE,
