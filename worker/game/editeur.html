@@ -141,7 +141,8 @@
     <div class="opt" data-outil="gomme"><div class="ic">x</div>Gomme</div>
     <div class="opt" data-outil="cote"><div class="ic">~~</div>Cote</div>
     <div class="opt" data-outil="eau"><div class="ic">&#8776;</div>Eau</div>
-    <div class="opt" data-outil="chemin"><div class="ic">=</div>Chemin</div>
+    <div class="opt" data-outil="neige"><div class="ic">*</div>Neige</div>
+    <div class="opt large" data-outil="chemin"><div class="ic">=</div>Chemin</div>
   </div>
 
   <div id="blocObjet">
@@ -192,6 +193,18 @@
     <input type="range" id="lissage2" min="1" max="24" value="4">
     <button class="act rouge" id="eauVide">Effacer tous les points d'eau</button>
     <div class="ligne">Points d'eau <b id="vEau">0</b></div>
+  </div>
+
+  <div id="blocNeige">
+    <h2>Zones enneigees</h2>
+    <div class="note">Dessinez le contour d'un seul trait, comme pour l'eau :
+      l'interieur devient de la neige. Decor seulement : le sol change de
+      couleur, rien d'autre (on y avance comme sur l'herbe). L'eau et les
+      chemins passent par-dessus. Glissez une poignee pour retoucher ; clic
+      droit dessus pour la retirer, clic droit dans une zone pour la
+      supprimer.</div>
+    <button class="act rouge" id="neigeVide">Effacer toutes les zones enneigees</button>
+    <div class="ligne">Zones enneigees <b id="vNeige">0</b></div>
   </div>
 
   <div id="blocChemin">
@@ -299,6 +312,8 @@ const C = {
   dehors:      '#4a6635',
   ligneDehors: '#425c2e',
   eau:         '#0071bc',
+  neige:       '#e8f1f7',   // sol enneige, releve sur le vrai jeu
+  ligneNeige:  '#d9e2e8',
   eauLoin:     '#075a92',
   ligneEau:    '#006ab0',
   chemin:      '#b48b4d',   // memes valeurs que le jeu (capture ramenee en sRGB)
@@ -667,7 +682,7 @@ const ZONE_DEFAUT = {"cx": 12800, "cy": 12800, "r0": 19305, "attente": 20, "vagu
 let carte = {
   nom: 'partie', monde: 25600,
   zone: JSON.parse(JSON.stringify(ZONE_DEFAUT)),
-  ile: null, lacs: [], chemins: { traces: [], raccords: [] }, spawns: [], obs: []
+  ile: null, lacs: [], neiges: [], chemins: { traces: [], raccords: [] }, spawns: [], obs: []
 };
 let vue = { x: 12800, y: 12800, z: 0.03 };
 // ═══ Batiments (huttes, maison) : meme geometrie et meme dessin que le jeu ═══
@@ -828,7 +843,10 @@ function dessineHutteEntiere(o) { dessineHutte(o, 1); dessineHutte(o, 0); dessin
 
 let outil = 'placer', typeObj = 'arbre', rotHutte = 0;
 let poignee = null;           // index du point de cote en cours de deplacement
-let poigneeLac = null;        // { l, i } : point d'eau et point en cours de deplacement
+let poigneeLac = null;        // { l, i } : zone (eau ou neige) et point en cours de deplacement
+// Outils a zones : chacun range ses contours dans sa liste de la carte
+const ZONES = { eau: 'lacs', neige: 'neiges' };
+function zonesOutil() { return carte[ZONES[outil]] || []; }
 let traceCote = null;         // trait a main levee en cours
 let lissage = 4;              // tolerance du lissage, en pixels ecran
 let portee = 600, densite = 6, rGomme = 300;
@@ -850,6 +868,7 @@ function annule() {
   if (graineSel !== null) choisit(carte.obs.find(o => o.seed === graineSel) || null);
   carte.chemins = cheminsValides(carte.chemins);
   if (!Array.isArray(carte.lacs)) carte.lacs = [];
+  if (!Array.isArray(carte.neiges)) carte.neiges = [];
   majOrigine();
   prisChemin = null; calculeRaccords();
   cacheCos.clear(); reindexe(); majCote(); majChemins(); synchronisePanneau();
@@ -927,26 +946,33 @@ function dessine() {
   } else {
     ctx.strokeStyle = C.ligne; grille();
   }
-  // points d'eau : par-dessus la terre et son quadrillage, avec le
-  // quadrillage bleu de l'eau, limite a la terre (sur la mer il y est deja)
-  const lacs = lacsCourbes();
-  if (lacs.length) {
-    const traceLacs = () => {
+  // Zones enneigees puis points d'eau : par-dessus la terre et son
+  // quadrillage, chacun avec son propre quadrillage. La neige reste sur la
+  // terre ; le quadrillage de l'eau aussi (sur la mer il y est deja).
+  const terre = () => { if (ile) traceIle(); else { ctx.beginPath(); ctx.rect(0, 0, carte.monde, carte.monde); } };
+  const couche = (liste, fond, trait, fondSurTerre) => {
+    const zs = lacsCourbes(liste);
+    if (!zs.length) return;
+    const trace = () => {
       ctx.beginPath();
-      for (const l of lacs) {
+      for (const l of zs) {
         ctx.moveTo(l[0].x, l[0].y);
         for (let i = 1; i < l.length; i++) ctx.lineTo(l[i].x, l[i].y);
         ctx.closePath();
       }
     };
-    ctx.fillStyle = C.eau; traceLacs(); ctx.fill();
     ctx.save();
-    if (ile) traceIle(); else { ctx.beginPath(); ctx.rect(0, 0, carte.monde, carte.monde); }
-    ctx.clip();
-    traceLacs(); ctx.clip();
-    ctx.strokeStyle = C.ligneEau; grille();
+    if (fondSurTerre) { terre(); ctx.clip(); }
+    ctx.fillStyle = fond; trace(); ctx.fill();
     ctx.restore();
-  }
+    ctx.save();
+    terre(); ctx.clip();
+    trace(); ctx.clip();
+    ctx.strokeStyle = trait; grille();
+    ctx.restore();
+  };
+  couche(carte.neiges, C.neige, C.ligneNeige, true);
+  couche(carte.lacs, C.eau, C.ligneEau, false);
   // chemins de terre : sur le sol et son quadrillage, sous le decor
   if (carte.chemins.traces.length) {
     traceChemins();
@@ -1052,10 +1078,10 @@ function dessine() {
     }
   }
 
-  // points d'eau : contours et poignees, seulement avec l'outil Eau
-  if (outil === 'eau' && !traceCote) {
+  // zones (eau, neige) : contours et poignees, seulement avec leur outil
+  if (ZONES[outil] && !traceCote) {
     const rp = rayonPoignee();
-    carte.lacs.forEach((pts, l) => {
+    zonesOutil().forEach((pts, l) => {
       const courbe = courbeIle(pts);
       ctx.lineWidth = 2.5 / vue.z;
       ctx.strokeStyle = 'rgba(255,255,255,.9)';
@@ -1345,16 +1371,18 @@ function debut(e) {
       if (!carte.ile.length) carte.ile = null;
       majCote(); return; }
   }
-  // Points d'eau, clic droit : une poignee, sinon le point d'eau entier
-  if (outil === 'eau' && e.button === 2 && !espace && carte.lacs.length) {
+  // Zones (eau, neige), clic droit : une poignee, sinon la zone entiere
+  if (ZONES[outil] && e.button === 2 && !espace && zonesOutil().length) {
+    const zs = zonesOutil();
     const h = poigneeLacSous(m.x, m.y);
     if (h) {
-      memorise(); carte.lacs[h.l].splice(h.i, 1);
-      if (carte.lacs[h.l].length < 3) carte.lacs.splice(h.l, 1);
+      memorise(); zs[h.l].splice(h.i, 1);
+      if (zs[h.l].length < 3) zs.splice(h.l, 1);
       majEau(); return;
     }
     const l = lacSous(m.x, m.y);
-    if (l >= 0) { memorise(); carte.lacs.splice(l, 1); majEau(); signale("Point d'eau supprime"); return; }
+    if (l >= 0) { memorise(); zs.splice(l, 1); majEau();
+      signale(outil === 'neige' ? 'Zone enneigee supprimee' : "Point d'eau supprime"); return; }
   }
   // Chemins, clic droit : une poignee, sinon le chemin entier
   if (outil === 'chemin' && e.button === 2 && !espace) {
@@ -2041,7 +2069,7 @@ function termineTrait() {
   // Point d'eau : un lac ou une riviere se dessine petit, et sa forme
   // compte. On n'efface que le grain de la souris (moyenne sur 3 releves,
   // puis un seul lissage court) : coins et virages restent, juste arrondis.
-  if (outil === 'eau') {
+  if (ZONES[outil]) {
     const nb = brut.length, pre = new Array(nb);
     for (let i = 0; i < nb; i++) {
       const a = brut[(i - 1 + nb) % nb], b = brut[i], c = brut[(i + 1) % nb];
@@ -2054,7 +2082,7 @@ function termineTrait() {
     pe = reechantillonne(pe, Math.max(perimetre(pe) / 200, 30));
     if (pe.length < 3) return;
     // (l'historique a deja ete memorise a l'appui)
-    carte.lacs.push(pe.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) })));
+    zonesOutil().push(pe.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) })));
     majEau();
     return;
   }
@@ -2102,8 +2130,8 @@ function poigneesVisiblesPts(pts) {
 }
 // Points d'eau arrondis, tous dans le meme sens : traces ensemble, la regle
 // non nulle en fait l'union, comme dans le jeu
-function lacsCourbes() {
-  return (carte.lacs || []).filter(l => l.length >= 3).map(l => {
+function lacsCourbes(liste) {
+  return (liste || []).filter(l => l.length >= 3).map(l => {
     const c = courbeIle(l);
     let aire = 0;
     for (let i = 0; i < c.length; i++) { const a = c[i], b = c[(i + 1) % c.length]; aire += a.x * b.y - b.x * a.y; }
@@ -2113,8 +2141,9 @@ function lacsCourbes() {
 // Poignee de point d'eau sous la souris : { l, i } ou null
 function poigneeLacSous(x, y) {
   const r = rayonPoignee() * 1.6;
-  for (let l = carte.lacs.length - 1; l >= 0; l--) {
-    const pts = carte.lacs[l];
+  const zs = zonesOutil();
+  for (let l = zs.length - 1; l >= 0; l--) {
+    const pts = zs[l];
     if (!poigneesVisiblesPts(pts)) continue;
     for (let i = 0; i < pts.length; i++)
       if (Math.hypot(pts[i].x - x, pts[i].y - y) <= r) return { l, i };
@@ -2123,8 +2152,9 @@ function poigneeLacSous(x, y) {
 }
 // Point d'eau sous la souris (le dernier trace d'abord), -1 sinon
 function lacSous(x, y) {
-  for (let l = carte.lacs.length - 1; l >= 0; l--) {
-    const c = courbeIle(carte.lacs[l]);
+  const zs = zonesOutil();
+  for (let l = zs.length - 1; l >= 0; l--) {
+    const c = courbeIle(zs[l]);
     let dedans = false;
     for (let i = 0, j = c.length - 1; i < c.length; j = i++) {
       if ((c[i].y > y) !== (c[j].y > y) &&
@@ -2195,7 +2225,7 @@ function agit(x, y, presse, shift) {
   }
   else if (outil === 'gomme') efface(x, y, rGomme);
   // Un point d'apparition se pose au clic, pas en continu pendant le glisser
-  else if (outil === 'eau') {
+  else if (ZONES[outil]) {
     if (presse) {
       // Sur une poignee : retouche du contour. Ailleurs : nouveau trait.
       const h = poigneeLacSous(x, y);
@@ -2203,8 +2233,9 @@ function agit(x, y, presse, shift) {
       traceCote = [{ x: x, y: y }];
       return;
     }
-    if (poigneeLac && carte.lacs[poigneeLac.l] && carte.lacs[poigneeLac.l][poigneeLac.i]) {
-      carte.lacs[poigneeLac.l][poigneeLac.i] = { x: Math.round(x), y: Math.round(y) }; return;
+    const zs = zonesOutil();
+    if (poigneeLac && zs[poigneeLac.l] && zs[poigneeLac.l][poigneeLac.i]) {
+      zs[poigneeLac.l][poigneeLac.i] = { x: Math.round(x), y: Math.round(y) }; return;
     }
     if (traceCote) {
       const q = traceCote[traceCote.length - 1];
@@ -2326,6 +2357,8 @@ function majBlocs() {
   document.getElementById('blocGomme').style.display = outil === 'gomme' ? 'block' : 'none';
   document.getElementById('blocCote').style.display = outil === 'cote' ? 'block' : 'none';
   document.getElementById('blocEau').style.display = outil === 'eau' ? 'block' : 'none';
+  document.getElementById('blocNeige').style.display = outil === 'neige' ? 'block' : 'none';
+  if (!ZONES[outil]) poigneeLac = null;
   document.getElementById('blocChemin').style.display = outil === 'chemin' ? 'block' : 'none';
   if (outil !== 'chemin') { traceChemin = null; prisChemin = null; }
   majCote(); majEau(); majChemins();
@@ -2335,7 +2368,14 @@ function majBlocs() {
 function majEau() {
   const el = document.getElementById('vEau');
   if (el) el.textContent = (carte.lacs || []).length;
+  const en = document.getElementById('vNeige');
+  if (en) en.textContent = (carte.neiges || []).length;
 }
+document.getElementById('neigeVide').onclick = () => {
+  if (!carte.neiges.length) return signale('Aucune zone enneigee');
+  if (!confirm('Effacer toutes les zones enneigees ?')) return;
+  memorise(); carte.neiges = []; majEau();
+};
 document.getElementById('eauVide').onclick = () => {
   if (!carte.lacs.length) return signale("Aucun point d'eau");
   if (!confirm("Effacer tous les points d'eau ?")) return;
@@ -2402,6 +2442,8 @@ function versJson() {
       ? carte.ile.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) })) : undefined,
     lacs: carte.lacs.length
       ? carte.lacs.filter(l => l.length >= 3).map(l => l.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))) : undefined,
+    neiges: carte.neiges.length
+      ? carte.neiges.filter(l => l.length >= 3).map(l => l.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))) : undefined,
     chemins: carte.chemins.traces.length ? {
       traces: carte.chemins.traces.map(t => ({ seed: t.seed, pts: t.pts.map(q => [Math.round(q[0]), Math.round(q[1])]) })),
       // arrondis a jour, meme si le calcul en arriere-plan n'a pas fini
@@ -2411,6 +2453,15 @@ function versJson() {
   }, null, 1);
 }
 
+// Liste de contours (points d'eau, zones enneigees) lue dans un JSON
+function contoursJson(l) {
+  return Array.isArray(l)
+    ? l.filter(Array.isArray).map(c => c
+        .map(q => Array.isArray(q) ? { x: +q[0], y: +q[1] } : { x: +(q && q.x), y: +(q && q.y) })
+        .filter(q => isFinite(q.x) && isFinite(q.y))
+        .map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))).filter(c => c.length >= 3)
+    : [];
+}
 function depuisJson(txt) {
   const m = JSON.parse(txt);
   if (!m || typeof m !== 'object' || Array.isArray(m)) throw new Error('racine invalide');
@@ -2446,12 +2497,9 @@ function depuisJson(txt) {
           return pts.length >= 3 ? pts : null;
         })() : null,
     // Points d'eau : des contours, comme la cote
-    lacs: Array.isArray(m.lacs)
-      ? m.lacs.filter(Array.isArray).map(l => l
-          .map(q => Array.isArray(q) ? { x: +q[0], y: +q[1] } : { x: +(q && q.x), y: +(q && q.y) })
-          .filter(q => isFinite(q.x) && isFinite(q.y))
-          .map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))).filter(l => l.length >= 3)
-      : [],
+    lacs: contoursJson(m.lacs),
+    // Zones enneigees : idem (decor seulement)
+    neiges: contoursJson(m.neiges),
     // Chemins de terre : traces et arrondis deja calcules
     chemins: cheminsValides(m.chemins),
     spawns: Array.isArray(m.spawns)
