@@ -548,17 +548,23 @@ function valideMap(brut, nom) {
 
   // Points d'eau (lacs, rivieres...) : des contours comme la cote, mais
   // l'interieur est de l'eau. Meme arrondi.
-  const lacs = [];
-  if (Array.isArray(brut.lacs)) {
-    for (const l of brut.lacs) {
+  const contours = liste => {
+    const res = [];
+    if (!Array.isArray(liste)) return res;
+    for (const l of liste) {
       if (!Array.isArray(l)) continue;
       const pts = l.map(q => Array.isArray(q) ? { x: Number(q[0]), y: Number(q[1]) }
                                               : { x: Number(q && q.x), y: Number(q && q.y) })
                    .filter(q => Number.isFinite(q.x) && Number.isFinite(q.y))
                    .map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }));
-      if (pts.length >= 3) lacs.push(pts);
+      if (pts.length >= 3) res.push(pts);
     }
-  }
+    return res;
+  };
+  const lacs = contours(brut.lacs);
+  // Zones enneigees : memes contours, decor seulement (aucun effet ici,
+  // le client ne fait que changer la couleur du sol)
+  const neiges = contours(brut.neiges);
   const lacsCourbes = lacs.map(l => { const c = courbeIle(l); return { pts: c, boite: boiteDe(c) }; });
 
   const spawns = Array.isArray(brut.spawns)
@@ -590,7 +596,7 @@ function valideMap(brut, nom) {
   // La carte ne stocke que des points de controle : la vraie cote, arrondie,
   // en est deduite ici, exactement comme cote client et dans l'editeur.
   const ileCourbe = ile ? courbeIle(ile) : null;
-  return { nom: brut.nom || nom, monde, zone, spawns, obs, ile, ileCourbe, chemins, lacs, lacsCourbes,
+  return { nom: brut.nom || nom, monde, zone, spawns, obs, ile, ileCourbe, chemins, lacs, lacsCourbes, neiges,
            ileBoite: ileCourbe ? boiteDe(ileCourbe) : null };
 }
 
@@ -1885,7 +1891,7 @@ function apercuPartie(p) {
   const mp = chargeMap('partie');
   const av = p.avionPrevu;
   return {
-    monde: mp.monde, ile: mp.ile, lacs: mp.lacs || [], chemins: mp.chemins || { traces: [], raccords: [] },
+    monde: mp.monde, ile: mp.ile, lacs: mp.lacs || [], neiges: mp.neiges || [], chemins: mp.chemins || { traces: [], raccords: [] },
     decor: mp.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed, v: o.v, rot: o.rot })),
     avion: { x0: av.x0, y0: av.y0, x1: av.x1, y1: av.y1, angle: av.angle, v: AVION_V },
   };
@@ -1903,6 +1909,7 @@ function payloadCarte(p) {
     },
     ile: p.map.ile,
     lacs: p.map.lacs || [],
+    neiges: p.map.neiges || [],
     chemins: p.map.chemins || { traces: [], raccords: [] },
     decor: p.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, seed: o.seed, v: o.v, rot: o.rot,
                              portes: o.portes ? o.portes.map(st => [st.e, st.a]) : undefined })),
