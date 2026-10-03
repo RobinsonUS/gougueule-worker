@@ -140,7 +140,8 @@
     <div class="opt" data-outil="pinceau"><div class="ic">~</div>Pinceau</div>
     <div class="opt" data-outil="gomme"><div class="ic">x</div>Gomme</div>
     <div class="opt" data-outil="cote"><div class="ic">~~</div>Cote</div>
-    <div class="opt large" data-outil="chemin"><div class="ic">=</div>Chemin</div>
+    <div class="opt" data-outil="eau"><div class="ic">&#8776;</div>Eau</div>
+    <div class="opt" data-outil="chemin"><div class="ic">=</div>Chemin</div>
   </div>
 
   <div id="blocObjet">
@@ -177,6 +178,20 @@
     <button class="act" id="coteRect">Partir d'un rectangle</button>
     <button class="act rouge" id="coteVide">Tout effacer (plus d'eau)</button>
     <div class="ligne">Points <b id="vCote">0</b></div>
+  </div>
+
+  <div id="blocEau">
+    <h2>Points d'eau</h2>
+    <div class="note">Lacs, rivieres, mares : dessinez le contour d'un seul
+      trait, comme pour la cote. Le contour se referme tout seul et
+      l'interieur devient de l'eau (on y avance deux fois moins vite). Chaque
+      trait ajoute un nouveau point d'eau ; ils peuvent se chevaucher. Pour
+      retoucher, glissez une poignee ; clic droit dessus pour la retirer.
+      Clic droit dans un point d'eau : le supprimer.</div>
+    <div class="ligne">Lissage <b id="vLiss2">4</b></div>
+    <input type="range" id="lissage2" min="1" max="24" value="4">
+    <button class="act rouge" id="eauVide">Effacer tous les points d'eau</button>
+    <div class="ligne">Points d'eau <b id="vEau">0</b></div>
   </div>
 
   <div id="blocChemin">
@@ -647,16 +662,14 @@ function dessineBuissonTextureDessin(o) {
 }
 
 // ═══ etat ══════════════════════════════════════════════════════════
+// Cyclone par defaut : celui du jeu (serveur, CARTE_DEFAUT.partie)
+const ZONE_DEFAUT = {"cx": 12800, "cy": 12800, "r0": 20600, "attente": 20, "vagues": [{"r": 5800, "duree": 60, "pause": 30, "degats": 2}, {"r": 2900, "duree": 30, "pause": 15, "degats": 5}, {"r": 1450, "duree": 20, "pause": 20, "degats": 10}, {"r": 700, "duree": 15, "pause": 15, "degats": 15}, {"r": 300, "duree": 10, "pause": 20, "degats": 15}, {"r": 0, "duree": 45, "pause": 0, "degats": 15}]};
 let carte = {
-  nom: 'partie', monde: 12800,
-  zone: { cx: 6400, cy: 6400, r0: 9500, attente: 20,
-          vagues: [ { r: 2900, duree: 30, pause: 30, degats: 2 },
-                    { r: 950,  duree: 20, pause: 15, degats: 5 },
-                    { r: 300,  duree: 10, pause: 20, degats: 10 },
-                    { r: 0,    duree: 45, pause: 0,  degats: 10 } ] },
-  ile: null, chemins: { traces: [], raccords: [] }, spawns: [], obs: []
+  nom: 'partie', monde: 25600,
+  zone: JSON.parse(JSON.stringify(ZONE_DEFAUT)),
+  ile: null, lacs: [], chemins: { traces: [], raccords: [] }, spawns: [], obs: []
 };
-let vue = { x: 6400, y: 6400, z: 0.06 };
+let vue = { x: 12800, y: 12800, z: 0.03 };
 // ═══ Batiments (huttes, maison) : meme geometrie et meme dessin que le jeu ═══
 const HUTTE = {
   // taille unique : mesures du vrai jeu x 1,08, comme en jeu et sur le serveur
@@ -815,6 +828,7 @@ function dessineHutteEntiere(o) { dessineHutte(o, 1); dessineHutte(o, 0); dessin
 
 let outil = 'placer', typeObj = 'arbre', rotHutte = 0;
 let poignee = null;           // index du point de cote en cours de deplacement
+let poigneeLac = null;        // { l, i } : point d'eau et point en cours de deplacement
 let traceCote = null;         // trait a main levee en cours
 let lissage = 4;              // tolerance du lissage, en pixels ecran
 let portee = 600, densite = 6, rGomme = 300;
@@ -835,6 +849,8 @@ function annule() {
   // on garde la meme selection apres l'annulation, si l'element existe encore
   if (graineSel !== null) choisit(carte.obs.find(o => o.seed === graineSel) || null);
   carte.chemins = cheminsValides(carte.chemins);
+  if (!Array.isArray(carte.lacs)) carte.lacs = [];
+  majOrigine();
   prisChemin = null; calculeRaccords();
   cacheCos.clear(); reindexe(); majCote(); majChemins(); synchronisePanneau();
   signale('Annule');
@@ -910,6 +926,26 @@ function dessine() {
     ctx.restore();
   } else {
     ctx.strokeStyle = C.ligne; grille();
+  }
+  // points d'eau : par-dessus la terre et son quadrillage, avec le
+  // quadrillage bleu de l'eau, limite a la terre (sur la mer il y est deja)
+  const lacs = lacsCourbes();
+  if (lacs.length) {
+    const traceLacs = () => {
+      ctx.beginPath();
+      for (const l of lacs) {
+        ctx.moveTo(l[0].x, l[0].y);
+        for (let i = 1; i < l.length; i++) ctx.lineTo(l[i].x, l[i].y);
+        ctx.closePath();
+      }
+    };
+    ctx.fillStyle = C.eau; traceLacs(); ctx.fill();
+    ctx.save();
+    if (ile) traceIle(); else { ctx.beginPath(); ctx.rect(0, 0, carte.monde, carte.monde); }
+    ctx.clip();
+    traceLacs(); ctx.clip();
+    ctx.strokeStyle = C.ligneEau; grille();
+    ctx.restore();
   }
   // chemins de terre : sur le sol et son quadrillage, sous le decor
   if (carte.chemins.traces.length) {
@@ -1014,6 +1050,28 @@ function dessine() {
       ctx.fill();
       ctx.lineWidth = 1.5 / vue.z; ctx.strokeStyle = '#1b3a52'; ctx.stroke();
     }
+  }
+
+  // points d'eau : contours et poignees, seulement avec l'outil Eau
+  if (outil === 'eau' && !traceCote) {
+    const rp = rayonPoignee();
+    carte.lacs.forEach((pts, l) => {
+      const courbe = courbeIle(pts);
+      ctx.lineWidth = 2.5 / vue.z;
+      ctx.strokeStyle = 'rgba(255,255,255,.9)';
+      ctx.beginPath();
+      ctx.moveTo(courbe[0].x, courbe[0].y);
+      for (let i = 1; i < courbe.length; i++) ctx.lineTo(courbe[i].x, courbe[i].y);
+      ctx.closePath();
+      ctx.stroke();
+      if (!poigneesVisiblesPts(pts)) return;
+      for (let i = 0; i < pts.length; i++) {
+        ctx.beginPath(); ctx.arc(pts[i].x, pts[i].y, rp, 0, 6.2832);
+        ctx.fillStyle = (poigneeLac && poigneeLac.l === l && poigneeLac.i === i) ? '#ffd24a' : '#ffffff';
+        ctx.fill();
+        ctx.lineWidth = 1.5 / vue.z; ctx.strokeStyle = '#1b3a52'; ctx.stroke();
+      }
+    });
   }
 
   // outil Chemin : poignees des traces et trait en cours
@@ -1287,6 +1345,17 @@ function debut(e) {
       if (!carte.ile.length) carte.ile = null;
       majCote(); return; }
   }
+  // Points d'eau, clic droit : une poignee, sinon le point d'eau entier
+  if (outil === 'eau' && e.button === 2 && !espace && carte.lacs.length) {
+    const h = poigneeLacSous(m.x, m.y);
+    if (h) {
+      memorise(); carte.lacs[h.l].splice(h.i, 1);
+      if (carte.lacs[h.l].length < 3) carte.lacs.splice(h.l, 1);
+      majEau(); return;
+    }
+    const l = lacSous(m.x, m.y);
+    if (l >= 0) { memorise(); carte.lacs.splice(l, 1); majEau(); signale("Point d'eau supprime"); return; }
+  }
   // Chemins, clic droit : une poignee, sinon le chemin entier
   if (outil === 'chemin' && e.button === 2 && !espace) {
     const h = poigneeChemin(m.x, m.y);
@@ -1321,7 +1390,7 @@ function fin() {
   if (prisChemin && prisChemin.bouge) { fusionnePoint(prisChemin.q); calculeRaccords(true); majChemins(); }
   if (prise && prise.bouge) reindexe();
   prise = null;
-  appuye = false; deplace = false; dernier = null; poignee = null; prisChemin = null;
+  appuye = false; deplace = false; dernier = null; poignee = null; poigneeLac = null; prisChemin = null;
 }
 
 // Points regulierement espaces le long d'une boucle fermee. Un trait a la
@@ -1417,9 +1486,15 @@ function rngChemin(graine) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+// Repere des tirages : centre sur la carte, place de sorte qu'une carte de
+// 12 800 garde l'origine 0. Agrandie autour de son centre, une carte garde
+// donc exactement les memes chemins.
+var CHEMIN_ORIGINE = 0;
+function origineChemins(monde) { return monde / 2 - 6400; }
 // Nombre de -1 a 1 tire d'un point (au dixieme d'unite pres) et d'un canal
 function aleaPoint(p, canal) {
-  var h = Math.imul(Math.round(p[0] * 10) | 0, 0x9E3779B1) ^ Math.imul(Math.round(p[1] * 10) | 0, 0x85EBCA77) ^ Math.imul(canal, 0xC2B2AE3D);
+  var x = p[0] - CHEMIN_ORIGINE, y = p[1] - CHEMIN_ORIGINE;
+  var h = Math.imul(Math.round(x * 10) | 0, 0x9E3779B1) ^ Math.imul(Math.round(y * 10) | 0, 0x85EBCA77) ^ Math.imul(canal, 0xC2B2AE3D);
   h = Math.imul(h ^ (h >>> 16), 0x7FEB352D);
   h = Math.imul(h ^ (h >>> 15), 0x846CA68B);
   h ^= h >>> 16;
@@ -1428,10 +1503,11 @@ function aleaPoint(p, canal) {
 // Bruit doux (valeurs aux noeuds d'une grille de CHEMIN_ZONE unites,
 // raccordees en douceur) : des zones ou les chemins sont plus larges
 function bruitChemin(x, y) {
+  x -= CHEMIN_ORIGINE; y -= CHEMIN_ORIGINE;
   var gx = Math.floor(x / CHEMIN_ZONE), gy = Math.floor(y / CHEMIN_ZONE);
   var fx = x / CHEMIN_ZONE - gx, fy = y / CHEMIN_ZONE - gy;
   fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
-  var v = function (i, j) { return aleaPoint([(gx + i) * CHEMIN_ZONE, (gy + j) * CHEMIN_ZONE], 7); };
+  var v = function (i, j) { return aleaPoint([(gx + i) * CHEMIN_ZONE + CHEMIN_ORIGINE, (gy + j) * CHEMIN_ZONE + CHEMIN_ORIGINE], 7); };
   return (v(0, 0) * (1 - fx) + v(1, 0) * fx) * (1 - fy) + (v(0, 1) * (1 - fx) + v(1, 1) * fx) * fy;
 }
 function largeurChemin(p) {
@@ -1726,6 +1802,8 @@ function cheminsValides(ch) {
   for (const r of (Array.isArray(ch.raccords) ? ch.raccords : [])) { const p = pts(r); if (p.length >= 3) out.raccords.push(p); }
   return out;
 }
+// Repere des chemins de la carte ouverte (voir origineChemins)
+function majOrigine() { CHEMIN_ORIGINE = origineChemins(carte.monde); }
 // Les arrondis demandent un calcul d'une fraction de seconde (plus sur une
 // grande carte) : il tourne a cote, dans un worker, pour que l'editeur ne
 // se fige jamais. En attendant, les chemins s'affichent sans arrondis.
@@ -1736,9 +1814,9 @@ function workerRaccords() {
     const src = ['var CHEMIN_LARGE = ' + CHEMIN_LARGE, 'var CHEMIN_VARIE = ' + CHEMIN_VARIE,
       'var CHEMIN_VARIE_ZONE = ' + CHEMIN_VARIE_ZONE, 'var CHEMIN_ZONE = ' + CHEMIN_ZONE,
       'var CHEMIN_DECALE = ' + CHEMIN_DECALE, 'var CHEMIN_RACCORD = ' + CHEMIN_RACCORD, 'var CHEMIN_CASE = ' + CHEMIN_CASE,
-      'var CHEMIN_ARRONDI = ' + CHEMIN_ARRONDI, 'var CHEMIN_PAS = ' + CHEMIN_PAS,
+      'var CHEMIN_ARRONDI = ' + CHEMIN_ARRONDI, 'var CHEMIN_PAS = ' + CHEMIN_PAS, 'var CHEMIN_ORIGINE = 0',
       rngChemin, aleaPoint, bruitChemin, largeurChemin, aireChemin, rubanChemin, edtChemin, raccordsChemins].map(String).join('\n') +
-      '\nonmessage = function (e) { postMessage({ id: e.data.id, raccords: raccordsChemins(e.data.traces) }); };';
+      '\nonmessage = function (e) { CHEMIN_ORIGINE = e.data.origine; postMessage({ id: e.data.id, raccords: raccordsChemins(e.data.traces) }); };';
     _worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
     _worker.onmessage = e => {
       if (e.data.id !== _demande) return;            // une demande plus recente est en route
@@ -1753,13 +1831,13 @@ function calculeRaccords(efface) {
   _raccordsAJour = false;
   const id = ++_demande, traces = carte.chemins.traces;
   const w = workerRaccords();
-  if (w) w.postMessage({ id, traces });
+  if (w) w.postMessage({ id, traces, origine: CHEMIN_ORIGINE });
   else { carte.chemins.raccords = raccordsChemins(traces); _raccordsAJour = true; }
 }
 // Morceaux d'un trace, gardes tant qu'il ne bouge pas
 const _morceaux = new WeakMap();
 function morceaux(t) {
-  const cle = t.seed + ':' + t.pts.join(';');
+  const cle = CHEMIN_ORIGINE + ':' + t.seed + ':' + t.pts.join(';');
   let e = _morceaux.get(t);
   if (!e || e.cle !== cle) { e = { cle, m: rubanChemin(t) }; _morceaux.set(t, e); }
   return e.m;
@@ -1975,6 +2053,10 @@ function termineTrait() {
     }
     pts = pre;
   }
+  // Trait minuscule (trois ou quatre releves, que la moyenne ci-dessus
+  // ecrase en un point) : rien a fermer. Sans cette garde, le lissage
+  // divisait par une longueur nulle et plantait.
+  if (!(perimetre(pts) > pas * 3)) return;
   for (let tour = 0; tour < 3; tour++) {
     pts = reechantillonne(pts, pas);
     pts = lisseBoucle(pts, sigma, perimetre(pts) / pts.length);
@@ -1983,7 +2065,11 @@ function termineTrait() {
   //    est calcule a la volee, dans l'editeur, le jeu et le serveur.
   pts = reechantillonne(pts, Math.max(perimetre(pts) / 110, 30));
   if (pts.length < 3) return;
-  carte.ile = pts.map(function (q) { return { x: Math.round(q.x), y: Math.round(q.y) }; });
+  pts = pts.map(function (q) { return { x: Math.round(q.x), y: Math.round(q.y) }; });
+  // Outil Eau : un point d'eau de plus. Outil Cote : la cote, remplacee.
+  // (l'historique a deja ete memorise a l'appui)
+  if (outil === 'eau') { carte.lacs.push(pts); majEau(); return; }
+  carte.ile = pts;
   majCote();
 }
 
@@ -1993,10 +2079,44 @@ function rayonPoignee() { return 8 / vue.z; }
 // Les poignees n'apparaissent que si elles sont assez ecartees a l'ecran
 // pour etre saisies une par une (18 px). De plus loin, elles formeraient un
 // chapelet qui cache la cote, et un clic doit demarrer un nouveau trait.
-function poigneesVisibles() {
-  const pts = carte.ile;
+function poigneesVisibles() { return poigneesVisiblesPts(carte.ile); }
+function poigneesVisiblesPts(pts) {
   if (!pts || pts.length < 3) return false;
   return (perimetre(pts) / pts.length) * vue.z >= 18;
+}
+// Points d'eau arrondis, tous dans le meme sens : traces ensemble, la regle
+// non nulle en fait l'union, comme dans le jeu
+function lacsCourbes() {
+  return (carte.lacs || []).filter(l => l.length >= 3).map(l => {
+    const c = courbeIle(l);
+    let aire = 0;
+    for (let i = 0; i < c.length; i++) { const a = c[i], b = c[(i + 1) % c.length]; aire += a.x * b.y - b.x * a.y; }
+    return aire < 0 ? c.reverse() : c;
+  });
+}
+// Poignee de point d'eau sous la souris : { l, i } ou null
+function poigneeLacSous(x, y) {
+  const r = rayonPoignee() * 1.6;
+  for (let l = carte.lacs.length - 1; l >= 0; l--) {
+    const pts = carte.lacs[l];
+    if (!poigneesVisiblesPts(pts)) continue;
+    for (let i = 0; i < pts.length; i++)
+      if (Math.hypot(pts[i].x - x, pts[i].y - y) <= r) return { l, i };
+  }
+  return null;
+}
+// Point d'eau sous la souris (le dernier trace d'abord), -1 sinon
+function lacSous(x, y) {
+  for (let l = carte.lacs.length - 1; l >= 0; l--) {
+    const c = courbeIle(carte.lacs[l]);
+    let dedans = false;
+    for (let i = 0, j = c.length - 1; i < c.length; j = i++) {
+      if ((c[i].y > y) !== (c[j].y > y) &&
+          x < (c[j].x - c[i].x) * (y - c[i].y) / (c[j].y - c[i].y) + c[i].x) dedans = !dedans;
+    }
+    if (dedans) return l;
+  }
+  return -1;
 }
 
 // Point le plus proche du contour, s'il est sous le curseur
@@ -2059,6 +2179,22 @@ function agit(x, y, presse, shift) {
   }
   else if (outil === 'gomme') efface(x, y, rGomme);
   // Un point d'apparition se pose au clic, pas en continu pendant le glisser
+  else if (outil === 'eau') {
+    if (presse) {
+      // Sur une poignee : retouche du contour. Ailleurs : nouveau trait.
+      const h = poigneeLacSous(x, y);
+      if (h) { poigneeLac = h; traceCote = null; return; }
+      traceCote = [{ x: x, y: y }];
+      return;
+    }
+    if (poigneeLac && carte.lacs[poigneeLac.l] && carte.lacs[poigneeLac.l][poigneeLac.i]) {
+      carte.lacs[poigneeLac.l][poigneeLac.i] = { x: Math.round(x), y: Math.round(y) }; return;
+    }
+    if (traceCote) {
+      const q = traceCote[traceCote.length - 1];
+      if (Math.hypot(x - q.x, y - q.y) >= 3 / vue.z) traceCote.push({ x: x, y: y });
+    }
+  }
   else if (outil === 'cote') {
     if (presse) {
       // Sur une poignee : retouche du contour. Ailleurs : nouveau trait.
@@ -2173,10 +2309,22 @@ function majBlocs() {
   document.getElementById('blocRot').style.display = estTypeHutte(typeObj) ? 'block' : 'none';
   document.getElementById('blocGomme').style.display = outil === 'gomme' ? 'block' : 'none';
   document.getElementById('blocCote').style.display = outil === 'cote' ? 'block' : 'none';
+  document.getElementById('blocEau').style.display = outil === 'eau' ? 'block' : 'none';
   document.getElementById('blocChemin').style.display = outil === 'chemin' ? 'block' : 'none';
   if (outil !== 'chemin') { traceChemin = null; prisChemin = null; }
-  majCote(); majChemins();
+  majCote(); majEau(); majChemins();
 }
+
+// Compteur des points d'eau
+function majEau() {
+  const el = document.getElementById('vEau');
+  if (el) el.textContent = (carte.lacs || []).length;
+}
+document.getElementById('eauVide').onclick = () => {
+  if (!carte.lacs.length) return signale("Aucun point d'eau");
+  if (!confirm("Effacer tous les points d'eau ?")) return;
+  memorise(); carte.lacs = []; majEau();
+};
 
 // Compteur de points du contour
 function majCote() {
@@ -2205,7 +2353,9 @@ function curseur(id, span, cb) {
   el.oninput = () => { document.getElementById(span).textContent = el.value; cb(+el.value); };
 }
 curseur('gomme', 'vGom', v => rGomme = v);
-curseur('lissage', 'vLiss', v => lissage = v);
+// Un seul lissage pour la cote et l'eau : les deux curseurs restent d'accord
+curseur('lissage', 'vLiss', v => { lissage = v; document.getElementById('lissage2').value = v; document.getElementById('vLiss2').textContent = v; });
+curseur('lissage2', 'vLiss2', v => { lissage = v; document.getElementById('lissage').value = v; document.getElementById('vLiss').textContent = v; });
 curseur('portee', 'vPort', v => portee = v);
 curseur('densite', 'vDens', v => densite = v);
 
@@ -2234,6 +2384,8 @@ function versJson() {
             vagues: carte.zone.vagues },
     ile: (carte.ile && carte.ile.length >= 3)
       ? carte.ile.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) })) : undefined,
+    lacs: carte.lacs.length
+      ? carte.lacs.filter(l => l.length >= 3).map(l => l.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))) : undefined,
     chemins: carte.chemins.traces.length ? {
       traces: carte.chemins.traces.map(t => ({ seed: t.seed, pts: t.pts.map(q => [Math.round(q[0]), Math.round(q[1])]) })),
       // arrondis a jour, meme si le calcul en arriere-plan n'a pas fini
@@ -2249,9 +2401,9 @@ function depuisJson(txt) {
   if (!Array.isArray(m.obs)) throw new Error('champ obs manquant');
   // Taille du monde et cyclone ne se reglent plus ici : une carte qui ne les
   // donne pas prend les valeurs du jeu (celles du depot).
-  const monde = m.monde === undefined ? 12800 : +m.monde;
+  const monde = m.monde === undefined ? 25600 : +m.monde;
   if (!isFinite(monde) || monde < 500) throw new Error('champ monde invalide');
-  const z = m.zone || {"cx": 6400, "cy": 6400, "r0": 9500, "attente": 20, "vagues": [{"r": 2900, "duree": 30, "pause": 30, "degats": 2}, {"r": 950, "duree": 20, "pause": 15, "degats": 5}, {"r": 300, "duree": 10, "pause": 20, "degats": 10}, {"r": 0, "duree": 45, "pause": 0, "degats": 10}]};
+  const z = m.zone || ZONE_DEFAUT;
   memorise();
   carte = {
     nom: (m.nom || 'carte') + '', monde: Math.round(monde),
@@ -2277,6 +2429,13 @@ function depuisJson(txt) {
             .map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }));
           return pts.length >= 3 ? pts : null;
         })() : null,
+    // Points d'eau : des contours, comme la cote
+    lacs: Array.isArray(m.lacs)
+      ? m.lacs.filter(Array.isArray).map(l => l
+          .map(q => Array.isArray(q) ? { x: +q[0], y: +q[1] } : { x: +(q && q.x), y: +(q && q.y) })
+          .filter(q => isFinite(q.x) && isFinite(q.y))
+          .map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))).filter(l => l.length >= 3)
+      : [],
     // Chemins de terre : traces et arrondis deja calcules
     chemins: cheminsValides(m.chemins),
     spawns: Array.isArray(m.spawns)
@@ -2297,10 +2456,11 @@ function depuisJson(txt) {
       seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0)
     }))
   };
-  traceChemin = null; prisChemin = null; _demande++; _raccordsAJour = true;
+  traceChemin = null; prisChemin = null; poigneeLac = null; _demande++; _raccordsAJour = true;
+  majOrigine();
   // arrondis toujours refaits : une carte exportee avant un reglage du trace reste juste
   if (carte.chemins.traces.length) calculeRaccords();
-  cacheCos.clear(); reindexe(); majCote(); majChemins();
+  cacheCos.clear(); reindexe(); majCote(); majEau(); majChemins();
   vue = { x: carte.monde / 2, y: carte.monde / 2, z: Math.min(1, 900 / carte.monde) };
   synchronisePanneau();
   return carte.obs.length;
@@ -2369,7 +2529,7 @@ function signale(txt, err) {
   minuteur = setTimeout(() => el.className = err ? 'ko' : 'ok', 2000);
 }
 
-redim(); reindexe(); majBlocs(); synchronisePanneau(); dessine();
+redim(); majOrigine(); reindexe(); majBlocs(); synchronisePanneau(); dessine();
 
 </script>
 </body>
