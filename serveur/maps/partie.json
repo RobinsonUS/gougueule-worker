@@ -8,7 +8,7 @@
   "attente": 20,
   "vagues": [
    {
-    "r": 5800,
+    "r": 7500,
     "duree": 60,
     "pause": 30,
     "degats": 2
