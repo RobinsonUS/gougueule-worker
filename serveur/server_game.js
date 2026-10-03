@@ -461,7 +461,7 @@ function nombre(v, defaut) {
 // Taille du monde et cyclone ne se reglent plus dans l'editeur : ce sont
 // toujours les memes. Une carte qui ne les donne pas prend ces valeurs.
 const CARTE_DEFAUT = {
-  partie: { monde: 25600, zone: {"cx": 12800, "cy": 12800, "r0": 19305, "attente": 20, "vagues": [{"r": 5800, "duree": 60, "pause": 30, "degats": 2}, {"r": 2900, "duree": 30, "pause": 15, "degats": 5}, {"r": 1450, "duree": 20, "pause": 20, "degats": 10}, {"r": 700, "duree": 15, "pause": 15, "degats": 15}, {"r": 300, "duree": 10, "pause": 20, "degats": 15}, {"r": 0, "duree": 45, "pause": 0, "degats": 15}]} },
+  partie: { monde: 25600, zone: {"cx": 12800, "cy": 12800, "r0": 19305, "attente": 20, "vagues": [{"r": 7500, "duree": 60, "pause": 30, "degats": 2}, {"r": 2900, "duree": 30, "pause": 15, "degats": 5}, {"r": 1450, "duree": 20, "pause": 20, "degats": 10}, {"r": 700, "duree": 15, "pause": 15, "degats": 15}, {"r": 300, "duree": 10, "pause": 20, "degats": 15}, {"r": 0, "duree": 45, "pause": 0, "degats": 15}]} },
   lobby:  { monde: 3200,  zone: {"cx": 1600, "cy": 1600, "r0": 1900, "attente": 20, "vagues": [{"r": 700, "duree": 30, "pause": 20, "degats": 2}, {"r": 250, "duree": 20, "pause": 15, "degats": 5}, {"r": 0, "duree": 30, "pause": 0, "degats": 10}]} },
 };
 
