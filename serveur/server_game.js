@@ -1024,7 +1024,7 @@ function majZone(p) {
   }
 
   const v = zc.vagues[idx], b = B[idx];
-  if (t < b.tDebut) {                    // pause : la cible existe mais reste secrete
+  if (t < b.tDebut) {                    // pause : la cible est deja montree, le cyclone attend
     p.zoneBouge = false;
     p.zoneDegats = idx === 0 ? v.degats : zc.vagues[idx - 1].degats;
     p.zoneT = b.tDebut - t;
@@ -2225,10 +2225,13 @@ function envoieSnapshot(room) {
   const base = {
     type: 'snap', tick: p.tick, t: r3(p.t), st: Date.now(), attente: !p.demarree, mapVer: p.mapVer,
     fini: p.fini, vainqueur: p.vainqueur, zone: { x: r2(p.zone.x), y: r2(p.zone.y), r: r2(p.zone.r) },
-    // Le cercle d'arrivee n'est revele qu'au moment ou le cyclone se met
-    // en marche, pas pendant la pause qui precede.
-    zoneCible: p.zoneBouge && p.zoneCible ? { x: r2(p.zoneCible.x), y: r2(p.zoneCible.y), r: r2(p.zoneCible.r) } : null,
-    zoneT: r3(p.zoneT),
+    // Le cercle d'arrivee est montre des la pause qui precede la vague :
+    // les joueurs voient ou aller avant que le cyclone se mette en marche.
+    zoneCible: p.zoneCible ? { x: r2(p.zoneCible.x), y: r2(p.zoneCible.y), r: r2(p.zoneCible.r) } : null,
+    // Pendant le vol de l'avion, l'horloge du cyclone n'a pas demarre :
+    // pas de temps a afficher (le client montre "..."). L'attente avant la
+    // premiere vague ne commence qu'une fois le vol fini.
+    zoneT: (!p.demarree || p.phaseVol) ? null : r3(p.zoneT),
     avion: p.avion ? { x: r2(p.avion.x), y: r2(p.avion.y), angle: r4(p.avion.angle), v: AVION_V,
                        x0: r2(p.avion.x0), y0: r2(p.avion.y0), x1: r2(p.avion.x1), y1: r2(p.avion.y1),
                        vol: !!p.avion.enVol, largage: p.phaseVol,
