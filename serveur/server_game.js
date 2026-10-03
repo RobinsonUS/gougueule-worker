@@ -373,6 +373,10 @@ const AVION_SORTIE = 2200;
 const EAU_LENTEUR = 0.5;    // a pied dans l'eau : deux fois plus lent
 const ILE_PASSES = 3;       // passes d'arrondi de la cote (Chaikin)
 const RECHARGE_DUREE = 1.4, CHARGEUR = 30;
+// Med Kit : 5 s sans bouger ni changer d'emplacement, puis tous les PV
+// reviennent et il disparait de l'inventaire
+const SOIN_DUREE = 5;
+const INV_PARTIE = () => [null, 'fusil', 'medkit', null, null, null];
 const MELEE_PORTEE = R_JOUEUR * 4.0, MELEE_DEGATS = 18, MELEE_CD = 0.5;
 
 const DT = 1 / 30; // 30 Hz : charge CPU réduite de moitié
@@ -698,7 +702,7 @@ function ajouteJoueur(partie, pid, name, avecArme = true) {
     secousse: 0, touche: 0, tirTimer: 0, recul: 0, revele: 0,
     munitions: CHARGEUR, rechargement: 0, dureeRechargeMax: 0, slot: 0,
     poingTimer: 0, punchSide: 0, _pCd: 0,
-    inv: avecArme ? [null, 'fusil', null, null, null, null] : [null, null, null, null, null, null],
+    inv: avecArme ? INV_PARTIE() : [null, null, null, null, null, null], soin: 0,
     ticZone: 0, lastSeq: 0, file: [], rtt: 120,
     enAvion: false, para: 0, plonge: false,
   };
@@ -1109,12 +1113,29 @@ function nettoieCmd(c) {
 function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   // Dans l'avion : le joueur n'a pas encore de prise sur le monde
   if (a.enAvion) { a.lastSeq = cmd.seq; if (typeof cmd.angle === 'number') a.angle = cmd.angle; return; }
-  // Bouton d'interaction : ouvre ou ferme la porte a portee (a pied)
-  if (cmd.inter && !(a.para > 0) && !(a._interCd > 0)) { a._interCd = 0.2; basculePorte(p, a); }
+  const objet = a.inv && a.inv[a.slot];
+  // Bouton d'action (a pied) : Med Kit en main, il lance le soin s'il
+  // manque des PV (sinon rien) ; sinon il ouvre ou ferme la porte a portee.
+  if (cmd.inter && !(a.para > 0) && !(a._interCd > 0)) {
+    a._interCd = 0.2;
+    if (objet === 'medkit') { if (a.pv < PV_MAX && !(a.soin > 0)) a.soin = SOIN_DUREE; }
+    else basculePorte(p, a);
+  }
   let dt = Math.min(DT_MAX_INPUT, Math.max(0, cmd.dt || DT));
   let mx = cmd.mx || 0, my = cmd.my || 0;
   const n = Math.hypot(mx, my);
   if (n > 1) { mx /= n; my /= n; }
+  // Soin en cours : se deplacer ou lacher le Med Kit l'annule ; tourner, non
+  if (a.soin > 0) {
+    if (mx !== 0 || my !== 0 || objet !== 'medkit' || a.para > 0) a.soin = 0;
+    else {
+      a.soin -= dt;
+      if (a.soin <= 0) {
+        a.soin = 0; a.pv = PV_MAX;
+        a.inv = a.inv.slice(); a.inv[a.slot] = null;    // utilise : l'emplacement se vide
+      }
+    }
+  }
 
   // En parachute on survole le decor : deplacement libre, juste borne
   if (a.para > 0) {
@@ -1138,7 +1159,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   deplaceSolo(a, mx * vit * dt, my * vit * dt, p.arbres, 3, p.monde, p.arbresGrid, p);
   if (typeof cmd.angle === 'number') a.angle = cmd.angle;
 
-  if (cmd.poing && a._pCd < 0.02) {
+  if (cmd.poing && !objet && a._pCd < 0.02) {      // poing : mains vides seulement
     a._pCd = 0.35;       // cooldown court robuste au lag
     a.poingTimer = 0.60;  // animation pleine pour tous les écrans
     a.punchSide = 1 - a.punchSide;
@@ -1189,7 +1210,7 @@ function appliqueCommande(p, a, cmd, mouvSeulement = false) {
   }
 
   a.recharge -= dt;
-  const armeEnMain = a.slot > 0 && a.inv && a.inv[a.slot];
+  const armeEnMain = a.slot > 0 && objet === 'fusil';
   if (cmd.tire && armeEnMain && a.recharge <= 0 && a.rechargement <= 0 && a.munitions > 0) {
     a.recharge = CADENCE; a.tirTimer = 0.35; a.revele = 0.35; a.recul = 0.08;
     a.munitions--;
@@ -1809,7 +1830,7 @@ function demarrePartie(room, gid) {
     // lastSeq n'est PAS remis a zero : il doit rester monotone, sinon les
     // commandes encore en vol le font remonter et toutes les suivantes,
     // reparties d'un numero plus bas, sont rejetees pour toujours.
-    a.inv = [null, 'fusil', null, null, null, null];
+    a.inv = INV_PARTIE(); a.soin = 0;
     a.slot = 1; a.munitions = CHARGEUR; a.rechargement = 0;
     a.tueurId = null; a.place = 0;
     // Tout le monde part dans l'avion, personne n'est encore sur la carte
@@ -1934,9 +1955,17 @@ wss.on('connection', (ws) => {
       if (msg.type === 'invChange' && pid && rooms[gid] && rooms[gid].partie) {
         const a = rooms[gid].partie.agents[pid];
         if (a) {
-          if (Number.isInteger(msg.slot) && msg.slot >= 0 && msg.slot < 6) a.slot = msg.slot;
-          if (Array.isArray(msg.inv) && msg.inv.length === 6)
-            a.inv = msg.inv.map(x => [null,'fusil','mains'].includes(x) ? x : null);
+          if (Number.isInteger(msg.slot) && msg.slot >= 0 && msg.slot < 6) {
+            if (msg.slot !== a.slot) a.soin = 0;          // changer d'emplacement annule le soin
+            a.slot = msg.slot;
+          }
+          // Le client ne fait que reordonner ses objets : on n'accepte que les
+          // memes objets, autrement ranges (pas d'objet invente ou duplique)
+          if (Array.isArray(msg.inv) && msg.inv.length === 6) {
+            const nv = msg.inv.map(x => (x === 'fusil' || x === 'medkit') ? x : null);
+            const sac = l => l.filter(Boolean).sort().join(',');
+            if (sac(nv) === sac(a.inv || [])) a.inv = nv;
+          }
         }
         return;
       }
@@ -2133,7 +2162,7 @@ function envoieSnapshot(room) {
       enAvion: !!a.enAvion, para: r4(a.para || 0), plonge: !!a.plonge,
       munitions: a.munitions, rechargement: r4(a.rechargement), dureeRechargeMax: a.dureeRechargeMax,
       secousse: r3(a.secousse), touche: r3(a.touche), tirTimer: r3(a.tirTimer), recul: r3(a.recul),
-      revele: r3(a.revele), slot: a.slot, inv: a.inv,
+      revele: r3(a.revele), slot: a.slot, inv: a.inv, soin: r3(a.soin || 0),
       poingTimer: r3(a.poingTimer), punchSide: a.punchSide };
   }
   base.agents = agents;
