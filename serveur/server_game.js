@@ -1537,7 +1537,8 @@ function nettoyeJoueur(roomId, playerId) {
 // Diffuser l'état lobby (nombre de joueurs + countdown) à tous les joueurs solo
 
 // ─────────────── Intelligence Artificielle des Bots ──────────────
-const BOT_NOMS = ['Wang', 'Vladimir', 'Gratien', 'Yanis']; // 4 bots max
+// Un bot par seconde du compte a rebours : 10, 9, 8, 7, 6, 5 et 4
+const BOT_NOMS = ['Wang', 'Vladimir', 'Gratien', 'Yanis', 'Robert', 'LeGland', 'Madamalam'];
 
 function lerpAngle(a, b, maxTurn) {
   let d = b - a;
@@ -2146,8 +2147,8 @@ function boucleServeur() {
             }
             if (room.countdownStart) {
               const elapsed = (Date.now() - room.countdownStart) / 1000;
-              // Spawn 1 bot par seconde : bot 1 à t=0s, bot 5 à t=4s
-              const botsVoulus = Math.min(4, Math.floor(elapsed) + 1); // 4 bots max
+              // 1 bot par seconde : le 1er a 10 (t=0s), le dernier a 4 (t=6s)
+              const botsVoulus = Math.min(BOT_NOMS.length, Math.floor(elapsed) + 1);
               room.botsSpawnes = room.botsSpawnes || 0;
               while (room.botsSpawnes < botsVoulus) {
                 spawnBot(room.partie, BOT_NOMS[room.botsSpawnes]);
