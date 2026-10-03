@@ -1830,6 +1830,7 @@ function _mmBande(c, g, h2, d, b, large, taillePx) {
     c.fillStyle = ILE ? C.eau : C.sol;
     c.fillRect(sx, sy, sw, sh);
     if (ILE) { c.fillStyle = C.sol; cheminIle(c); c.fill(); }
+    if (LACS.length) { c.fillStyle = C.eau; cheminLacs(c, LACS); c.fill(); }
   }
   if (CHEMINS.length && traceChemins(c, CHEMINS, g, h2, d, b)) { c.fillStyle = C.chemin; c.fill(); }
 
@@ -1944,7 +1945,8 @@ function initApercu(a) {
   APERCU = {
     monde: a.monde,
     ile: ileDePoints(a.ile),
-    chemins: cheminsDePoints(a.chemins),
+    lacs: lacsDePoints(a.lacs),
+    chemins: cheminsDePoints(a.chemins, a.monde),
     obs: a.decor.map(function (o) {
       return Object.assign({}, o, cosmetiques(o.seed), { alphaVis: 1 });
     }),
@@ -1955,9 +1957,9 @@ function initApercu(a) {
 // de la carte de partie tant qu'on attend dans le lobby.
 function carteSource() {
   if (snapDernier && snapDernier.phaseLobby && APERCU)
-    return { monde: APERCU.monde, ile: APERCU.ile, chemins: APERCU.chemins, obs: APERCU.obs,
+    return { monde: APERCU.monde, ile: APERCU.ile, lacs: APERCU.lacs, chemins: APERCU.chemins, obs: APERCU.obs,
              avion: APERCU.avion, apercu: true };
-  return { monde: MONDE, ile: ILE, chemins: CHEMINS, obs: localObs,
+  return { monde: MONDE, ile: ILE, lacs: LACS, chemins: CHEMINS, obs: localObs,
            avion: (snapDernier && snapDernier.avion) || null, apercu: false };
 }
 
@@ -2001,6 +2003,7 @@ function peintCarte(cotePx, src) {
   c.fillStyle = C.sol;
   if (src.ile) { cheminIlePts(c, src.ile); c.fill(); }
   else c.fillRect(0, 0, src.monde, src.monde);
+  if (src.lacs && src.lacs.length) { c.fillStyle = CARTE_EAU; cheminLacs(c, src.lacs); c.fill(); }
   if (src.chemins && src.chemins.length && traceChemins(c, src.chemins)) { c.fillStyle = C.chemin; c.fill(); }
   // quadrillage discret, sur la terre comme sur l'eau
   // Le quadrillage couvre toute la fenetre, terre et eau comprises.
@@ -2045,7 +2048,7 @@ function dessineCarte() {
   var src = carteSource();
   var cotePx = Math.max(8, Math.round(g.c * PX * CARTE_DEF));
   var cle = mapVerLocal + ':' + src.monde + ':' + cotePx + ':' + (src.ile ? src.ile.length : 0) +
-            ':' + src.obs.length + ':' + vegToutPret() + ':' + (src.apercu ? 'a' : 'p');
+            ':' + (src.lacs ? src.lacs.length : 0) + ':' + src.obs.length + ':' + vegToutPret() + ':' + (src.apercu ? 'a' : 'p');
   if (!_carteCv || _carteCle !== cle) { _carteCv = peintCarte(cotePx, src); _carteCle = cle; }
 
   repereEcran();
@@ -2908,6 +2911,20 @@ function dessineAvion(av) {
 }
 
 // ===================== scene =====================
+// Points d'eau dans la vue de jeu : l'eau couvre la terre et son
+// quadrillage, puis le quadrillage bleu de l'eau, limite a la terre (sur la
+// mer il est deja trace : pas de trait en double).
+function lacsMonde(grille, cheminTerre) {
+  if (!LACS.length) return;
+  ctx.fillStyle = C.eau;
+  cheminLacs(ctx, LACS); ctx.fill();
+  ctx.save();
+  cheminTerre(ctx); ctx.clip();
+  cheminLacs(ctx, LACS); ctx.clip();
+  ctx.strokeStyle = C.ligneEau;
+  grille();
+  ctx.restore();
+}
 function dessine(p, moi, viseur, drag) {
   const a = p.agents[moi];
   if (!a) return;
@@ -2984,6 +3001,7 @@ function dessine(p, moi, viseur, drag) {
     ctx.strokeStyle = C.ligne;
     grille();
     ctx.restore();
+    lacsMonde(grille, cheminIle);
   } else {
     ctx.save(); horsMonde(); ctx.strokeStyle = C.ligneDehors; grille(); ctx.restore();
     ctx.save();
@@ -2993,6 +3011,7 @@ function dessine(p, moi, viseur, drag) {
     ctx.strokeStyle = C.ligne;
     grille();
     ctx.restore();
+    lacsMonde(grille, function (c) { c.beginPath(); c.rect(0, 0, MONDE, MONDE); });
   }
   // Chemins de terre : par-dessus le sol et son quadrillage, sous tout le
   // reste. Leur propre quadrillage, plus sombre, ne passe que sur eux.
@@ -3979,6 +3998,36 @@ function initIle(pts) {
     ILE_BOITE = { x0: x0, y0: y0, x1: x1, y1: y1 };
   }
 }
+// Points d'eau (lacs, rivieres...) : des contours comme la cote, mais
+// l'interieur est de l'eau. Meme arrondi. Tous tournent dans le meme sens :
+// traces ensemble, la regle non nulle en fait l'union (deux lacs qui se
+// chevauchent ne s'annulent pas).
+var LACS = [];
+function lacsDePoints(lacs) {
+  var res = [];
+  if (!Array.isArray(lacs)) return res;
+  for (var i = 0; i < lacs.length; i++) {
+    var c = ileDePoints(lacs[i]);
+    if (!c) continue;
+    var aire = 0;
+    for (var k = 0; k < c.length; k++) { var a = c[k], b = c[(k + 1) % c.length]; aire += a.x * b.y - b.x * a.y; }
+    if (aire < 0) c.reverse();
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (var j = 0; j < c.length; j++) {
+      var q = c[j];
+      if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x;
+      if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+    }
+    res.push({ pts: c, boite: { x0: x0, y0: y0, x1: x1, y1: y1 } });
+  }
+  return res;
+}
+function initLacs(lacs) { LACS = lacsDePoints(lacs); }
+// Tous les lacs en un seul trace (a remplir ou decouper en regle non nulle)
+function cheminLacs(c, lacs, suite) {
+  if (!suite) c.beginPath();
+  for (var i = 0; i < lacs.length; i++) cheminIlePts(c, lacs[i].pts, true);
+}
 // Chemin du contour dans le contexte donne, en coordonnees monde
 function cheminIlePts(c, pts, suite) {
   if (!suite) c.beginPath();
@@ -4005,9 +4054,15 @@ function rngChemin(graine) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+// Repere des tirages : centre sur la carte, place de sorte qu'une carte de
+// 12 800 garde l'origine 0. Agrandie autour de son centre, une carte garde
+// donc exactement les memes chemins.
+var CHEMIN_ORIGINE = 0;
+function origineChemins(monde) { return monde / 2 - 6400; }
 // Nombre de -1 a 1 tire d'un point (au dixieme d'unite pres) et d'un canal
 function aleaPoint(p, canal) {
-  var h = Math.imul(Math.round(p[0] * 10) | 0, 0x9E3779B1) ^ Math.imul(Math.round(p[1] * 10) | 0, 0x85EBCA77) ^ Math.imul(canal, 0xC2B2AE3D);
+  var x = p[0] - CHEMIN_ORIGINE, y = p[1] - CHEMIN_ORIGINE;
+  var h = Math.imul(Math.round(x * 10) | 0, 0x9E3779B1) ^ Math.imul(Math.round(y * 10) | 0, 0x85EBCA77) ^ Math.imul(canal, 0xC2B2AE3D);
   h = Math.imul(h ^ (h >>> 16), 0x7FEB352D);
   h = Math.imul(h ^ (h >>> 15), 0x846CA68B);
   h ^= h >>> 16;
@@ -4016,10 +4071,11 @@ function aleaPoint(p, canal) {
 // Bruit doux (valeurs aux noeuds d'une grille de CHEMIN_ZONE unites,
 // raccordees en douceur) : des zones ou les chemins sont plus larges
 function bruitChemin(x, y) {
+  x -= CHEMIN_ORIGINE; y -= CHEMIN_ORIGINE;
   var gx = Math.floor(x / CHEMIN_ZONE), gy = Math.floor(y / CHEMIN_ZONE);
   var fx = x / CHEMIN_ZONE - gx, fy = y / CHEMIN_ZONE - gy;
   fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
-  var v = function (i, j) { return aleaPoint([(gx + i) * CHEMIN_ZONE, (gy + j) * CHEMIN_ZONE], 7); };
+  var v = function (i, j) { return aleaPoint([(gx + i) * CHEMIN_ZONE + CHEMIN_ORIGINE, (gy + j) * CHEMIN_ZONE + CHEMIN_ORIGINE], 7); };
   return (v(0, 0) * (1 - fx) + v(1, 0) * fx) * (1 - fy) + (v(0, 1) * (1 - fx) + v(1, 1) * fx) * fy;
 }
 function largeurChemin(p) {
@@ -4113,9 +4169,10 @@ function formeChemin(pts) {
   }
   return p.length >= 3 ? { pts: p, boite: b } : null;
 }
-function cheminsDePoints(ch) {
+function cheminsDePoints(ch, monde) {
   var res = [];
   if (!ch || typeof ch !== 'object' || Array.isArray(ch)) return res;
+  CHEMIN_ORIGINE = origineChemins(monde);
   var tr = Array.isArray(ch.traces) ? ch.traces : [], rc = Array.isArray(ch.raccords) ? ch.raccords : [];
   for (var i = 0; i < tr.length; i++) {
     var t = tr[i];
@@ -4126,7 +4183,7 @@ function cheminsDePoints(ch) {
   for (var j = 0; j < rc.length; j++) { var f2 = Array.isArray(rc[j]) ? formeChemin(rc[j]) : null; if (f2) res.push(f2); }
   return res;
 }
-function initChemins(ch) { CHEMINS = cheminsDePoints(ch); }
+function initChemins(ch) { CHEMINS = cheminsDePoints(ch, MONDE); }
 // Tous les chemins (ou ceux qui touchent le rectangle donne) en un seul trace
 function traceChemins(c, liste, x0, y0, x1, y1) {
   c.beginPath();
@@ -4140,17 +4197,22 @@ function traceChemins(c, liste, x0, y0, x1, y1) {
 }
 // Copie conforme de dansIle() cote serveur : toute difference ferait
 // sautiller le joueur sur la cote, entre prediction et correction.
-function dansIleLoc(x, y) {
-  if (!ILE) return true;
-  var b = ILE_BOITE;
+function dansContourLoc(c, b, x, y) {
   if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) return false;
   var dedans = false;
-  for (var i = 0, j = ILE.length - 1; i < ILE.length; j = i++) {
-    var xi = ILE[i].x, yi = ILE[i].y, xj = ILE[j].x, yj = ILE[j].y;
+  for (var i = 0, j = c.length - 1; i < c.length; j = i++) {
+    var xi = c[i].x, yi = c[i].y, xj = c[j].x, yj = c[j].y;
     if ((yi > y) !== (yj > y) &&
         x < (xj - xi) * (y - yi) / (yj - yi) + xi) dedans = !dedans;
   }
   return dedans;
+}
+// Sur la terre : dans l'ile (s'il y en a une) et hors de tout point d'eau
+function dansIleLoc(x, y) {
+  if (ILE && !dansContourLoc(ILE, ILE_BOITE, x, y)) return false;
+  for (var i = 0; i < LACS.length; i++)
+    if (dansContourLoc(LACS[i].pts, LACS[i].boite, x, y)) return false;
+  return true;
 }
 
 function initObs(decor) {
@@ -5046,6 +5108,7 @@ function connect() {
       if (SIM.MONDE) MONDE = SIM.MONDE;
       mapVerLocal = msg.mapVer || 1;
       initIle(msg.ile);
+      initLacs(msg.lacs);
       initChemins(msg.chemins);
       initObs(msg.decor);
       initApercu(msg.apercu);          // carte de partie visible des le lobby
@@ -5071,6 +5134,7 @@ function connect() {
       if (SIM.MONDE) MONDE = SIM.MONDE;
       mapVerLocal = msg.mapVer || (mapVerLocal + 1);
       initIle(msg.ile);
+      initLacs(msg.lacs);
       initChemins(msg.chemins);
       initObs(msg.decor);                    // decor + index repartis a neuf
       initApercu(msg.apercu);                // en partie : plus d'apercu
