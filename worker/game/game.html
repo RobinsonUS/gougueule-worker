@@ -102,7 +102,7 @@ border-radius:12px;text-shadow:1px 1px 3px rgba(0,0,0,0.8);pointer-events:none;t
 <script>
 var SERVER = '${serverUrl}';
 const SPRITES = {};
-['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','buisson','orbe','feuille','hutte1','hutte1_toit','hutte2','hutte2_toit','hutte1_ruine','hutte2_ruine','bois','maison','maison_toit','maison_fen','batiment1','batiment1_toit','batiment1_fen','batiment2','batiment2_toit','batiment2_fen','batiment3','batiment3_toit','batiment3_fen','batiment4','batiment4_toit','batiment4_fen','porte','bouton_inter','medkit','bouton_soin'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
+['head','arm','hand','slotXM8','MediumProjectile','XM8','continue_button','avion','parachute','bouton_para','bouton_plonge','arbre_vert','arbre_orange','arbre_rouge','arbre_sombre','arbre_neige1','arbre_neige2','arbre_neige3','arbre_neige4','arbre_neige5','arbre_neige6','buisson','orbe','feuille','hutte1','hutte1_toit','hutte2','hutte2_toit','hutte1_ruine','hutte2_ruine','bois','maison','maison_toit','maison_fen','batiment1','batiment1_toit','batiment1_fen','batiment2','batiment2_toit','batiment2_fen','batiment3','batiment3_toit','batiment3_fen','batiment4','batiment4_toit','batiment4_fen','porte','bouton_inter','medkit','bouton_soin'].forEach(function(n){var i=new Image();i.src='/game/'+n+'.png';SPRITES[n]=i;});
 // weapon_XM8 : supprimer le fond blanc
 (function(){var raw=new Image();raw.crossOrigin='anonymous';raw.onload=function(){
   var oc=document.createElement('canvas');oc.width=raw.naturalWidth;oc.height=raw.naturalHeight;
@@ -354,10 +354,23 @@ var VEG = {
   arbre_orange: { cx: 149.02, cy: 149.01, r: 143.74 },
   arbre_rouge:  { cx: 149.02, cy: 149.01, r: 143.74 },
   arbre_sombre: { cx: 149.02, cy: 149.01, r: 143.74 },
+  // arbres enneiges : memes mesures, sur leurs propres images
+  arbre_neige1: { cx: 157.05, cy: 156.56, r: 150.84 },
+  arbre_neige2: { cx: 156.43, cy: 156.81, r: 150.86 },
+  arbre_neige3: { cx: 156.8, cy: 156.7, r: 150.82 },
+  arbre_neige4: { cx: 156.37, cy: 156.37, r: 150.86 },
+  arbre_neige5: { cx: 156.61, cy: 157.06, r: 150.83 },
+  arbre_neige6: { cx: 156.61, cy: 157.11, r: 150.84 },
   buisson:      { cx: 184.68, cy: 196.69, r: 143.78 },  // l'image n'est pas centree
   orbe:         { cx: 180.42, cy: 177.68, r: 172.17 },  // l'orbe du lobby
 };
 var VEG_ARBRES = ['arbre_vert', 'arbre_orange', 'arbre_rouge', 'arbre_sombre'];  // index = teinte
+// Arbres enneiges (o.neige) : meme arbre en tout point (taille, hitbox,
+// coupe), seule l'image change. index = teinteNeige
+var VEG_NEIGE = ['arbre_neige1', 'arbre_neige2', 'arbre_neige3', 'arbre_neige4', 'arbre_neige5', 'arbre_neige6'];
+function nomArbre(o) {
+  return o.neige ? (VEG_NEIGE[o.teinteNeige] || VEG_NEIGE[0]) : (VEG_ARBRES[o.teinte] || VEG_ARBRES[0]);
+}
 var VEG_ECH = { arbre: 1.0044, buisson: 0.9980, orbe: 1.0543 };  // calibre sur le rendu reel (voir plus haut)
 // Debord de l'ombre autour du contour, en unites monde. Calibre pour que
 // l'anneau depasse du feuillage autant que l'ancien (bande de 13,5 dont la
@@ -517,12 +530,12 @@ function decalageSecousse(o) {
 }
 
 function dessineOmbreArbre(o) {
-  var nom = VEG_ARBRES[o.teinte] || VEG_ARBRES[0];
+  var nom = nomArbre(o);
   if (vegPret(nom)) { var q = decalageSecousse(o); dessineVeg(nom, o, q.x, q.y, 1); return; }
   dessineOmbreArbreDessin(o);
 }
 function dessineArbreTexture(o) {
-  var nom = VEG_ARBRES[o.teinte] || VEG_ARBRES[0];
+  var nom = nomArbre(o);
   if (vegPret(nom)) { var q = decalageSecousse(o); dessineVeg(nom, o, q.x, q.y, 0); return; }
   dessineArbreTextureDessin(o);
 }
@@ -1026,7 +1039,7 @@ function nomVeg(o) {
   var base = o.base || o.type;
   if (base === 'orbe') return 'orbe';
   if (base === 'buisson') return 'buisson';
-  return VEG_ARBRES[o.teinte] || VEG_ARBRES[0];
+  return nomArbre(o);
 }
 function dessineSouche(o) {
   var nom = nomVeg(o);
@@ -1768,6 +1781,7 @@ function minimapAPeindre() {
 var _vegMini = {};
 function vegToutPret() {
   for (var i = 0; i < VEG_ARBRES.length; i++) if (!vegPret(VEG_ARBRES[i])) return 0;
+  for (var j = 0; j < VEG_NEIGE.length; j++) if (!vegPret(VEG_NEIGE[j])) return 0;
   return (vegPret('buisson') && huttePrete(1) && huttePrete(2) && maisonPrete()) ? 1 : 0;
 }
 function vegMini(nom, tPx) {
@@ -4000,6 +4014,9 @@ function cosmetiques(seed) {
       { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
       { a: rng() * 6.28, d: 0.30 + rng() * 0.35, t: rng() * 6.28 },
     ],
+    // tire en dernier : les tirages d'avant (donc les arbres existants) ne
+    // changent pas
+    teinteNeige: (rng() * 6) | 0,
   };
 }
 
