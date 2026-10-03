@@ -2038,6 +2038,26 @@ function termineTrait() {
   //    par les allers-retours, et un seul lissage mesure mal les distances.
   //    Apres chaque tour, le trait se rapproche de la vraie forme et le
   //    suivant travaille sur des longueurs justes.
+  // Point d'eau : un lac ou une riviere se dessine petit, et sa forme
+  // compte. On n'efface que le grain de la souris (moyenne sur 3 releves,
+  // puis un seul lissage court) : coins et virages restent, juste arrondis.
+  if (outil === 'eau') {
+    const nb = brut.length, pre = new Array(nb);
+    for (let i = 0; i < nb; i++) {
+      const a = brut[(i - 1 + nb) % nb], b = brut[i], c = brut[(i + 1) % nb];
+      pre[i] = { x: (a.x + b.x + c.x) / 3, y: (a.y + b.y + c.y) / 3 };
+    }
+    const pasE = 2 / vue.z;
+    if (!(perimetre(pre) > pasE * 3)) return;
+    let pe = reechantillonne(pre, pasE);
+    pe = lisseBoucle(pe, (lissage * 1.5) / vue.z, perimetre(pe) / pe.length);
+    pe = reechantillonne(pe, Math.max(perimetre(pe) / 200, 30));
+    if (pe.length < 3) return;
+    // (l'historique a deja ete memorise a l'appui)
+    carte.lacs.push(pe.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) })));
+    majEau();
+    return;
+  }
   const pas = 4 / vue.z, sigma = (lissage * 5) / vue.z;
   // Premier degrossissage sur l'ordre des releves, pas sur les distances :
   // le doigt est echantillonne regulierement dans le temps, et le temps,
@@ -2065,11 +2085,7 @@ function termineTrait() {
   //    est calcule a la volee, dans l'editeur, le jeu et le serveur.
   pts = reechantillonne(pts, Math.max(perimetre(pts) / 110, 30));
   if (pts.length < 3) return;
-  pts = pts.map(function (q) { return { x: Math.round(q.x), y: Math.round(q.y) }; });
-  // Outil Eau : un point d'eau de plus. Outil Cote : la cote, remplacee.
-  // (l'historique a deja ete memorise a l'appui)
-  if (outil === 'eau') { carte.lacs.push(pts); majEau(); return; }
-  carte.ile = pts;
+  carte.ile = pts.map(function (q) { return { x: Math.round(q.x), y: Math.round(q.y) }; });
   majCote();
 }
 
