@@ -151,6 +151,7 @@
       <div class="opt on" data-type="arbre"><div class="ic">A</div>Arbre</div>
       <div class="opt" data-type="arbreNeige"><div class="ic">A*</div>Arbre enneige</div>
       <div class="opt" data-type="buisson"><div class="ic">b</div>Buisson</div>
+      <div class="opt" data-type="sapin"><div class="ic">S</div>Sapin</div>
       <div class="opt" data-type="hutte1"><div class="ic">H1</div>Hutte 1</div>
       <div class="opt" data-type="hutte2"><div class="ic">H2</div>Hutte 2</div>
       <div class="opt" data-type="maison"><div class="ic">M</div>Maison</div>
@@ -158,6 +159,15 @@
       <div class="opt" data-type="batiment2"><div class="ic">B2</div>Batiment 2</div>
       <div class="opt" data-type="batiment3"><div class="ic">B3</div>Batiment 3</div>
       <div class="opt" data-type="batiment4"><div class="ic">B4</div>Batiment 4</div>
+      <div class="opt" data-type="batiment5"><div class="ic">B5</div>Batiment 5</div>
+      <div class="opt" data-type="batiment6"><div class="ic">B6</div>Batiment 6</div>
+      <div class="opt" data-type="batiment7"><div class="ic">B7</div>Batiment 7</div>
+      <div class="opt" data-type="batiment8"><div class="ic">B8</div>Batiment 8</div>
+      <div class="opt" data-type="batiment9"><div class="ic">B9</div>Batiment 9</div>
+      <div class="opt" data-type="batiment10"><div class="ic">B10</div>Batiment 10</div>
+      <div class="opt" data-type="batiment11"><div class="ic">B11</div>Batiment 11</div>
+      <div class="opt" data-type="batiment12"><div class="ic">B12</div>Batiment 12</div>
+      <div class="opt" data-type="batiment13"><div class="ic">B13</div>Batiment 13</div>
     </div>
     <div class="note">Taille fixe : arbre 87,5, buisson 68</div>
     <div id="blocRot">
@@ -409,10 +419,19 @@ function ajouteCheminBlob(x, y, r, lobes, phase, amp) {
 // Les memes images que le jeu, servies par le meme worker
 const SPRITES = {};
 ['arbre_vert', 'arbre_orange', 'arbre_rouge', 'arbre_sombre',
- 'arbre_neige1', 'arbre_neige2', 'arbre_neige3', 'arbre_neige4', 'arbre_neige5', 'arbre_neige6', 'buisson',
+ 'arbre_neige1', 'arbre_neige2', 'arbre_neige3', 'arbre_neige4', 'arbre_neige5', 'arbre_neige6', 'buisson', 'sapin',
  'hutte1', 'hutte1_toit', 'hutte2', 'hutte2_toit', 'maison', 'maison_toit', 'maison_fen',
  'batiment1', 'batiment1_toit', 'batiment1_fen', 'batiment2', 'batiment2_toit', 'batiment2_fen',
- 'batiment3', 'batiment3_toit', 'batiment3_fen', 'batiment4', 'batiment4_toit', 'batiment4_fen'].forEach(function (n) {
+ 'batiment3', 'batiment3_toit', 'batiment3_fen', 'batiment4', 'batiment4_toit', 'batiment4_fen',
+ 'batiment5', 'batiment5_toit', 'batiment5_fen',
+ 'batiment6', 'batiment6_toit', 'batiment6_fen',
+ 'batiment7', 'batiment7_toit', 'batiment7_fen',
+ 'batiment8', 'batiment8_toit', 'batiment8_fen',
+ 'batiment9', 'batiment9_toit', 'batiment9_fen',
+ 'batiment10', 'batiment10_toit', 'batiment10_fen',
+ 'batiment11', 'batiment11_toit', 'batiment11_fen',
+ 'batiment12', 'batiment12_toit', 'batiment12_fen',
+ 'batiment13', 'batiment13_toit', 'batiment13_fen'].forEach(function (n) {
   const i = new Image(); i.src = '/game/' + n + '.png'; SPRITES[n] = i;
 });
 let PXV = 1;                 // pixels reels par unite monde, mis a jour a chaque image
@@ -438,6 +457,7 @@ var VEG = {
   arbre_neige5: { cx: 156.61, cy: 157.06, r: 150.83 },
   arbre_neige6: { cx: 156.61, cy: 157.11, r: 150.84 },
   buisson:      { cx: 184.68, cy: 196.69, r: 143.78 },  // l'image n'est pas centree
+  sapin:        { cx: 303.32, cy: 303.79, r: 278.95 },  // le sapin de Noel
 };
 var VEG_ARBRES = ['arbre_vert', 'arbre_orange', 'arbre_rouge', 'arbre_sombre'];  // index = teinte
 // Arbres enneiges (o.neige) : meme arbre en tout point, seule l'image change
@@ -445,11 +465,13 @@ var VEG_NEIGE = ['arbre_neige1', 'arbre_neige2', 'arbre_neige3', 'arbre_neige4',
 function nomArbre(o) {
   return o.neige ? (VEG_NEIGE[o.teinteNeige] || VEG_NEIGE[0]) : (VEG_ARBRES[o.teinte] || VEG_ARBRES[0]);
 }
-var VEG_ECH = { arbre: 1.0044, buisson: 0.9980 };  // calibre sur le rendu reel (voir plus haut)
+var VEG_ECH = { arbre: 1.0044, buisson: 0.9980, sapin: 1 };  // calibre sur le rendu reel (voir plus haut)
 // Debord de l'ombre autour du contour, en unites monde. Calibre pour que
 // l'anneau depasse du feuillage autant que l'ancien (bande de 13,5 dont la
 // moitie interieure etait cachee sous le feuillage).
-var VEG_OMBRE = { arbre: 6.0, buisson: 6.5 };
+var VEG_OMBRE = { arbre: 6.0, buisson: 6.5, sapin: 16.5 };
+// Le sapin : toujours tourne pareil, comme dans le jeu
+var SAPIN_ANGLE = 34.3 * Math.PI / 180;
 var VEG_OMBRE_ALPHA = 0.11;                       // meme valeur que C.ombreDouce
 var _vegCache = {};
 
@@ -549,7 +571,7 @@ function vegConstruit(nom, tPx, d) {
 function dessineVeg(nom, o, x, y, ombre) {
   var sp = SPRITES[nom], m = VEG[nom];
   var sw = sp.naturalWidth || sp.width, sh = sp.naturalHeight || sp.height;
-  var genre = o.type === 'buisson' ? 'buisson' : 'arbre';
+  var genre = o.type === 'buisson' ? 'buisson' : (o.type === 'sapin' ? 'sapin' : 'arbre');
   var ech = (o.r * VEG_ECH[genre]) / m.r;          // unites monde par px image
   var e = vegCanevas(nom, sw * ech * PXV, VEG_OMBRE[genre]);
   var f = (sw * ech) / e.cs.width;                 // unites monde par px de la toile
@@ -715,11 +737,13 @@ const MAISON = {
 };
 // Batiments 1, 2 et 3 : memes donnees que le jeu (generees au pixel a partir
 // des images ; portes a la taille exacte de celle de la maison)
-const NOUVEAUX_BATS = {"batiment1":{"R":453.5,"ECH":0.6325,"CX":609.5,"CY":355.0,"corps":[-327.64,-195.13,327.64,195.13],"emprise":[-383.61,-222.64,354.52,222.01]},"batiment2":{"R":451.9,"ECH":0.62857,"CX":522.5,"CY":355.0,"corps":[-325.6,-193.91,325.6,193.91],"emprise":[-326.54,-221.26,382.49,220.63]},"batiment3":{"R":648.1,"ECH":0.62988,"CX":582.5,"CY":834.0,"corps":[-309.27,-467.05,309.27,467.05],"emprise":[-365.01,-523.43,337.3,494.45]},"batiment4":{"R":1095.1,"ECH":1.265,"CX":426.0,"CY":746.5,"corps":[-502.84,-882.97,502.84,882.97],"emprise":[-535.1,-940.53,538.89,941.79]}};
+const NOUVEAUX_BATS = {"batiment1":{"R":453.5,"ECH":0.6325,"CX":609.5,"CY":355.0,"corps":[-327.64,-195.13,327.64,195.13],"emprise":[-383.61,-222.64,354.52,222.01]},"batiment2":{"R":451.9,"ECH":0.62857,"CX":522.5,"CY":355.0,"corps":[-325.6,-193.91,325.6,193.91],"emprise":[-326.54,-221.26,382.49,220.63]},"batiment3":{"R":648.1,"ECH":0.62988,"CX":582.5,"CY":834.0,"corps":[-309.27,-467.05,309.27,467.05],"emprise":[-365.01,-523.43,337.3,494.45]},"batiment4":{"R":1095.1,"ECH":1.265,"CX":426.0,"CY":746.5,"corps":[-502.84,-882.97,502.84,882.97],"emprise":[-535.1,-940.53,538.89,941.79]},"batiment5":{"R":598.3,"ECH":0.63648,"CX":666.5,"CY":643.5,"corps":[-365.98,-378.07,365.98,378.07],"emprise":[-422.31,-407.67,422.94,408.94]},"batiment6":{"R":402.9,"ECH":0.63515,"CX":403.0,"CY":391.0,"corps":[-249.29,-220.71,249.29,220.71],"emprise":[-254.06,-246.44,305.51,247.07]},"batiment7":{"R":656.4,"ECH":0.62988,"CX":654.5,"CY":795.0,"corps":[-354.62,-472.09,354.62,472.09],"emprise":[-410.36,-498.86,410.99,498.86]},"batiment8":{"R":660.5,"ECH":0.6325,"CX":659.0,"CY":795.0,"corps":[-356.41,-474.06,356.41,474.06],"emprise":[-414.92,-500.94,412.39,500.94]},"batiment9":{"R":683.6,"ECH":0.62988,"CX":663.5,"CY":844.0,"corps":[-360.29,-473.98,360.29,473.98],"emprise":[-416.03,-529.73,387.06,500.12]},"batiment10":{"R":714.0,"ECH":0.62988,"CX":983.0,"CY":538.5,"corps":[-591.77,-279.66,591.77,279.66],"emprise":[-617.28,-337.3,617.91,336.04]},"batiment11":{"R":663.5,"ECH":0.63119,"CX":667.5,"CY":796.0,"corps":[-361.04,-474.97,361.04,474.97],"emprise":[-419.42,-500.53,416.9,501.16]},"batiment12":{"R":629.6,"ECH":0.6325,"CX":588.0,"CY":787.0,"corps":[-314.04,-470.26,314.04,470.26],"emprise":[-370.01,-495.88,370.65,496.51]},"batiment13":{"R":1223.5,"ECH":1.26225,"CX":834.5,"CY":466.5,"corps":[-987.08,-552.87,987.08,552.87],"emprise":[-1049.56,-585.05,1043.25,609.04]}};
 for (const g of Object.values(NOUVEAUX_BATS)) { g.OMBRE = 7.6; g.OMBRE_DY = 2.0; }
 const BATS = Object.assign({ hutte: HUTTE, maison: MAISON }, NOUVEAUX_BATS);
-const NOMS_BAT = { maison: 'Maison', batiment1: 'Batiment 1', batiment2: 'Batiment 2', batiment3: 'Batiment 3', batiment4: 'Batiment 4' };
-const COUL_BAT = { maison: '#d4834f', batiment1: '#a9404f', batiment2: '#8f9aa3', batiment3: '#a9404f', batiment4: '#a9404f' };
+const NOMS_BAT = { maison: 'Maison', batiment1: 'Batiment 1', batiment2: 'Batiment 2', batiment3: 'Batiment 3', batiment4: 'Batiment 4',
+  batiment5: 'Batiment 5', batiment6: 'Batiment 6', batiment7: 'Batiment 7', batiment8: 'Batiment 8', batiment9: 'Batiment 9', batiment10: 'Batiment 10', batiment11: 'Batiment 11', batiment12: 'Batiment 12', batiment13: 'Batiment 13' };
+const COUL_BAT = { maison: '#d4834f', batiment1: '#a9404f', batiment2: '#8f9aa3', batiment3: '#a9404f', batiment4: '#a9404f',
+  batiment5: '#5bc6ee', batiment6: '#5bc6ee', batiment7: '#006ba4', batiment8: '#006ba4', batiment9: '#006ba4', batiment10: '#006ba4', batiment11: '#006ba4', batiment12: '#006ba4', batiment13: '#d6394a' };
 const estBat = (o) => !!BATS[o.type];
 const geoBat = (o) => BATS[o.type] || HUTTE;
 const SENS_ROT = ['0°', '90°', '180°', '270°'];
@@ -866,7 +890,8 @@ let traceCote = null;         // trait a main levee en cours
 let lissage = 4;              // tolerance du lissage, en pixels ecran
 let portee = 600, densite = 6, rGomme = 300;
 // Un element a toujours sa taille de jeu : elle n'est pas reglable.
-const RAYON = { arbre: R_ARBRE, buisson: R_BUISSON };   // valeurs exactes, jamais arrondies
+const R_SAPIN = 162.4;                     // meme valeur que le serveur
+const RAYON = { arbre: R_ARBRE, buisson: R_BUISSON, sapin: R_SAPIN };   // valeurs exactes, jamais arrondies
 let histoire = [];
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
@@ -1006,13 +1031,20 @@ function dessine() {
   const x0 = vue.x - innerWidth / 2 / vue.z - marge, x1 = vue.x + innerWidth / 2 / vue.z + marge;
   const y0 = vue.y - innerHeight / 2 / vue.z - marge, y1 = vue.y + innerHeight / 2 / vue.z + marge;
   const tous = carte.obs.filter(o => o.x > x0 - 250 && o.x < x1 + 250 && o.y > y0 - 250 && o.y < y1 + 250);
-  const visibles = tous.filter(o => !estBat(o));
+  const visibles = tous.filter(o => !estBat(o) && o.type !== 'sapin');
   // les huttes d'abord : les arbres voisins passent par-dessus, comme en jeu
   if (R_ARBRE * vue.z < 26) {
     for (const o of tous) if (estBat(o)) dessineHutteMini(o);
   } else {
     for (const o of tous) if (estBat(o)) dessineHutte(o, 1);
     for (const o of tous) if (estBat(o)) { dessineHutte(o, 0); dessineHutte(o, 2); }
+  }
+  // sapins : comme en jeu, sous les arbres. L'image a toutes les distances
+  // (il y en a peu), un disque en attendant qu'elle arrive.
+  for (const o of tous) if (o.type === 'sapin') {
+    const c = cosmo(o);
+    if (vegPret('sapin')) { dessineVeg('sapin', c, o.x, o.y, true); dessineVeg('sapin', c, o.x, o.y, false); }
+    else { ctx.fillStyle = '#2f7d4a'; ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, 6.2832); ctx.fill(); }
   }
 
   // Vue d'ensemble : les vraies images, reduites une fois pour toutes a la
@@ -1203,6 +1235,7 @@ function cosmo(o) {
     cacheCos.set(o, c);
   }
   c.x = o.x; c.y = o.y; c.r = o.r; c.type = o.type; c.neige = o.neige;
+  if (o.type === 'sapin') c.phase = SAPIN_ANGLE;
   return c;
 }
 
@@ -1288,7 +1321,7 @@ function libre(o) {
 }
 // ─── Outil Selection ───
 let sel = null, prise = null;        // element choisi ; decalage souris pendant le glisser
-const NOMS_TYPE = { arbre: 'Arbre', buisson: 'Buisson' };
+const NOMS_TYPE = { arbre: 'Arbre', buisson: 'Buisson', sapin: 'Sapin' };
 function nomType(o) {
   if (NOMS_BAT[o.type]) return NOMS_BAT[o.type];
   if (o.type === 'arbre' && o.neige) return 'Arbre enneige';
@@ -2530,6 +2563,9 @@ function depuisJson(txt) {
     } : o.type === 'hutte' ? {
       x: Math.round(+o.x), y: Math.round(+o.y), r: HUTTE.R, type: 'hutte',
       v: +o.v === 2 ? 2 : 1, rot: (((+o.rot | 0) % 4) + 4) % 4,
+      seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0)
+    } : o.type === 'sapin' ? {
+      x: Math.round(+o.x), y: Math.round(+o.y), r: R_SAPIN, type: 'sapin',
       seed: (+o.seed | 0) || (Math.imul(i + 1, 2654435761) | 0)
     } : ({
       x: Math.round(+o.x), y: Math.round(+o.y),
