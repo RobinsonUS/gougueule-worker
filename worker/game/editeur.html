@@ -142,7 +142,8 @@
     <div class="opt" data-outil="cote"><div class="ic">~~</div>Cote</div>
     <div class="opt" data-outil="eau"><div class="ic">&#8776;</div>Eau</div>
     <div class="opt" data-outil="neige"><div class="ic">*</div>Neige</div>
-    <div class="opt large" data-outil="chemin"><div class="ic">=</div>Chemin</div>
+    <div class="opt" data-outil="glace"><div class="ic">&#9671;</div>Glace</div>
+    <div class="opt" data-outil="chemin"><div class="ic">=</div>Chemin</div>
   </div>
 
   <div id="blocObjet">
@@ -216,6 +217,17 @@
       supprimer.</div>
     <button class="act rouge" id="neigeVide">Effacer toutes les zones enneigees</button>
     <div class="ligne">Zones enneigees <b id="vNeige">0</b></div>
+  </div>
+
+  <div id="blocGlace">
+    <h2>Zones de glace</h2>
+    <div class="note">Dessinez le contour d'un seul trait, comme pour l'eau :
+      l'interieur devient de la glace. Dessus on va 1,5 fois plus vite, et on
+      glisse : lance, on continue sur sa lancee. L'eau et les chemins passent
+      par-dessus. Glissez une poignee pour retoucher ; clic droit dessus pour
+      la retirer, clic droit dans une zone pour la supprimer.</div>
+    <button class="act rouge" id="glaceVide">Effacer toutes les zones de glace</button>
+    <div class="ligne">Zones de glace <b id="vGlace">0</b></div>
   </div>
 
   <div id="blocChemin">
@@ -325,6 +337,8 @@ const C = {
   eau:         '#0071bc',
   neige:       '#e8f1f7',   // sol enneige, releve sur le vrai jeu
   ligneNeige:  '#d9e2e8',
+  glace:       '#a8d5f9',   // glace, relevee sur le vrai jeu
+  ligneGlace:  '#9ec9ea',
   eauLoin:     '#075a92',
   ligneEau:    '#006ab0',
   chemin:      '#b48b4d',   // memes valeurs que le jeu (capture ramenee en sRGB)
@@ -719,7 +733,7 @@ const ZONE_DEFAUT = {"cx": 12800, "cy": 12800, "r0": 19305, "attente": 20, "vagu
 let carte = {
   nom: 'partie', monde: 25600,
   zone: JSON.parse(JSON.stringify(ZONE_DEFAUT)),
-  ile: null, lacs: [], neiges: [], chemins: { traces: [], raccords: [] }, spawns: [], obs: []
+  ile: null, lacs: [], neiges: [], glaces: [], chemins: { traces: [], raccords: [] }, spawns: [], obs: []
 };
 let vue = { x: 12800, y: 12800, z: 0.03 };
 // ═══ Batiments (huttes, maison) : meme geometrie et meme dessin que le jeu ═══
@@ -884,7 +898,7 @@ let outil = 'placer', typeObj = 'arbre', rotHutte = 0;
 let poignee = null;           // index du point de cote en cours de deplacement
 let poigneeLac = null;        // { l, i } : zone (eau ou neige) et point en cours de deplacement
 // Outils a zones : chacun range ses contours dans sa liste de la carte
-const ZONES = { eau: 'lacs', neige: 'neiges' };
+const ZONES = { eau: 'lacs', neige: 'neiges', glace: 'glaces' };
 function zonesOutil() { return carte[ZONES[outil]] || []; }
 let traceCote = null;         // trait a main levee en cours
 let lissage = 4;              // tolerance du lissage, en pixels ecran
@@ -909,6 +923,7 @@ function annule() {
   carte.chemins = cheminsValides(carte.chemins);
   if (!Array.isArray(carte.lacs)) carte.lacs = [];
   if (!Array.isArray(carte.neiges)) carte.neiges = [];
+  if (!Array.isArray(carte.glaces)) carte.glaces = [];
   majOrigine();
   prisChemin = null; calculeRaccords();
   cacheCos.clear(); reindexe(); majCote(); majChemins(); synchronisePanneau();
@@ -1012,6 +1027,7 @@ function dessine() {
     ctx.restore();
   };
   couche(carte.neiges, C.neige, C.ligneNeige, true);
+  couche(carte.glaces, C.glace, C.ligneGlace, true);
   couche(carte.lacs, C.eau, C.ligneEau, false);
   // chemins de terre : sur le sol et son quadrillage, sous le decor
   if (carte.chemins.traces.length) {
@@ -1125,7 +1141,7 @@ function dessine() {
     }
   }
 
-  // zones (eau, neige) : contours et poignees, seulement avec leur outil
+  // zones (eau, neige, glace) : contours et poignees, seulement avec leur outil
   if (ZONES[outil] && !traceCote) {
     const rp = rayonPoignee();
     zonesOutil().forEach((pts, l) => {
@@ -1422,7 +1438,7 @@ function debut(e) {
       if (!carte.ile.length) carte.ile = null;
       majCote(); return; }
   }
-  // Zones (eau, neige), clic droit : une poignee, sinon la zone entiere
+  // Zones (eau, neige, glace), clic droit : une poignee, sinon la zone entiere
   if (ZONES[outil] && e.button === 2 && !espace && zonesOutil().length) {
     const zs = zonesOutil();
     const h = poigneeLacSous(m.x, m.y);
@@ -1433,7 +1449,7 @@ function debut(e) {
     }
     const l = lacSous(m.x, m.y);
     if (l >= 0) { memorise(); zs.splice(l, 1); majEau();
-      signale(outil === 'neige' ? 'Zone enneigee supprimee' : "Point d'eau supprime"); return; }
+      signale(outil === 'neige' ? 'Zone enneigee supprimee' : outil === 'glace' ? 'Zone de glace supprimee' : "Point d'eau supprime"); return; }
   }
   // Chemins, clic droit : une poignee, sinon le chemin entier
   if (outil === 'chemin' && e.button === 2 && !espace) {
@@ -2409,6 +2425,7 @@ function majBlocs() {
   document.getElementById('blocCote').style.display = outil === 'cote' ? 'block' : 'none';
   document.getElementById('blocEau').style.display = outil === 'eau' ? 'block' : 'none';
   document.getElementById('blocNeige').style.display = outil === 'neige' ? 'block' : 'none';
+  document.getElementById('blocGlace').style.display = outil === 'glace' ? 'block' : 'none';
   if (!ZONES[outil]) poigneeLac = null;
   document.getElementById('blocChemin').style.display = outil === 'chemin' ? 'block' : 'none';
   if (outil !== 'chemin') { traceChemin = null; prisChemin = null; }
@@ -2421,7 +2438,14 @@ function majEau() {
   if (el) el.textContent = (carte.lacs || []).length;
   const en = document.getElementById('vNeige');
   if (en) en.textContent = (carte.neiges || []).length;
+  const eg = document.getElementById('vGlace');
+  if (eg) eg.textContent = (carte.glaces || []).length;
 }
+document.getElementById('glaceVide').onclick = () => {
+  if (!carte.glaces.length) return signale('Aucune zone de glace');
+  if (!confirm('Effacer toutes les zones de glace ?')) return;
+  memorise(); carte.glaces = []; majEau();
+};
 document.getElementById('neigeVide').onclick = () => {
   if (!carte.neiges.length) return signale('Aucune zone enneigee');
   if (!confirm('Effacer toutes les zones enneigees ?')) return;
@@ -2495,6 +2519,8 @@ function versJson() {
       ? carte.lacs.filter(l => l.length >= 3).map(l => l.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))) : undefined,
     neiges: carte.neiges.length
       ? carte.neiges.filter(l => l.length >= 3).map(l => l.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))) : undefined,
+    glaces: carte.glaces.length
+      ? carte.glaces.filter(l => l.length >= 3).map(l => l.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))) : undefined,
     chemins: carte.chemins.traces.length ? {
       traces: carte.chemins.traces.map(t => ({ seed: t.seed, pts: t.pts.map(q => [Math.round(q[0]), Math.round(q[1])]) })),
       // arrondis a jour, meme si le calcul en arriere-plan n'a pas fini
@@ -2551,6 +2577,8 @@ function depuisJson(txt) {
     lacs: contoursJson(m.lacs),
     // Zones enneigees : idem (decor seulement)
     neiges: contoursJson(m.neiges),
+    // Zones de glace : idem (on y glisse, voir le jeu)
+    glaces: contoursJson(m.glaces),
     // Chemins de terre : traces et arrondis deja calcules
     chemins: cheminsValides(m.chemins),
     spawns: Array.isArray(m.spawns)
