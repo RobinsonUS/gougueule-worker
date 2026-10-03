@@ -496,7 +496,8 @@ function valideMap(brut, nom) {
     const r = type === 'buisson' ? R_BUISSON : R_ARBRE;
     let seed = nombre(o.seed, 0) | 0;
     if (!seed) seed = Math.imul(i + 1, 2654435761) | 0;
-    obs.push({ x, y, r, type, seed });
+    // Arbre enneige : un arbre comme les autres, seule l'image change
+    obs.push(type === 'arbre' && o.neige ? { x, y, r, type, seed, neige: true } : { x, y, r, type, seed });
   }
 
   const z = brut.zone || {};
@@ -674,7 +675,7 @@ function obsDeMap(map) {
     : estHutte(o)
     ? { x: o.x, y: o.y, r: o.r, type: 'hutte', v: o.v, rot: o.rot, seed: o.seed,
         pv: PV_HUTTE, secousse: 0, _lt: 'hutte' }
-    : { x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed,
+    : { x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed, neige: o.neige || undefined,
         pv: PV_ARBRE, secousse: 0, _lt: o.type });
   if (map.nom === 'lobby') {
     obs.push({ x: map.monde / 2, y: map.monde / 2, r: R_ORBE, type: 'orbe',
@@ -1892,7 +1893,7 @@ function apercuPartie(p) {
   const av = p.avionPrevu;
   return {
     monde: mp.monde, ile: mp.ile, lacs: mp.lacs || [], neiges: mp.neiges || [], chemins: mp.chemins || { traces: [], raccords: [] },
-    decor: mp.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed, v: o.v, rot: o.rot })),
+    decor: mp.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, seed: o.seed, v: o.v, rot: o.rot, neige: o.neige })),
     avion: { x0: av.x0, y0: av.y0, x1: av.x1, y1: av.y1, angle: av.angle, v: AVION_V },
   };
 }
@@ -1911,7 +1912,7 @@ function payloadCarte(p) {
     lacs: p.map.lacs || [],
     neiges: p.map.neiges || [],
     chemins: p.map.chemins || { traces: [], raccords: [] },
-    decor: p.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, seed: o.seed, v: o.v, rot: o.rot,
+    decor: p.obs.map(o => ({ x: o.x, y: o.y, r: o.r, type: o.type, pv: o.pv, seed: o.seed, v: o.v, rot: o.rot, neige: o.neige,
                              portes: o.portes ? o.portes.map(st => [st.e, st.a]) : undefined })),
     // Apercu de la carte de partie pendant l'attente : de quoi ouvrir la
     // vraie carte depuis le lobby et y lire le trajet de l'avion.
