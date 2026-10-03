@@ -3576,9 +3576,20 @@ function contenuSlotMoi(i) {
   return i === 0 ? 'mains' : moi.inv[i];
 }
 
+// Changement d'inventaire en attente de confirmation du serveur. Tant que
+// les instantanes en vol portent l'ancien rangement, on garde le notre :
+// sinon on aurait une fraction de seconde l'ancien contenu en main.
+var invAttente = null;   // { slot, inv, t }
+var INV_ATTENTE_MAX = 1500;   // ms : refus du serveur => on finit par se ranger a lui
+function memesInv(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (var i = 0; i < a.length; i++) if ((a[i] || null) !== (b[i] || null)) return false;
+  return true;
+}
 function synchroInv() {
   if (moi && moi._slotPrec !== undefined && moi._slotPrec !== moi.slot) moi.soin = 0;
   if (moi) moi._slotPrec = moi.slot;
+  if (moi && moi.inv) invAttente = { slot: moi.slot, inv: moi.inv.slice(), t: performance.now() };
   if (ws && ws.readyState === 1 && moi) {
     try { ws.send(JSON.stringify({ type: 'invChange', slot: moi.slot, inv: moi.inv })); } catch {}
   }
@@ -3587,6 +3598,7 @@ function synchroInv() {
 function swapInv(de, vers) {
   if (!moi || !moi.inv) return;
   if (de === 0 || vers === 0) { moi.slot = de; synchroInv(); return; } // mains immovable
+  moi.inv = moi.inv.slice();     // copie : le tableau d'origine appartient a un instantane
   var tmp = moi.inv[de];
   moi.inv[de] = moi.inv[vers];
   moi.inv[vers] = tmp;
@@ -4715,8 +4727,13 @@ function reconcilie(snap) {
   // on repart de la verite serveur
   moi.x = s.x; moi.y = s.y;
   if (s.slot !== undefined) moi.slot = s.slot;
-  moi._slotPrec = moi.slot;
   if (s.inv) moi.inv = s.inv;
+  if (invAttente) {
+    if ((moi.slot === invAttente.slot && memesInv(moi.inv, invAttente.inv)) ||
+        performance.now() - invAttente.t > INV_ATTENTE_MAX) invAttente = null;   // confirme (ou refuse)
+    else { moi.slot = invAttente.slot; moi.inv = invAttente.inv.slice(); }      // pas encore traite
+  }
+  moi._slotPrec = moi.slot;
   moi.vivant = s.vivant;
   moi.pv = s.pv;
   moi.munitions = s.munitions;
@@ -4954,6 +4971,7 @@ function etatAffiche() {
     m.poingTimer = moi.poingTimer || 0;
     m.punchSide  = moi.punchSide  || 0;
     m.soin = moi.soin || 0;
+    if (moi.inv) { m.slot = moi.slot; m.inv = moi.inv; }
     m.para = paraLisse(sMoi);
     vue.agents[pid] = m;
   }
@@ -5037,7 +5055,7 @@ function connect() {
               munitions: SIM.CHARGEUR, rechargement: 0, dureeRechargeMax: 0,
               tirTimer: 0, recul: 0,
               slot: 1, inv: [null, 'fusil', null, null, null, null], soin: 0 };
-      pendantes = []; seq = 0; buffer = []; tickVue = null;
+      pendantes = []; seq = 0; buffer = []; tickVue = null; invAttente = null;
       erreurLissage.x = 0; erreurLissage.y = 0;
       document.getElementById('lobby').style.display = 'none';
       etatJeu = 'jeu';
@@ -5063,7 +5081,7 @@ function connect() {
       alphaVisJoueurs = {};
       buffer = []; tickVue = null;           // interpolation de l'ancienne carte
       snapDernier = null;                    // une image blanche vaut mieux qu'une fausse
-      pendantes = [];        // commandes non confirmees : caduques
+      pendantes = []; invAttente = null;   // commandes non confirmees : caduques
       // seq n'est PAS remis a zero : le serveur le veut monotone
       erreurLissage.x = 0; erreurLissage.y = 0;
       if (msg.spawn) {
@@ -5217,7 +5235,7 @@ function connect() {
     } else if (etatJeu === 'jeu' || etatJeu === 'mort' || etatJeu === 'fin') {
       // Déconnexion en cours de partie → retour au lobby propre
       pid = null; moi = null; snapDernier = null;
-      buffer = []; pendantes = []; seq = 0; tickVue = null;
+      buffer = []; pendantes = []; seq = 0; tickVue = null; invAttente = null;
       ws = null;
       setLobbyMsg('Connexion perdue', 'Le serveur s\'est déconnecté');
       etatJeu = 'lobby';
@@ -5306,7 +5324,7 @@ function rejouer() {
   if (ws) { try { ws.close(); } catch {} ws = null; }
   etatJeu = 'lobby';
   pid = null; moi = null; snapDernier = null;
-  buffer = []; pendantes = []; seq = 0; aEnvoyer = []; tickVue = null;
+  buffer = []; pendantes = []; seq = 0; aEnvoyer = []; tickVue = null; invAttente = null;
   nbPings = 0; pingEnvoi = {};
   myKills = 0; nbVivants = 0; alphaVisJoueurs = {};
   tMortVue = 0; idSpectate = null; agentVue = null;
