@@ -2480,11 +2480,15 @@ function dessineMinimap(zone, tPartie) {
     }
   } else {
     // Le serveur donne le temps restant avant le prochain evenement du
-    // cyclone : debut d'un resserrement, ou fin de celui en cours.
+    // cyclone : debut d'un resserrement, ou fin de celui en cours. Pendant
+    // le vol de l'avion il n'y en a pas encore (null) : "...".
+    if (snapDernier && snapDernier.zoneT === null) timeStr = '...';
+    else {
     var secs = (snapDernier && typeof snapDernier.zoneT === 'number')
       ? Math.max(0, snapDernier.zoneT) : 0;
     var mm = Math.floor(secs / 60), ss = Math.floor(secs % 60);
     timeStr = mm + ':' + (ss < 10 ? '0' : '') + ss;
+    }
   }
 
   var stats = [String(myKills), String(nbVivants), timeStr];
