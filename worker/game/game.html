@@ -1356,30 +1356,66 @@ function cheminCapsule(x0, y0, x1, y1, r) {
   ctx.closePath();
 }
 
-// ─── Med Kit tenu a deux mains, devant soi ───
-// Repere de dessinePerso (-y = direction de visee), en rayons de joueur
-var MEDKIT = { CY: -1.05, L: 1.6, MAIN_X: 0.78, MAIN_Y: -1.0 };
+// ─── Med Kit tenu en main ───
+// Pose relevee au pixel sur le vrai jeu (personnage tourne vers la gauche,
+// rayon de tete 25,8 px) et ramenee au repere de dessinePerso : x vers la
+// droite du joueur, -y vers l'avant, en rayons de joueur. Le kit est tenu
+// dans l'axe de la visee, un peu de biais (18°), sous la tete ; les deux
+// mains, dessous, le tiennent cote tete.
+var MEDKIT = {
+  CX: 0.073, CY: -1.194,           // centre du kit
+  ANG: 1.2546,                     // grand axe du kit, ~18° de biais
+  COURT: 0.88,                     // petit cote (contour compris)
+  M1: [0.523, -0.911], M2: [-0.252, -0.872],   // centres des mains
+  BALANCE: 0.12, FREQ: 2.2         // soin en cours : va-et-vient, en R et en Hz
+};
 function tailleMedkit(R) {
-  var sp = SPRITES.medkit, w = MEDKIT.L * R;
-  var h = sp && (sp.naturalWidth || sp.width) ? w * (sp.naturalHeight || sp.height) / (sp.naturalWidth || sp.width) : w * 0.66;
+  var sp = SPRITES.medkit, h = MEDKIT.COURT * R;
+  var w = sp && (sp.naturalWidth || sp.width) ? h * (sp.naturalWidth || sp.width) / (sp.naturalHeight || sp.height) : h * 1.52;
   return { w: w, h: h };
 }
-function cheminMedkit(R) {
-  var hA = HALO_ARME * R, rBras = R * 0.55 / 2 + hA, rMain = R * 0.40 + hA, t = tailleMedkit(R);
-  cheminCapsule(-R * 0.42, -R * 0.30, -R * MEDKIT.MAIN_X, R * MEDKIT.MAIN_Y, rBras);
-  cheminCapsule( R * 0.42, -R * 0.30,  R * MEDKIT.MAIN_X, R * MEDKIT.MAIN_Y, rBras);
-  ctx.arc(-R * MEDKIT.MAIN_X, R * MEDKIT.MAIN_Y, rMain, 0, Math.PI * 2);
-  ctx.arc( R * MEDKIT.MAIN_X, R * MEDKIT.MAIN_Y, rMain, 0, Math.PI * 2);
-  ctx.rect(-t.w / 2 - hA, R * MEDKIT.CY - t.h / 2 - hA, t.w + 2 * hA, t.h + 2 * hA);
+// Decalage vers l'avant du va-et-vient (0 hors soin) : regle sur le temps
+// de soin restant, donc identique chez tous les joueurs
+function balanceMedkit(R, soin) {
+  if (!(soin > 0)) return 0;
+  return Math.sin((SOIN_DUREE - soin) * Math.PI * 2 * MEDKIT.FREQ) * MEDKIT.BALANCE * R;
 }
-function dessineMedkitTenu(R) {
-  var AW = R * 0.55, HR = R * 0.40, t = tailleMedkit(R), sp = SPRITES.medkit;
-  drawBras(-R * 0.42, -R * 0.30, -R * MEDKIT.MAIN_X, R * MEDKIT.MAIN_Y, AW);
-  drawBras( R * 0.42, -R * 0.30,  R * MEDKIT.MAIN_X, R * MEDKIT.MAIN_Y, AW);
+function coinsMedkit(R, dy, marge) {
+  var t = tailleMedkit(R), c = Math.cos(MEDKIT.ANG), s = Math.sin(MEDKIT.ANG);
+  var cx = MEDKIT.CX * R, cy = MEDKIT.CY * R + dy, hw = t.w / 2 + marge, hh = t.h / 2 + marge;
+  var pts = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(function (q) {
+    return [cx + q[0] * c - q[1] * s, cy + q[0] * s + q[1] * c];
+  });
+  var aire = 0;
+  for (var i = 0; i < 4; i++) { var a = pts[i], b = pts[(i + 1) % 4]; aire += a[0] * b[1] - b[0] * a[1]; }
+  return aire < 0 ? pts.reverse() : pts;    // meme sens que les arcs : union nonzero sure
+}
+function cheminMedkit(R, soin) {
+  var hA = HALO_ARME * R, rBras = R * 0.55 / 2 + hA, rMain = R * 0.40 + hA, dy = -balanceMedkit(R, soin);
+  var m1 = [MEDKIT.M1[0] * R, MEDKIT.M1[1] * R + dy], m2 = [MEDKIT.M2[0] * R, MEDKIT.M2[1] * R + dy];
+  cheminCapsule(R * 0.42, -R * 0.30, m1[0], m1[1], rBras);
+  cheminCapsule(-R * 0.42, -R * 0.30, m2[0], m2[1], rBras);
+  ctx.moveTo(m1[0] + rMain, m1[1]); ctx.arc(m1[0], m1[1], rMain, 0, Math.PI * 2);
+  ctx.moveTo(m2[0] + rMain, m2[1]); ctx.arc(m2[0], m2[1], rMain, 0, Math.PI * 2);
+  var p = coinsMedkit(R, dy, hA);
+  ctx.moveTo(p[0][0], p[0][1]); for (var i = 1; i < 4; i++) ctx.lineTo(p[i][0], p[i][1]); ctx.closePath();
+}
+// Ordre du vrai jeu : bras et mains, puis le kit par-dessus, puis la tete
+// par-dessus le kit
+function dessineMedkitTenu(R, soin) {
+  var AW = R * 0.55, HR = R * 0.40, t = tailleMedkit(R), sp = SPRITES.medkit, dy = -balanceMedkit(R, soin);
+  var m1 = [MEDKIT.M1[0] * R, MEDKIT.M1[1] * R + dy], m2 = [MEDKIT.M2[0] * R, MEDKIT.M2[1] * R + dy];
+  drawBras(R * 0.42, -R * 0.30, m1[0], m1[1], AW);
+  drawBras(-R * 0.42, -R * 0.30, m2[0], m2[1], AW);
+  drawMain(m1[0], m1[1], HR); drawMain(m2[0], m2[1], HR);
+  if (sp && (sp.naturalWidth || sp.width)) {
+    ctx.save();
+    ctx.translate(MEDKIT.CX * R, MEDKIT.CY * R + dy);
+    ctx.rotate(MEDKIT.ANG);
+    ctx.drawImage(sp, -t.w / 2, -t.h / 2, t.w, t.h);
+    ctx.restore();
+  }
   drawTete(R);
-  if (sp && (sp.naturalWidth || sp.width)) ctx.drawImage(sp, -t.w / 2, R * MEDKIT.CY - t.h / 2, t.w, t.h);
-  drawMain(-R * MEDKIT.MAIN_X, R * MEDKIT.MAIN_Y, HR);
-  drawMain( R * MEDKIT.MAIN_X, R * MEDKIT.MAIN_Y, HR);
 }
 
 // Bras et mains du personnage desarme, dilates de HALO_ARME.
@@ -1416,7 +1452,7 @@ function cheminMembres(R, punchTimer, punchSide) {
   }
 }
 
-function dessineOmbrePerso(x, y, angle, secousse, arme, recul, punchTimer, punchSide) {
+function dessineOmbrePerso(x, y, angle, secousse, arme, recul, punchTimer, punchSide, soin) {
   const R = R_JOUEUR;
   const s = secousse || 0;
   const dx = s > 0 ? Math.sin(s * 190) * R * 0.09 * (s / 0.16) : 0;
@@ -1440,7 +1476,7 @@ function dessineOmbrePerso(x, y, angle, secousse, arme, recul, punchTimer, punch
     ctx.fillStyle = C.ombreDouce;
     ctx.beginPath();
     ctx.arc(0, 0, R * (1 + HALO_TETE), 0, Math.PI * 2);
-    cheminMedkit(R);
+    cheminMedkit(R, soin);
     ctx.fill();
   } else if (sil) {
     // Meme ancrage et meme echelle que le sprite dans dessinePerso,
@@ -1464,7 +1500,7 @@ function dessineOmbrePerso(x, y, angle, secousse, arme, recul, punchTimer, punch
   ctx.restore();
 }
 
-function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punchSide){
+function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punchSide,soin){
   const R=R_JOUEUR;
   const s=secousse||0;
   const ox=s>0?Math.sin(s*190)*R*0.09*(s/0.16):0;
@@ -1494,7 +1530,7 @@ function dessinePerso(x,y,angle,coul,secousse,touche,arme,recul,punchTimer,punch
   }
   const AW=R*0.55, HR=R*0.40;
   if(arme==='medkit'){
-    dessineMedkitTenu(R);
+    dessineMedkitTenu(R, soin);
   }else if(arme){
     // Sprite complet (tête + bras + arme) — plus de composants séparés
     const spXM8 = SPRITES.XM8;
@@ -1652,9 +1688,9 @@ function dessineJoueur(p, j, coul, alpha, decoupe, gch, hau, demiL, demiH, arme,
   }
 
   if (textureSeule) {
-    dessinePerso(j.x, j.y, j.angle, coul, j.secousse, j.touche, arme, j.recul, punchTimer||0, punchSide||0);
+    dessinePerso(j.x, j.y, j.angle, coul, j.secousse, j.touche, arme, j.recul, punchTimer||0, punchSide||0, j.soin||0);
   } else {
-    dessineOmbrePerso(j.x, j.y, j.angle, j.secousse, arme, j.recul, punchTimer||0, punchSide||0);
+    dessineOmbrePerso(j.x, j.y, j.angle, j.secousse, arme, j.recul, punchTimer||0, punchSide||0, j.soin||0);
   }
 
   ctx.restore();
@@ -4810,6 +4846,7 @@ function etatAffiche() {
       c.pv = a2.pv + (b.pv - a2.pv) * w;
       // descente en parachute : continue, comme la position
       if ((a2.para || 0) > 0 && (b.para || 0) > 0) c.para = a2.para + (b.para - a2.para) * w;
+      if ((a2.soin || 0) > 0 && (b.soin || 0) > 0) c.soin = a2.soin + (b.soin - a2.soin) * w;
       vue.agents[id] = c;
     }
     // balles : interpolees par identifiant, jamais extrapolees
