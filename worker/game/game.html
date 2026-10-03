@@ -164,8 +164,8 @@ const DUREE_MAX = 120;
 // ============ inventaire ============
 const NB_SLOTS = 6;
 const EAU_LENTEUR = 0.5;   // a pied dans l'eau : deux fois plus lent
-// Glace : 1,5 fois plus vite, et on glisse. Memes valeurs que le serveur.
-const GLACE_VITESSE = 1.5, GLACE_PRISE = 0.9, GLACE_ARRET = 15;
+// Glace : 2 fois plus vite, et on glisse. Memes valeurs que le serveur.
+const GLACE_VITESSE = 2, GLACE_PRISE = 0.9, GLACE_ARRET = 15;
 
 // ============ couleurs ============
 const C = {
@@ -4846,7 +4846,7 @@ function appliqueLoc(a, cmd) {
   var n = Math.hypot(mx, my);
   if (n > 1) { mx /= n; my /= n; }
   // Meme calcul que le serveur, operation pour operation : dans l'eau on
-  // avance deux fois moins vite ; sur la glace 1,5 fois plus vite, et la
+  // avance deux fois moins vite ; sur la glace 2 fois plus vite, et la
   // vitesse ne rejoint la commande que peu a peu (on glisse).
   if (dansAvion() || enParachute()) {
     var _vit = SIM.VITESSE * (dansIleLoc(a.x, a.y) ? 1 : EAU_LENTEUR);
