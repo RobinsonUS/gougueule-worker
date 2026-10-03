@@ -2679,7 +2679,8 @@ function dessineInventaire(agent, slot, drag) {
   for (const z of zs) {
     const sel = (z.i === slot);
     const g = sel ? 4 : 0;
-    const enVol = drag && drag.depuis === z.i;
+    // Tant que le doigt n'a pas bouge, la case reste dessinee telle quelle
+    const enVol = drag && drag.bouge && drag.depuis === z.i && contenuSlot(agent.inv, z.i) === drag.objet;
     const objet = enVol ? null : contenuSlot(agent.inv, z.i);
 
     caseInv(z.x - g, z.y - g, z.w + g * 2, z.h + g * 2,
@@ -2698,10 +2699,10 @@ function dessineInventaire(agent, slot, drag) {
     ctx.fillText(String(z.i + 1), bx + bw / 2, by + bh / 2 + 1);
   }
 
-  if (drag && drag.objet) {
-    const w = zs[0].w;
+  if (drag && drag.objet && drag.bouge) {
+    // Meme taille et meme decalage qu'au moment ou on a pose le doigt
     ctx.globalAlpha = 0.92;
-    caseInv(drag.x - w / 2, drag.y - w / 2, w, w, true, drag.objet,
+    caseInv(drag.cx + drag.x - drag.x0, drag.cy + drag.y - drag.y0, drag.cw, drag.cw, true, drag.objet,
             nombreObjet(agent, drag.objet), agent.rechargement);
     ctx.globalAlpha = 1;
   }
@@ -3612,10 +3613,15 @@ function detecteSlotInv(p) {
 function _startInvAt(p, touchId) {
   var slot = detecteSlotInv(p);
   if (slot < 0) return false;
+  if (invDrag) return true;
   if (slot === 0) { moi.slot = 0; synchroInv(); invDrag = null; return true; }
   var objet = contenuSlotMoi(slot);
   if (objet && objet !== 'mains') {
-    invDrag = { depuis: slot, x: p.x, y: p.y, objet: objet, touchId: touchId != null ? touchId : -1 };
+    // La case part de la ou elle est affichee (agrandie si selectionnee) et
+    // garde le meme decalage par rapport au doigt : aucun saut
+    var z = zonesInv()[slot], g = slot === moi.slot ? 4 : 0;
+    invDrag = { depuis: slot, x: p.x, y: p.y, objet: objet, touchId: touchId != null ? touchId : -1,
+                cx: z.x - g, cy: z.y - g, cw: z.w + g * 2, x0: p.x, y0: p.y, bouge: false };
   } else {
     moi.slot = slot; synchroInv(); invDrag = null;
   }
@@ -3643,17 +3649,33 @@ function debuteInvDragTouch(t) {
   return _startInvAt(p, t.identifier);
 }
 
-function termineInvDrag(e) {
+// Deplacement du doigt (ou de la souris) pendant un drag
+function bougeInvDrag(p) {
+  invDrag.x = p.x; invDrag.y = p.y;
+  if (Math.hypot(p.x - invDrag.x0, p.y - invDrag.y0) > 4) invDrag.bouge = true;
+}
+// L'objet tire est-il toujours dans sa case ? (un Med Kit peut finir son
+// soin et disparaitre pendant qu'on le tient)
+function invDragValide() {
+  return !!(invDrag && moi && moi.inv && contenuSlotMoi(invDrag.depuis) === invDrag.objet);
+}
+// Lacher : on vise avec le doigt, comme on l'a pose
+function finInvDrag(p) {
   if (!invDrag) return;
-  var p = posInv(e);
-  var cible = detecteSlotInv(p);
-  if (cible >= 0 && cible !== invDrag.depuis && cible !== 0) {
-    swapInv(invDrag.depuis, cible);
-  } else {
-    // Drop hors zone ou sur slot 0 ou même slot : conserver la position, sélectionner
-    moi.slot = invDrag.depuis; synchroInv();
+  if (invDragValide()) {
+    var cible = detecteSlotInv(p);
+    if (cible >= 0 && cible !== invDrag.depuis && cible !== 0) {
+      swapInv(invDrag.depuis, cible);
+    } else {
+      // Drop hors zone ou sur slot 0 ou même slot : conserver la position, sélectionner
+      moi.slot = invDrag.depuis; synchroInv();
+    }
   }
   invDrag = null;
+}
+function termineInvDrag(e) {
+  if (!invDrag) return;
+  finInvDrag(posInv(e));
 }
 
 // alphaVis des joueurs : persiste entre les frames (vue.agents recrée des objets neufs à chaque frame)
@@ -4249,28 +4271,22 @@ function initTouchControls() {
       if (t.identifier === joyG.id && joyG.actif) majStick(joyG, p, joyGauchePos());
       if (t.identifier === joyD.id && joyD.actif) majStick(joyD, p, joyDroitePos());
       // Suivi du doigt pour le drag inventaire
-      if (invDrag && t.identifier === invDrag.touchId) { invDrag.x = p.x; invDrag.y = p.y; }
+      if (invDrag && t.identifier === invDrag.touchId) bougeInvDrag(p);
     }
   }, {passive:false});
 
   var relache = function(e) {
     if (invDrag) {
-      // Chercher le touch qui correspond au drag
+      // Seul le doigt qui tient la case la lache : relacher le joystick
+      // pendant un drag ne doit pas l'annuler
       for (var ri = 0; ri < e.changedTouches.length; ri++) {
         var rt = e.changedTouches[ri];
         if (rt.identifier === invDrag.touchId || invDrag.touchId === -1) {
-          var rp = versJeu(rt.clientX, rt.clientY);
-          var rcible = detecteSlotInv(rp);
-          if (rcible >= 0 && rcible !== invDrag.depuis && rcible !== 0) {
-            swapInv(invDrag.depuis, rcible);
-          } else {
-            moi.slot = invDrag.depuis; synchroInv();
-          }
-          invDrag = null;
+          if (e.type === 'touchcancel') invDrag = null;
+          else finInvDrag(versJeu(rt.clientX, rt.clientY));
           break;
         }
       }
-      if (invDrag) { invDrag = null; } // sécurité
     }
     for (var i = 0; i < e.changedTouches.length; i++) {
       var t = e.changedTouches[i];
@@ -4372,7 +4388,7 @@ window.addEventListener('mousemove', function(e) {
   var p = versJeu(e.clientX, e.clientY);
   souris.x = p.x; souris.y = p.y; souris.vu = true;
   ecranAngle = Math.atan2(souris.y - ecranJoueur.y, souris.x - ecranJoueur.x);
-  if (invDrag) { invDrag.x = p.x; invDrag.y = p.y; }
+  if (invDrag) bougeInvDrag(p);
 });
 window.addEventListener('mousedown', function(e) {
   if (isMobile) return;
@@ -5491,7 +5507,7 @@ function boucle(maintenant) {
             obs: localObs, zone: vue.zone, t: vue.t, avion: vue.avion,
             fini: vue.fini, vainqueur: vue.vainqueur },
           idVue, (!isMobile && souris.vu && !spectateur) ? souris : null,
-          spectateur ? null : (invDrag || null));
+          spectateur ? null : (invDragValide() ? invDrag : null));
 
   if (isMobile && etatJeu === 'jeu') {
     repereEcran();
